@@ -178,12 +178,47 @@
   #saved-msg { margin: 4px 0 0; font-size: 12px; letter-spacing: 2px; opacity: 0; transition: opacity 0.3s; color: #ffd700; min-height: 20px; text-align: center; width: 100%; }
   #saved-msg.show { opacity: 1; }
   video, canvas { display: none; }
+  /* Notion 等 iframe 嵌入时提示：摄像头需在独立标签页使用 */
+  .iframe-hint {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    max-width: 520px;
+    margin: -8px auto 14px;
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 215, 0, 0.45);
+    color: #ffd700;
+    font-size: 11px;
+    letter-spacing: 1px;
+    line-height: 1.45;
+    text-align: center;
+    box-sizing: border-box;
+  }
+  .iframe-hint[hidden] { display: none !important; }
+  .iframe-hint-link {
+    color: #00ff41;
+    border: 1px solid rgba(0, 255, 65, 0.5);
+    padding: 4px 12px;
+    text-decoration: none;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-size: 10px;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+  }
+  .iframe-hint-link:hover { background: rgba(0, 255, 65, 0.1); }
 </style>
 </head>
 <body>
 <div id="flash-overlay" aria-hidden="true"></div>
 <div id="camera-shell">
 <h1>ASCII Camera</h1>
+<div id="iframe-hint" class="iframe-hint" hidden role="note">
+  <span class="iframe-hint-text">Embedded preview blocks camera — use a full browser tab.</span>
+  <a id="iframe-open-tab" class="iframe-hint-link" href="#" target="_blank" rel="noopener noreferrer">Open in new tab</a>
+</div>
 <div class="cam-actions">
   <button id="startBtn" type="button">Start Camera</button>
   <button id="snapBtn" type="button" disabled>Snap &amp; Save</button>
@@ -284,6 +319,34 @@ const resPicker      = document.getElementById('resPicker');
 const aspectPicker   = document.getElementById('aspectPicker');
 const flashOverlay   = document.getElementById('flash-overlay');
 const flashToggle    = document.getElementById('flashToggle');
+const iframeHint     = document.getElementById('iframe-hint');
+const iframeOpenTab  = document.getElementById('iframe-open-tab');
+
+/**
+ * 是否在第三方 iframe 中（如 Notion embed）；跨域访问 `window.top` 会抛错，视为已嵌入。
+ * @returns {boolean}
+ */
+function isEmbeddedInFrame() {
+  try {
+    return window.self !== window.top;
+  } catch (e) {
+    return true;
+  }
+}
+
+/**
+ * 在新标签页打开当前相机页，绕过嵌入页的摄像头限制（需在用户点击等手势中调用）。
+ * @returns {Window | null}
+ */
+function openCameraInNewTab() {
+  return window.open(window.location.href, '_blank', 'noopener,noreferrer');
+}
+
+if (iframeHint && iframeOpenTab && isEmbeddedInFrame()) {
+  iframeHint.hidden = false;
+  iframeOpenTab.href = window.location.href;
+}
+
 /** @type {boolean} */
 let snapCountdownActive = false;
 
@@ -567,6 +630,13 @@ startBtn.addEventListener('click', async () => {
     snapBtn.textContent = 'Snap & Save';
     setStatusOffline();
     out.textContent = '[ Click "Start Camera" to begin ]';
+    return;
+  }
+  if (isEmbeddedInFrame()) {
+    const opened = openCameraInNewTab();
+    statusEl.querySelector('.status-text').textContent = opened
+      ? 'Opened in new tab'
+      : 'Allow pop-ups or use “Open in new tab” above';
     return;
   }
   try {
