@@ -1,0 +1,8 @@
+{
+  "name": "ascii-camera",
+  "private": true,
+  "description": "ASCII Camera + Gallery（Vercel 部署时需在项目环境变量中配置 ASCII_CAMERA_BIN_ID、ASCII_CAMERA_API_KEY）",
+  "scripts": {
+    "build": "node scripts/inject-config.js"
+  }
+}
