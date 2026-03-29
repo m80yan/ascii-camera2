@@ -1,17 +1,10 @@
 # 通过 Git 部署到 Vercel
 
-## 1. 环境变量（必配）
+## 1. 数据说明
 
-在 Vercel 项目 **Settings → Environment Variables** 添加（勾选 Production / Preview 按需）：
-
-| Name | Value |
-|------|--------|
-| `ASCII_CAMERA_BIN_ID` | JSONBin 里该 Bin 的 ID |
-| `ASCII_CAMERA_API_KEY` | JSONBin 的 **X-Master-Key**（Master Key） |
-
-保存后 **Redeploy** 一次，构建脚本会把变量写入 `config.local.js`。
-
-> 说明：密钥会出现在前端加载的 `config.local.js` 中，仅适合个人/演示；正式产品请用后端代理。
+- 画廊 **默认展示 4 张内置示例图**（所有访客相同）。
+- 用户通过 **上传 / 相机** 保存的内容仅存在于 **该浏览器的 localStorage**，**不同设备、不同浏览器之间不同步**。
+- **无需** JSONBin 或其它云端密钥；构建脚本仍会生成空的 `config.local.js` 占位，可忽略。
 
 ## 2. Vercel 项目设置
 
@@ -42,5 +35,3 @@ git push -u origin main
 ## 4. 访问
 
 部署完成后打开：`https://<你的域名>/gallery.html` 与 `https://<你的域名>/camera.html`。
-
-本地开发仍使用根目录自建的 `config.local.js`（已在 `.gitignore` 中，不会进仓库）。

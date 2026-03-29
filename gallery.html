@@ -15,9 +15,6 @@
   #live-btn { border: 1px solid #ffd700; color: #ffd700; }
   #live-btn:hover { background: rgba(255,215,0,0.1); }
   #upload-input { display: none; }
-  #status { font-size: 11px; letter-spacing: 2px; opacity: 0.4; margin-bottom: 16px; }
-  #pulse { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #00ff41; margin-right: 6px; animation: pulse 2s infinite; vertical-align: middle; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.2} }
   #empty { text-align: center; opacity: 0.3; margin-top: 80px; font-size: 13px; letter-spacing: 2px; line-height: 2.5; }
   #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; align-items: start; }
   .photo-card {
@@ -50,7 +47,8 @@
     margin: 0;
     pointer-events: none;
     display: block;
-    line-height: 1;
+    font-size: 1px;
+    line-height: 1px;
     letter-spacing: 0;
     flex-shrink: 0;
   }
@@ -85,10 +83,10 @@
   #lightbox-scroll {
     flex: 1 1 auto;
     min-height: 0;
-    overflow: auto;
+    overflow: hidden;
     display: flex;
     justify-content: center;
-    align-items: flex-start;
+    align-items: center;
     cursor: default;
   }
   #lightbox-pre { font-family: monospace, ui-monospace, "Courier New", monospace; letter-spacing: 0; white-space: pre; margin: 0; display: inline-block; width: max-content; max-width: 100%; line-height: 1; cursor: default; }
@@ -168,11 +166,10 @@
   <div id="header-actions">
     <button class="hdr-btn" id="upload-btn" type="button">Upload Image</button>
     <input type="file" id="upload-input" accept="image/*">
-    <a class="hdr-btn" id="live-btn" href="camera.html" target="_blank" rel="noopener noreferrer">Open Camera</a>
+    <a class="hdr-btn" id="live-btn" href="camera.html" target="_blank" rel="opener">Open Camera</a>
   </div>
 </div>
-<div id="status"><span id="pulse"></span><span id="status-msg">Polling</span></div>
-<div id="empty" style="display:none">No photos yet.<br>Open the camera and snap a photo.<br>It will appear here automatically.</div>
+<div id="empty" style="display:none">No photos yet.<br>Use Upload or Open Camera — your shots are saved in this browser only.</div>
 <div id="gallery"></div>
 <img id="upload-src-img" alt="">
 <div id="upload-modal" aria-hidden="true">
@@ -255,12 +252,21 @@
     </div>
   </div>
 </div>
-<script src="config.local.js"></script>
+<script src="gallery-storage.js"></script>
 <script>
-const BIN_ID = String(window.ASCII_CAMERA_BIN_ID || '').trim();
-const API_KEY = String(window.ASCII_CAMERA_API_KEY || '').trim();
-const BIN_URL = BIN_ID ? ('https://api.jsonbin.io/v3/b/' + BIN_ID) : '';
-const statusMsgEl = document.getElementById('status-msg');
+/** 由 `gallery-storage.js` 挂载 */
+var AsciiCameraGalleryStorage = window.AsciiCameraGalleryStorage;
+
+/**
+ * Camera 等其它标签页写入同一 `localStorage` 键时，本页会收到 `storage` 事件（不依赖 `window.opener`）。
+ * 解决 `opener.reload()` 在部分浏览器 / 嵌入场景下不生效的问题。
+ */
+window.addEventListener('storage', function (e) {
+  if (e.key === AsciiCameraGalleryStorage.STORAGE_KEY && e.newValue !== e.oldValue) {
+    location.reload();
+  }
+});
+
 /** 测量失败时的字宽/行高比回退值 */
 const CELL_ASPECT_FALLBACK = 0.55;
 /** @type {{ cellAspect: number, lineHeightPx: number } | null} */
@@ -327,7 +333,6 @@ const CHAR_SETS = {
 };
 const gallery = document.getElementById('gallery');
 const empty = document.getElementById('empty');
-const pulse = document.getElementById('pulse');
 const lightbox = document.getElementById('lightbox');
 const lightboxPre = document.getElementById('lightbox-pre');
 const confirmModal = document.getElementById('confirm-modal');
@@ -498,13 +503,13 @@ function openLightbox(photo) {
   lightbox.classList.add('open');
   requestAnimationFrame(function () {
     const maxW = Math.min(window.innerWidth * 0.88, 960) - 48;
-    const maxH = window.innerHeight * 0.78 - 48 - 72;
+    const maxH = Math.max(40, window.innerHeight * 0.78 - 48 - 72 - 4);
     const BASE = 10;
     lightboxPre.style.fontSize = BASE + 'px';
     void lightboxPre.offsetWidth;
     const w = lightboxPre.offsetWidth;
     const h = lightboxPre.offsetHeight;
-    const scale = Math.min(Math.max(40, maxW) / Math.max(1, w), Math.max(40, maxH) / Math.max(1, h));
+    const scale = Math.min(Math.max(40, maxW) / Math.max(1, w), maxH / Math.max(1, h));
     const fs = Math.max(2, Math.min(14, Math.round(BASE * scale * 100) / 100));
     lightboxPre.style.fontSize = fs + 'px';
     lightboxPre.style.lineHeight = '1';
@@ -570,75 +575,6 @@ function escapeHtml(s) {
 }
 
 /**
- * @param {string} url 请求地址
- * @param {RequestInit} init fetch 选项
- * @returns {Promise<Response>}
- */
-function fetchNoStore(url, init) {
-  return fetch(url, { ...init, cache: 'no-store' });
-}
-
-/** 与 camera 一致：按 UTF-8 字节计 JSONBin 限额；默认绿省略 `color` */
-const MAX_BIN_JSON_BYTES = 99000;
-/** 画廊条数上限：先删旧图再考虑截断 */
-const MAX_PHOTOS_IN_BIN = 6;
-
-/**
- * @param {{ascii:string,color?:string,time?:number}} p 单条
- * @returns {{ascii:string,time:number,color?:string}}
- */
-function normalizePhotoForStorage(p) {
-  const ascii = String(p.ascii || '');
-  const time = typeof p.time === 'number' ? p.time : Date.now();
-  const c = p.color;
-  /** @type {{ascii:string,time:number,color?:string}} */
-  const o = { ascii, time };
-  if (c && c !== '#00ff41') o.color = c;
-  return o;
-}
-
-/**
- * @param {unknown} obj JSON 对象
- * @returns {number}
- */
-function jsonUtf8Bytes(obj) {
-  return new TextEncoder().encode(JSON.stringify(obj)).length;
-}
-
-/**
- * 按行截断，避免半行导致缩略图宽高比错误。
- * @param {string} ascii
- * @param {number} maxChars
- * @returns {string}
- */
-function truncateAsciiByMaxChars(ascii, maxChars) {
-  if (ascii.length <= maxChars) return ascii;
-  const lines = ascii.split('\n');
-  while (lines.length > 1 && lines.join('\n').length > maxChars) lines.pop();
-  let s = lines.join('\n');
-  if (s.length > maxChars) s = s.slice(0, maxChars);
-  return s;
-}
-
-/**
- * @param {Array<{ascii:string,color?:string,time?:number}>} photos
- * @returns {Array<{ascii:string,time:number,color?:string}>}
- */
-function clipPhotosForJsonBin(photos) {
-  let list = photos.map(normalizePhotoForStorage);
-  while (list.length > MAX_PHOTOS_IN_BIN) list.pop();
-  while (jsonUtf8Bytes({ photos: list }) > MAX_BIN_JSON_BYTES) {
-    if (list.length > 1) {
-      list.pop();
-      continue;
-    }
-    if (list[0].ascii.length <= 200) break;
-    list[0].ascii = truncateAsciiByMaxChars(list[0].ascii, Math.max(200, Math.floor(list[0].ascii.length * 0.85)));
-  }
-  return list;
-}
-
-/**
  * @param {string} ascii
  * @returns {{cols:number,rows:number}}
  */
@@ -656,46 +592,29 @@ function getAsciiDims(ascii) {
  */
 async function savePhoto(ascii, color) {
   try {
-    if (!BIN_ID || !API_KEY) {
-      console.error('JSONBin: 请在 config.local.js 中填写 ASCII_CAMERA_BIN_ID 与 ASCII_CAMERA_API_KEY');
-      return;
-    }
-    const res = await fetchNoStore(BIN_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
-    if (!res.ok) throw new Error('Read failed ' + res.status + (res.status === 403 ? ' (403: 密钥/Bin 无效或额度用尽)' : ''));
-    const data = await res.json();
-    const photos = Array.isArray(data.record && data.record.photos) ? data.record.photos.slice() : [];
-    photos.unshift({ ascii, color: color || '#00ff41', time: Date.now() });
-    const clipped = clipPhotosForJsonBin(photos);
-    const put = await fetchNoStore(BIN_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
-      body: JSON.stringify({ photos: clipped })
-    });
-    if (!put.ok) {
-      const t = await put.text();
-      throw new Error('Write failed ' + put.status + ' ' + t.slice(0, 120));
-    }
-    poll();
+    AsciiCameraGalleryStorage.prependUserPhoto({ ascii: ascii, color: color || '#00ff41', time: Date.now() });
+    refreshGallery();
+  } catch (e) {
+    console.error(e);
+    alert('Could not save to browser storage (quota or private mode).');
+  }
+}
+
+/**
+ * @param {number} userIndex `getMergedGalleryPhotos` 中用户条目的下标（仅前 `getUserPhotoCount()` 项可删）
+ */
+function deletePhoto(userIndex) {
+  try {
+    AsciiCameraGalleryStorage.deleteUserPhotoAt(userIndex);
+    refreshGallery();
   } catch (e) { console.error(e); }
 }
 
-async function deletePhoto(i) {
-  try {
-    if (!BIN_ID || !API_KEY) return;
-    const res = await fetchNoStore(BIN_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
-    if (!res.ok) throw new Error('Read failed ' + res.status);
-    const data = await res.json();
-    const photos = Array.isArray(data.record && data.record.photos) ? data.record.photos.slice() : [];
-    photos.splice(i, 1);
-    const clipped = clipPhotosForJsonBin(photos);
-    const put = await fetchNoStore(BIN_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
-      body: JSON.stringify({ photos: clipped })
-    });
-    if (!put.ok) throw new Error('Write failed ' + put.status);
-    poll();
-  } catch (e) { console.error(e); }
+/**
+ * 重新从 localStorage + 默认图合并并渲染。
+ */
+function refreshGallery() {
+  renderGallery(AsciiCameraGalleryStorage.getMergedGalleryPhotos());
 }
 
 function timeAgo(ts) {
@@ -706,31 +625,76 @@ function timeAgo(ts) {
 }
 
 /**
+ * 按各卡片 `.photo-thumb` 的可用像素区域计算字号：`contain`、不裁切，与 ASCII 网格宽高比一致；在统一卡片内尽可能大。
+ */
+function layoutGalleryThumbs() {
+  const gm = getGalleryAsciiCellMetrics();
+  gallery.querySelectorAll('.photo-card').forEach(function (card) {
+    const idx = parseInt(card.dataset.index, 10);
+    const p = photosCache[idx];
+    if (!p) return;
+    const d = getAsciiDims(p.ascii);
+    const cols = d.cols;
+    const rows = Math.max(1, d.rows);
+    const effW = cols * gm.cellAspect;
+    const effH = rows;
+    const thumb = card.querySelector('.photo-thumb');
+    const pre = thumb && thumb.querySelector('pre');
+    if (!thumb || !pre) return;
+    const cs = getComputedStyle(thumb);
+    const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    const tw = Math.max(1, thumb.clientWidth - padX);
+    const th = Math.max(1, thumb.clientHeight - padY);
+    const fs = Math.min(tw / Math.max(1e-6, effW), th / Math.max(1e-6, effH));
+    const fontSize = Math.round(Math.max(0.45, fs) * 100) / 100;
+    pre.style.fontSize = fontSize + 'px';
+    pre.style.lineHeight = fontSize + 'px';
+  });
+}
+
+/**
+ * 监听画廊网格宽度变化，重新适配缩略图字号（仅绑定一次）。
+ */
+function setupGalleryThumbResize() {
+  if (gallery._asciiThumbResizeSetup) return;
+  gallery._asciiThumbResizeSetup = true;
+  if (typeof ResizeObserver !== 'undefined') {
+    var ro = new ResizeObserver(function () {
+      layoutGalleryThumbs();
+    });
+    ro.observe(gallery);
+    gallery._asciiThumbResizeObserver = ro;
+  }
+}
+
+/**
  * @param {Array<{ascii:string,color?:string,time?:number}>} photos 列表
  */
 function renderGallery(photos) {
   photosCache = photos;
   if (photos.length === 0) { empty.style.display = 'block'; gallery.innerHTML = ''; return; }
   empty.style.display = 'none';
-  const thumbBox = 200;
-  const gm = getGalleryAsciiCellMetrics();
+  const userCount = AsciiCameraGalleryStorage.getUserPhotoCount();
   gallery.innerHTML = photos.map((p, i) => {
-    const d = getAsciiDims(p.ascii);
-    const cols = d.cols;
-    const rows = Math.max(1, d.rows);
-    const effW = cols * gm.cellAspect;
-    const effH = rows;
-    const fs = Math.min(thumbBox / effW, thumbBox / effH);
-    const fontSize = Math.round(Math.max(0.45, Math.min(fs, 10)) * 100) / 100;
+    const isUser = i < userCount;
+    const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
+    const delHtml = isUser
+      ? '<button type="button" class="delete-btn" data-user-index="' + i + '">Delete</button>'
+      : '<span class="photo-time" style="opacity:0.25">—</span>';
     return (
       '<div class="photo-card" data-index="' + i + '">' +
         '<div class="photo-thumb">' +
-          '<pre style="color:' + (p.color||'#00ff41') + ';font-size:' + fontSize + 'px;line-height:' + fontSize + 'px;">' + escapeHtml(p.ascii) + '</pre>' +
+          '<pre style="color:' + (p.color||'#00ff41') + '">' + escapeHtml(p.ascii) + '</pre>' +
         '</div>' +
-        '<div class="photo-meta"><span class="photo-time">' + escapeHtml(timeAgo(p.time)) + '</span><button type="button" class="delete-btn" data-index="' + i + '">Delete</button></div>' +
+        '<div class="photo-meta"><span class="photo-time">' + escapeHtml(timeLabel) + '</span>' + delHtml + '</div>' +
       '</div>'
     );
   }).join('');
+  setupGalleryThumbResize();
+  requestAnimationFrame(function () {
+    requestAnimationFrame(layoutGalleryThumbs);
+  });
   gallery.querySelectorAll('.photo-card').forEach(card => {
     card.addEventListener('click', (e) => {
       const t = /** @type {HTMLElement} */ (e.target);
@@ -741,41 +705,12 @@ function renderGallery(photos) {
   gallery.querySelectorAll('.delete-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      promptDelete(parseInt(btn.dataset.index, 10));
+      promptDelete(parseInt(btn.getAttribute('data-user-index'), 10));
     });
   });
 }
 
-/**
- * 从 JSONBin 拉取最新照片列表并刷新界面。
- */
-async function poll() {
-  try {
-    if (!BIN_ID || !API_KEY) {
-      pulse.style.background = '#ff4444';
-      if (statusMsgEl) statusMsgEl.textContent = '未配置 JSONBin（请填写 config.local.js）';
-      return;
-    }
-    const res = await fetchNoStore(BIN_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
-    if (!res.ok) {
-      if (statusMsgEl) {
-        statusMsgEl.textContent = res.status === 403
-          ? 'JSONBin 403：请检查 config.local.js 密钥与 Bin'
-          : ('Polling failed ' + res.status);
-      }
-      throw new Error(String(res.status));
-    }
-    const data = await res.json();
-    const photos = (data.record && data.record.photos) ? data.record.photos : [];
-    pulse.style.background = '#00ff41';
-    if (statusMsgEl) statusMsgEl.textContent = 'Polling';
-    renderGallery(photos);
-  } catch (e) {
-    pulse.style.background = '#ff4444';
-  }
-}
-poll();
-setInterval(poll, 3000);
+refreshGallery();
 </script>
 </body>
 </html>

@@ -140,6 +140,8 @@
   button:disabled { opacity: 0.3; cursor: not-allowed; }
   #snapBtn { border-color: #ffd700; color: #ffd700; }
   #snapBtn:hover:not(:disabled) { background: rgba(255,215,0,0.1); }
+  /* 保存中：保持 disabled，略提高对比度以便阅读 SAVING… */
+  #snapBtn.snap-saving:disabled { opacity: 0.55; cursor: not-allowed; }
   select { background: #111; border: 1px solid rgba(0,255,65,0.3); color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; padding: 6px 8px; cursor: pointer; }
   #flash-overlay {
     position: fixed;
@@ -217,7 +219,7 @@
 <h1>ASCII Camera</h1>
 <div id="iframe-hint" class="iframe-hint" hidden role="note">
   <span class="iframe-hint-text">Embedded preview blocks camera — use a full browser tab.</span>
-  <a id="iframe-open-tab" class="iframe-hint-link" href="#" target="_blank" rel="noopener noreferrer">Open in new tab</a>
+  <a id="iframe-open-tab" class="iframe-hint-link" href="#" target="_blank" rel="opener">Open in new tab</a>
 </div>
 <div class="cam-actions">
   <button id="startBtn" type="button">Start Camera</button>
@@ -243,7 +245,7 @@
 <video id="video" autoplay playsinline></video>
 <canvas id="canvas"></canvas>
 <div id="ascii-wrap"><pre id="ascii-out">[ Click "Start Camera" to begin ]</pre></div>
-<div id="saved-msg">Saved</div>
+<div id="saved-msg" aria-live="polite"></div>
 <div class="cam-controls-grid">
   <label class="ctl-stack cc-left">
     <span class="ctl-label">Style</span>
@@ -287,11 +289,11 @@
 </div>
 </div>
 
-<script src="config.local.js"></script>
+<script src="gallery-storage.js"></script>
 <script>
-const BIN_ID = String(window.ASCII_CAMERA_BIN_ID || '').trim();
-const API_KEY = String(window.ASCII_CAMERA_API_KEY || '').trim();
-const BIN_URL = BIN_ID ? ('https://api.jsonbin.io/v3/b/' + BIN_ID) : '';
+/** 由 `gallery-storage.js` 挂载 */
+var AsciiCameraGalleryStorage = window.AsciiCameraGalleryStorage;
+
 /** 测量失败时的字宽/行高比回退值 */
 const CELL_ASPECT_FALLBACK = 0.55;
 /** @type {{ cellAspect: number, lineHeightPx: number } | null} */
@@ -339,7 +341,7 @@ function isEmbeddedInFrame() {
  * @returns {Window | null}
  */
 function openCameraInNewTab() {
-  return window.open(window.location.href, '_blank', 'noopener,noreferrer');
+  return window.open(window.location.href, '_blank');
 }
 
 if (iframeHint && iframeOpenTab && isEmbeddedInFrame()) {
@@ -495,119 +497,57 @@ function render() {
 }
 
 /**
- * 跨域请求勿加 Cache-Control/Pragma 自定义头，否则会触发预检且 JSONBin 可能未放行，导致保存失败。仅用 `cache: 'no-store'` 禁用缓存。
- * @param {string} url 请求地址
- * @param {RequestInit} init fetch 选项
- * @returns {Promise<Response>}
+ * 保存成功后关闭本标签。Gallery 的刷新由 `gallery.html` 的 `storage` 事件触发（Camera 写入 `localStorage` 后其它标签页自动 reload），不依赖 `opener.reload()`。
+ * 尝试将焦点还给 `opener` 以便用户看到正在刷新的 Gallery。
+ * @returns {void}
  */
-function fetchNoStore(url, init) {
-  return fetch(url, { ...init, cache: 'no-store' });
-}
-
-/**
- * JSONBin 免费版按 **UTF-8 字节** 计约 100KB。旧版仅用 ASCII 字符且只有 `ascii+time`，体积小；
- * 当前块字符（如 █）在 UTF-8 中占 3 字节，若用 `string.length` 估算会误判，易 403。
- */
-const MAX_BIN_JSON_BYTES = 99000;
-/** 画廊条数上限：先删旧图再考虑截断，避免无谓裁切新照片 */
-const MAX_PHOTOS_IN_BIN = 6;
-
-/**
- * @param {{ascii:string,color?:string,time?:number}} p 单条
- * @returns {{ascii:string,time:number,color?:string}} 与旧版一致：默认绿不写 `color` 以省字节
- */
-function normalizePhotoForStorage(p) {
-  const ascii = String(p.ascii || '');
-  const time = typeof p.time === 'number' ? p.time : Date.now();
-  const c = p.color;
-  /** @type {{ascii:string,time:number,color?:string}} */
-  const o = { ascii, time };
-  if (c && c !== '#00ff41') o.color = c;
-  return o;
-}
-
-/**
- * @param {unknown} obj JSON 可序列化对象
- * @returns {number} UTF-8 字节长度
- */
-function jsonUtf8Bytes(obj) {
-  return new TextEncoder().encode(JSON.stringify(obj)).length;
-}
-
-/**
- * 按行截断 ASCII，避免半行导致画廊缩略图列宽算错、画面被左右裁切。
- * @param {string} ascii 原始文本
- * @param {number} maxChars 最大字符数
- * @returns {string}
- */
-function truncateAsciiByMaxChars(ascii, maxChars) {
-  if (ascii.length <= maxChars) return ascii;
-  const lines = ascii.split('\n');
-  while (lines.length > 1 && lines.join('\n').length > maxChars) lines.pop();
-  let s = lines.join('\n');
-  if (s.length > maxChars) s = s.slice(0, maxChars);
-  return s;
-}
-
-/**
- * 将画廊压入字节额度：不预先截断每条；先限制条数，再删最旧，最后才对**最新一条**按行缩短。
- * @param {Array<{ascii:string,color?:string,time?:number}>} photos 新照片在前
- * @returns {Array<{ascii:string,time:number,color?:string}>}
- */
-function clipPhotosForJsonBin(photos) {
-  let list = photos.map(normalizePhotoForStorage);
-  while (list.length > MAX_PHOTOS_IN_BIN) list.pop();
-  while (jsonUtf8Bytes({ photos: list }) > MAX_BIN_JSON_BYTES) {
-    if (list.length > 1) {
-      list.pop();
-      continue;
+function refreshGalleryAndClose() {
+  try {
+    var o = window.opener;
+    if (o && o !== window && !o.closed) {
+      try {
+        o.focus();
+      } catch (e) {
+        /* 跨域或策略限制 */
+      }
     }
-    if (list[0].ascii.length <= 200) break;
-    list[0].ascii = truncateAsciiByMaxChars(list[0].ascii, Math.max(200, Math.floor(list[0].ascii.length * 0.85)));
-  }
-  return list;
+  } catch (e2) {}
+  try {
+    window.close();
+  } catch (e3) {}
+  setTimeout(function () {
+    try {
+      if (document.visibilityState === 'visible') {
+        window.location.replace('gallery.html');
+      }
+    } catch (e4) {
+      window.location.replace('gallery.html');
+    }
+  }, 120);
 }
 
 /**
- * 将当前帧写入 JSONBin 画廊（读-改-写，校验响应状态）。
+ * 将当前帧写入本机浏览器存储（与 Gallery 共用 `gallery-storage.js`）。
  * @param {string} ascii ASCII 内容
+ * @returns {Promise<boolean>} 保存成功并已触发关闭/跳转流程时为 true
  */
 async function savePhoto(ascii) {
-  savedMsg.textContent = 'Saving...';
-  savedMsg.style.color = '#aaa';
-  savedMsg.classList.add('show');
   try {
-    if (!BIN_ID || !API_KEY) {
-      throw new Error('未配置 JSONBin：请编辑 config.local.js 填写 Bin ID 与 Master Key');
-    }
-    const getRes = await fetchNoStore(BIN_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
-    if (!getRes.ok) {
-      const extra = getRes.status === 403 ? '（403：密钥无效、Bin 不属于该账号或请求额度用尽）' : '';
-      throw new Error('Read bin failed: ' + getRes.status + extra);
-    }
-    const data = await getRes.json();
-    const photos = Array.isArray(data.record && data.record.photos) ? data.record.photos.slice() : [];
-    photos.unshift({ ascii, color: colorPicker.value, time: Date.now() });
-    const clipped = clipPhotosForJsonBin(photos);
-    const newPhotoTrimmed = !!(clipped[0] && clipped[0].ascii.length < ascii.length);
-    const putRes = await fetchNoStore(BIN_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
-      body: JSON.stringify({ photos: clipped })
-    });
-    if (!putRes.ok) {
-      const errText = await putRes.text();
-      throw new Error('Write bin failed: ' + putRes.status + ' ' + errText);
-    }
-    savedMsg.textContent = newPhotoTrimmed ? 'Saved (image trimmed to fit 100KB)' : 'Saved to gallery';
+    AsciiCameraGalleryStorage.prependUserPhoto({ ascii: ascii, color: colorPicker.value, time: Date.now() });
+    savedMsg.textContent = '已保存';
     savedMsg.style.color = '#ffd700';
+    savedMsg.classList.add('show');
+    await new Promise(function (r) { setTimeout(r, 400); });
+    refreshGalleryAndClose();
+    return true;
   } catch (e) {
     console.error(e);
-    const hint = e && e.message ? String(e.message).slice(0, 72) : '';
-    savedMsg.textContent = hint ? ('Save failed — ' + hint) : 'Save failed';
+    savedMsg.textContent = '保存失败：存储空间不足或已禁用';
     savedMsg.style.color = '#ff4444';
+    savedMsg.classList.add('show');
+    setTimeout(function () { savedMsg.classList.remove('show'); }, 2500);
+    return false;
   }
-  setTimeout(() => savedMsg.classList.remove('show'), 2500);
 }
 
 function setStatusOffline() {
@@ -662,13 +602,14 @@ startBtn.addEventListener('click', async () => {
 snapBtn.addEventListener('click', async () => {
   if (!stream || snapCountdownActive) return;
   const cols = parseInt(resPicker.value, 10) || 100;
-  const labelBackup = snapBtn.textContent;
+  const labelBackup = 'Snap & Save';
   const ctl = [densityPicker, colorPicker, resPicker, aspectPicker];
   snapCountdownActive = true;
   snapBtn.disabled = true;
   startBtn.disabled = true;
   ctl.forEach(function (el) { el.disabled = true; });
   const useFlash = flashToggle.checked;
+  let exiting = false;
   try {
     for (let n = 3; n >= 1; n--) {
       snapBtn.textContent = String(n);
@@ -676,15 +617,25 @@ snapBtn.addEventListener('click', async () => {
       await sleep(1000);
       if (useFlash && n === 1) flashOverlay.classList.remove('on');
     }
-    snapBtn.textContent = 'Saving...';
-    await savePhoto(toAscii(cols));
+    snapBtn.textContent = 'SAVING…';
+    snapBtn.classList.add('snap-saving');
+    snapBtn.disabled = true;
+    snapBtn.setAttribute('aria-busy', 'true');
+    savedMsg.textContent = '保存中…';
+    savedMsg.style.color = '#aaa';
+    savedMsg.classList.add('show');
+    exiting = await savePhoto(toAscii(cols));
   } finally {
     flashOverlay.classList.remove('on');
-    snapBtn.textContent = labelBackup;
-    snapCountdownActive = false;
-    snapBtn.disabled = !stream;
-    startBtn.disabled = false;
-    ctl.forEach(function (el) { el.disabled = false; });
+    if (!exiting) {
+      snapBtn.classList.remove('snap-saving');
+      snapBtn.removeAttribute('aria-busy');
+      snapBtn.textContent = labelBackup;
+      snapCountdownActive = false;
+      snapBtn.disabled = !stream;
+      startBtn.disabled = false;
+      ctl.forEach(function (el) { el.disabled = false; });
+    }
   }
 });
 </script>
