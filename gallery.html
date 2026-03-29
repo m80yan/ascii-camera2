@@ -67,12 +67,54 @@
   .photo-time { font-size: 10px; opacity: 0.4; letter-spacing: 1px; white-space: nowrap; }
   .delete-btn { background: transparent; border: none; color: #ff4444; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 10px; cursor: pointer; opacity: 0.5; letter-spacing: 1px; padding: 0; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
   .delete-btn:hover { opacity: 1; }
-  #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 100; align-items: center; justify-content: center; padding: 24px; cursor: zoom-out; }
+  #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 100; align-items: center; justify-content: center; padding: 24px; cursor: default; }
   #lightbox.open { display: flex; }
-  #lightbox-inner { max-width: 90vw; max-height: 90vh; overflow: auto; background: #000; border: 1px solid rgba(0,255,65,0.2); border-radius: 4px; padding: 16px; }
-  #lightbox-pre { font-family: monospace, ui-monospace, "Courier New", monospace; letter-spacing: 0; white-space: pre; margin: 0; display: inline-block; width: max-content; max-width: 100%; line-height: 1; }
-  #lightbox-close { position: fixed; top: 20px; right: 24px; background: transparent; border: 1px solid rgba(0,255,65,0.3); color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; padding: 4px 12px; cursor: pointer; letter-spacing: 2px; }
-  #lightbox-close:hover { background: rgba(0,255,65,0.1); }
+  #lightbox-inner {
+    max-width: 90vw;
+    max-height: 90vh;
+    background: #000;
+    border: 1px solid rgba(0,255,65,0.2);
+    border-radius: 4px;
+    padding: 16px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  #lightbox-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    cursor: default;
+  }
+  #lightbox-pre { font-family: monospace, ui-monospace, "Courier New", monospace; letter-spacing: 0; white-space: pre; margin: 0; display: inline-block; width: max-content; max-width: 100%; line-height: 1; cursor: default; }
+  #lightbox-footer {
+    flex-shrink: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 14px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0,255,65,0.12);
+  }
+  #lightbox-close, #lightbox-copy {
+    background: transparent;
+    border: 1px solid rgba(0,255,65,0.35);
+    color: #00ff41;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 11px;
+    padding: 6px 16px;
+    cursor: pointer;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  #lightbox-close:hover, #lightbox-copy:hover { background: rgba(0,255,65,0.1); }
   #confirm-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 200; align-items: center; justify-content: center; }
   #confirm-modal.open { display: flex; }
   #confirm-box { background: #111; border: 1px solid rgba(255,68,68,0.4); border-radius: 4px; padding: 28px 32px; text-align: center; }
@@ -165,8 +207,8 @@
           <span class="upload-ctl-label">Resolution</span>
           <select id="upload-cols" aria-label="Resolution">
             <option value="80">80</option>
-            <option value="100">100</option>
-            <option value="120" selected>120</option>
+            <option value="100" selected>100</option>
+            <option value="120">120</option>
           </select>
         </div>
         <div class="upload-ctl">
@@ -194,8 +236,15 @@
   </div>
 </div>
 <div id="lightbox">
-  <button type="button" id="lightbox-close">Close</button>
-  <div id="lightbox-inner"><pre id="lightbox-pre"></pre></div>
+  <div id="lightbox-inner">
+    <div id="lightbox-scroll">
+      <pre id="lightbox-pre"></pre>
+    </div>
+    <div id="lightbox-footer">
+      <button type="button" id="lightbox-close">Close</button>
+      <button type="button" id="lightbox-copy">Copy ASCII</button>
+    </div>
+  </div>
 </div>
 <div id="confirm-modal">
   <div id="confirm-box">
@@ -369,7 +418,7 @@ function renderUploadPreview() {
     uploadPreviewPre.textContent = '';
     return '';
   }
-  const cols = parseInt(uploadCols.value, 10) || 120;
+  const cols = parseInt(uploadCols.value, 10) || 100;
   const ascii = imageToAscii(uploadSrcImg, cols, getUploadAspectNumber(), getUploadCharSet());
   uploadPreviewPre.textContent = ascii;
   uploadPreviewPre.style.color = uploadColor.value;
@@ -449,7 +498,7 @@ function openLightbox(photo) {
   lightbox.classList.add('open');
   requestAnimationFrame(function () {
     const maxW = Math.min(window.innerWidth * 0.88, 960) - 48;
-    const maxH = window.innerHeight * 0.78 - 48;
+    const maxH = window.innerHeight * 0.78 - 48 - 72;
     const BASE = 10;
     lightboxPre.style.fontSize = BASE + 'px';
     void lightboxPre.offsetWidth;
@@ -463,6 +512,46 @@ function openLightbox(photo) {
 }
 lightbox.addEventListener('click', (e) => { if (e.target === lightbox) lightbox.classList.remove('open'); });
 document.getElementById('lightbox-close').addEventListener('click', () => lightbox.classList.remove('open'));
+
+/**
+ * 将灯箱内当前 ASCII 文本写入剪贴板（含旧浏览器回退）。
+ * @returns {Promise<void>}
+ */
+async function copyLightboxAscii() {
+  const text = lightboxPre.textContent || '';
+  const btn = document.getElementById('lightbox-copy');
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    if (btn) {
+      const prev = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(function () { btn.textContent = prev; }, 2000);
+    }
+  } catch (err) {
+    console.error(err);
+    if (btn) {
+      const prev = btn.textContent;
+      btn.textContent = 'Failed';
+      setTimeout(function () { btn.textContent = prev; }, 2000);
+    }
+  }
+}
+document.getElementById('lightbox-copy').addEventListener('click', function (e) {
+  e.stopPropagation();
+  copyLightboxAscii();
+});
 function promptDelete(i) { pendingDeleteIndex = i; confirmModal.classList.add('open'); }
 document.getElementById('confirm-cancel').addEventListener('click', () => { confirmModal.classList.remove('open'); pendingDeleteIndex = null; });
 document.getElementById('confirm-yes').addEventListener('click', () => { confirmModal.classList.remove('open'); if (pendingDeleteIndex !== null) deletePhoto(pendingDeleteIndex); pendingDeleteIndex = null; });

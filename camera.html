@@ -100,9 +100,9 @@
     outline-offset: 2px;
   }
   .flash-switch-label { line-height: 1; }
-  /* 中间区域伸展，底部四控件始终在视口底部且不随分辨率切换抖动 */
+  /* 取景与四控件同一列：控件紧跟取景框下方，不靠视口底对齐 */
   .cam-growing {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-height: 80px;
     display: flex;
     flex-direction: column;
@@ -122,8 +122,8 @@
     margin-left: auto;
     margin-right: auto;
     margin-bottom: 0;
-    margin-top: auto;
-    padding-top: 8px;
+    margin-top: 12px;
+    padding-top: 0;
     align-items: start;
     flex-shrink: 0;
     box-sizing: border-box;
@@ -244,7 +244,6 @@
 <canvas id="canvas"></canvas>
 <div id="ascii-wrap"><pre id="ascii-out">[ Click "Start Camera" to begin ]</pre></div>
 <div id="saved-msg">Saved</div>
-</div>
 <div class="cam-controls-grid">
   <label class="ctl-stack cc-left">
     <span class="ctl-label">Style</span>
@@ -270,8 +269,8 @@
     <span class="ctl-label">Resolution</span>
     <select id="resPicker">
       <option value="80">80</option>
-      <option value="100">100</option>
-      <option value="120" selected>120</option>
+      <option value="100" selected>100</option>
+      <option value="120">120</option>
     </select>
   </label>
   <label class="ctl-stack cc-left">
@@ -284,6 +283,7 @@
       <option value="1:1" selected>1:1</option>
     </select>
   </label>
+</div>
 </div>
 </div>
 
@@ -404,7 +404,7 @@ function invalidateAsciiCellMetrics() {
  * 取景框 `#ascii-wrap` 最小高度：按 **3:4 竖屏** 所需行数（自拍竖屏时最高），避免切换 Aspect 时高度抖动。
  */
 function updateAsciiWrapMinHeight() {
-  const cols = parseInt(resPicker.value, 10) || 120;
+  const cols = parseInt(resPicker.value, 10) || 100;
   const { cellAspect, lineHeightPx } = getAsciiCellMetrics();
   const rows34 = Math.max(1, Math.round((cols * cellAspect) / (3 / 4)));
   const innerPx = rows34 * lineHeightPx;
@@ -490,7 +490,7 @@ function toAscii(cols) {
 }
 
 function render() {
-  out.textContent = toAscii(parseInt(resPicker.value, 10) || 120);
+  out.textContent = toAscii(parseInt(resPicker.value, 10) || 100);
   animId = requestAnimationFrame(render);
 }
 
@@ -661,7 +661,7 @@ startBtn.addEventListener('click', async () => {
  */
 snapBtn.addEventListener('click', async () => {
   if (!stream || snapCountdownActive) return;
-  const cols = parseInt(resPicker.value, 10) || 120;
+  const cols = parseInt(resPicker.value, 10) || 100;
   const labelBackup = snapBtn.textContent;
   const ctl = [densityPicker, colorPicker, resPicker, aspectPicker];
   snapCountdownActive = true;
