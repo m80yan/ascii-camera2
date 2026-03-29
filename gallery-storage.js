@@ -6,6 +6,13 @@
   var MAX_USER_PHOTOS = 24;
 
   /**
+   * Camera 新标签页向 `window.opener`（嵌入中的 Gallery）同步作品时使用的 `postMessage` 类型。
+   * 用于绕过第三方 iframe 与顶层标签页的存储分区（Storage Partitioning）隔离。
+   * @type {string}
+   */
+  var GALLERY_PREPEND_MESSAGE_TYPE = 'ASCII_CAMERA_GALLERY_PREPEND';
+
+  /**
    * 内置 5 张示例 ASCII（所有访客可见）；`isDefault` 表示不可从本机列表删除。
    * 来自 samples/sheep.txt、car.txt、rex.txt、et.txt、selfie.txt（RTF）解析；更新后请运行：node scripts/build-gallery-defaults.js
    * @type {Array<{ascii:string,color:string,time:number,isDefault:boolean}>}
@@ -123,6 +130,7 @@
 
   global.AsciiCameraGalleryStorage = {
     STORAGE_KEY: STORAGE_KEY,
+    GALLERY_PREPEND_MESSAGE_TYPE: GALLERY_PREPEND_MESSAGE_TYPE,
     DEFAULT_GALLERY_PHOTOS: DEFAULT_GALLERY_PHOTOS,
     loadUserPhotos: loadUserPhotos,
     saveUserPhotos: saveUserPhotos,

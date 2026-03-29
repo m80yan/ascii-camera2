@@ -497,7 +497,7 @@ function render() {
 }
 
 /**
- * 保存成功后关闭本标签。Gallery 的刷新由 `gallery.html` 的 `storage` 事件触发（Camera 写入 `localStorage` 后其它标签页自动 reload），不依赖 `opener.reload()`。
+ * 保存成功后关闭本标签。顶层场景下由 `storage` 事件刷新 Gallery；嵌入场景由 `postMessage` 写入 opener 内分区（见 `savePhoto`）。
  * 尝试将焦点还给 `opener` 以便用户看到正在刷新的 Gallery。
  * @returns {void}
  */
@@ -533,7 +533,29 @@ function refreshGalleryAndClose() {
  */
 async function savePhoto(ascii) {
   try {
-    AsciiCameraGalleryStorage.prependUserPhoto({ ascii: ascii, color: colorPicker.value, time: Date.now() });
+    var photoPayload = { ascii: ascii, color: colorPicker.value, time: Date.now() };
+    AsciiCameraGalleryStorage.prependUserPhoto(photoPayload);
+    /**
+     * Notion 等嵌入场景：Camera 在顶层新标签写入的 `localStorage` 与 iframe 内 Gallery 分区不同。
+     * 若本页由 Gallery 以 `rel="opener"` 打开，则向 opener 发同源消息，由 Gallery 写入其分区并刷新。
+     */
+    try {
+      var o = window.opener;
+      /** 仅当 Gallery 在子 frame（如 Notion 嵌入）时同步：顶层 Gallery 与 Camera 共用分区，再 postMessage 会重复写入。 */
+      if (o && o !== window && !o.closed && o !== o.top) {
+        o.postMessage(
+          {
+            type: AsciiCameraGalleryStorage.GALLERY_PREPEND_MESSAGE_TYPE,
+            photo: {
+              ascii: photoPayload.ascii,
+              color: photoPayload.color,
+              time: photoPayload.time
+            }
+          },
+          window.location.origin
+        );
+      }
+    } catch (eOpener) { /* 跨域或策略限制 */ }
     savedMsg.textContent = '已保存';
     savedMsg.style.color = '#ffd700';
     savedMsg.classList.add('show');

@@ -710,6 +710,24 @@ function renderGallery(photos) {
   });
 }
 
+/**
+ * 接收由 `camera.html`（新标签）经 `postMessage` 发来的作品，写入本窗口的 `localStorage` 并刷新网格。
+ * 与 `storage` 事件互补：跨存储分区时其它标签的 `localStorage` 变更不会触发本 iframe 的 `storage`。
+ */
+window.addEventListener('message', function (ev) {
+  if (ev.origin !== window.location.origin) return;
+  var d = ev.data;
+  if (!d || d.type !== AsciiCameraGalleryStorage.GALLERY_PREPEND_MESSAGE_TYPE || !d.photo) return;
+  var p = d.photo;
+  if (typeof p.ascii !== 'string') return;
+  AsciiCameraGalleryStorage.prependUserPhoto({
+    ascii: p.ascii,
+    color: typeof p.color === 'string' ? p.color : '#00ff41',
+    time: typeof p.time === 'number' ? p.time : Date.now()
+  });
+  refreshGallery();
+});
+
 refreshGallery();
 </script>
 </body>
