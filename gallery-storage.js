@@ -151,6 +151,7 @@
 
   global.AsciiCameraGalleryStorage = {
     STORAGE_KEY: STORAGE_KEY,
+    MAX_USER_PHOTOS: MAX_USER_PHOTOS,
     GALLERY_PREPEND_MESSAGE_TYPE: GALLERY_PREPEND_MESSAGE_TYPE,
     CAMERA_POPUP_WINDOW_NAME: CAMERA_POPUP_WINDOW_NAME,
     galleryOpenerNeedsPostMessage: galleryOpenerNeedsPostMessage,

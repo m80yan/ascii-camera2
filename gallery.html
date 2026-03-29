@@ -252,7 +252,9 @@
     </div>
   </div>
 </div>
+<script src="config.local.js"></script>
 <script src="gallery-storage.js"></script>
+<script src="gallery-cloud-sync.js"></script>
 <script>
 /** 由 `gallery-storage.js` 挂载 */
 var AsciiCameraGalleryStorage = window.AsciiCameraGalleryStorage;
@@ -594,6 +596,9 @@ async function savePhoto(ascii, color) {
   try {
     AsciiCameraGalleryStorage.prependUserPhoto({ ascii: ascii, color: color || '#00ff41', time: Date.now() });
     refreshGallery();
+    if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
+      AsciiCameraGalleryCloudSync.schedulePush();
+    }
   } catch (e) {
     console.error(e);
     alert('Could not save to browser storage (quota or private mode).');
@@ -607,6 +612,9 @@ function deletePhoto(userIndex) {
   try {
     AsciiCameraGalleryStorage.deleteUserPhotoAt(userIndex);
     refreshGallery();
+    if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
+      AsciiCameraGalleryCloudSync.schedulePush();
+    }
   } catch (e) { console.error(e); }
 }
 
@@ -744,9 +752,20 @@ window.addEventListener('message', function (ev) {
     time: typeof p.time === 'number' ? p.time : Date.now()
   });
   refreshGallery();
+  if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
+    AsciiCameraGalleryCloudSync.schedulePush();
+  }
 });
 
 refreshGallery();
+if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
+  AsciiCameraGalleryCloudSync.pullOnce().then(function (changed) {
+    if (changed) refreshGallery();
+    AsciiCameraGalleryCloudSync.startPolling(function () {
+      refreshGallery();
+    });
+  });
+}
 </script>
 </body>
 </html>

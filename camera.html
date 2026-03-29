@@ -289,7 +289,9 @@
 </div>
 </div>
 
+<script src="config.local.js"></script>
 <script src="gallery-storage.js"></script>
+<script src="gallery-cloud-sync.js"></script>
 <script>
 /** 由 `gallery-storage.js` 挂载 */
 var AsciiCameraGalleryStorage = window.AsciiCameraGalleryStorage;
@@ -559,6 +561,9 @@ async function savePhoto(ascii) {
         );
       }
     } catch (eOpener) { /* 跨域或策略限制 */ }
+    if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
+      AsciiCameraGalleryCloudSync.schedulePush();
+    }
     savedMsg.textContent = '已保存';
     savedMsg.style.color = '#ffd700';
     savedMsg.classList.add('show');
