@@ -157,6 +157,40 @@
   #upload-src-img { display: none; }
   /* 与缩略图/预览 pre 同字体，用于测量字宽÷行高 */
   .gallery-cell-probe { position: absolute; left: -9999px; top: 0; visibility: hidden; margin: 0; padding: 0; border: 0; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 6px; line-height: 6px; letter-spacing: 0; white-space: pre; }
+  /* 云端轮询状态（此前仅有后台 setInterval，无界面） */
+  #cloud-sync-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    margin: -6px 0 14px;
+    padding: 8px 12px;
+    border: 1px solid rgba(0, 255, 65, 0.2);
+    border-radius: 4px;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    line-height: 1.45;
+    color: rgba(0, 255, 65, 0.65);
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  #cloud-sync-bar.cloud-sync-bar--off { border-color: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.28); }
+  #cloud-sync-bar.cloud-sync-bar--err { border-color: rgba(255, 107, 107, 0.45); color: #ff6b6b; }
+  #cloud-sync-text { flex: 1 1 200px; min-width: 0; word-break: break-word; }
+  #cloud-sync-pull-btn {
+    flex: 0 0 auto;
+    background: transparent;
+    border: 1px solid rgba(0, 255, 65, 0.45);
+    color: #00ff41;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    cursor: pointer;
+  }
+  #cloud-sync-pull-btn:hover:not(:disabled) { background: rgba(0, 255, 65, 0.08); }
+  #cloud-sync-pull-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -168,6 +202,10 @@
     <input type="file" id="upload-input" accept="image/*">
     <a class="hdr-btn" id="live-btn" href="camera.html">Open Camera</a>
   </div>
+</div>
+<div id="cloud-sync-bar" class="cloud-sync-bar cloud-sync-bar--off" role="status" aria-live="polite">
+  <span id="cloud-sync-text"></span>
+  <button type="button" id="cloud-sync-pull-btn" class="cloud-sync-pull-btn" style="display:none">Pull from cloud</button>
 </div>
 <div id="empty" style="display:none">No photos yet.<br>Use Upload or Open Camera — your shots are saved in this browser only.</div>
 <div id="gallery"></div>
@@ -625,6 +663,71 @@ function refreshGallery() {
   renderGallery(AsciiCameraGalleryStorage.getMergedGalleryPhotos());
 }
 
+const cloudSyncBar = document.getElementById('cloud-sync-bar');
+const cloudSyncText = document.getElementById('cloud-sync-text');
+const cloudSyncPullBtn = document.getElementById('cloud-sync-pull-btn');
+
+/**
+ * @param {number} ts
+ * @returns {string}
+ */
+function formatCloudTime(ts) {
+  if (!ts) return '—';
+  try {
+    return new Date(ts).toLocaleTimeString();
+  } catch (e) {
+    return '—';
+  }
+}
+
+/**
+ * 根据 `gallery-cloud-sync` 状态更新顶栏下方同步提示（轮询在后台运行，此处仅展示状态）。
+ * @param {object} s
+ */
+function updateCloudSyncBar(s) {
+  if (!cloudSyncBar || !cloudSyncText) return;
+  cloudSyncBar.classList.remove('cloud-sync-bar--off', 'cloud-sync-bar--err');
+  if (!s || !s.enabled) {
+    cloudSyncBar.classList.add('cloud-sync-bar--off');
+    cloudSyncText.textContent =
+      'Cloud sync: off · 仅用本机存储。若已配 Vercel 环境变量，请 Redeploy 并确认构建里含有 config.local.js。';
+    if (cloudSyncPullBtn) cloudSyncPullBtn.style.display = 'none';
+    return;
+  }
+  if (cloudSyncPullBtn) cloudSyncPullBtn.style.display = '';
+  const prov = s.provider === 'supabase' ? 'Supabase' : 'JSONBin';
+  const parts = [
+    'Cloud: ' + prov + ' · 轮询约每 ' + Math.round(s.pollIntervalMs / 1000) + 's',
+    '上次拉取 ' + formatCloudTime(s.lastPullAt)
+  ];
+  if (s.lastPullOk === false) {
+    cloudSyncBar.classList.add('cloud-sync-bar--err');
+    parts.push('拉取失败: ' + (s.lastPullError || 'unknown'));
+  }
+  if (s.lastPushOk === false && s.lastPushError) {
+    parts.push('推送失败: ' + s.lastPushError);
+  }
+  cloudSyncText.textContent = parts.join(' · ');
+}
+
+if (window.AsciiCameraGalleryCloudSync) {
+  AsciiCameraGalleryCloudSync.setStatusListener(updateCloudSyncBar);
+}
+
+if (cloudSyncPullBtn) {
+  cloudSyncPullBtn.addEventListener('click', function () {
+    if (!window.AsciiCameraGalleryCloudSync || !AsciiCameraGalleryCloudSync.isEnabled()) return;
+    cloudSyncPullBtn.disabled = true;
+    AsciiCameraGalleryCloudSync.pullOnce()
+      .then(function (changed) {
+        if (changed) refreshGallery();
+      })
+      .finally(function () {
+        cloudSyncPullBtn.disabled = false;
+      });
+  });
+}
+
 function timeAgo(ts) {
   const s = Math.floor((Date.now() - ts) / 1000);
   if (s < 60) return s + 's ago';
@@ -759,12 +862,15 @@ window.addEventListener('message', function (ev) {
 
 refreshGallery();
 if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-  AsciiCameraGalleryCloudSync.pullOnce().then(function (changed) {
-    if (changed) refreshGallery();
-    AsciiCameraGalleryCloudSync.startPolling(function () {
-      refreshGallery();
+  AsciiCameraGalleryCloudSync.pullOnce()
+    .then(function (changed) {
+      if (changed) refreshGallery();
+    })
+    .finally(function () {
+      AsciiCameraGalleryCloudSync.startPolling(function () {
+        refreshGallery();
+      });
     });
-  });
 }
 </script>
 </body>

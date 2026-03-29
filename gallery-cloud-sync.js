@@ -10,7 +10,70 @@
   /** @type {number | null} */
   var pushDebounceId = null;
   var PUSH_DEBOUNCE_MS = 700;
-  var DEFAULT_POLL_MS = 22000;
+  /** 轮询间隔（毫秒）；嵌入页可较快看到相机页上传的更新 */
+  var DEFAULT_POLL_MS = 16000;
+
+  /** @type {((s: object) => void) | null} */
+  var statusListener = null;
+
+  var syncStatus = {
+    lastPullAt: 0,
+    /** @type {boolean | null} */
+    lastPullOk: null,
+    lastPullError: '',
+    lastPushAt: 0,
+    /** @type {boolean | null} */
+    lastPushOk: null,
+    lastPushError: ''
+  };
+
+  /**
+   * @returns {{
+   *   enabled: boolean,
+   *   provider: 'supabase' | 'jsonbin' | null,
+   *   lastPullAt: number,
+   *   lastPullOk: boolean | null,
+   *   lastPullError: string,
+   *   lastPushAt: number,
+   *   lastPushOk: boolean | null,
+   *   lastPushError: string,
+   *   pollIntervalMs: number
+   * }}
+   */
+  function getSyncStatus() {
+    return {
+      enabled: isEnabled(),
+      provider: getProvider(),
+      lastPullAt: syncStatus.lastPullAt,
+      lastPullOk: syncStatus.lastPullOk,
+      lastPullError: syncStatus.lastPullError,
+      lastPushAt: syncStatus.lastPushAt,
+      lastPushOk: syncStatus.lastPushOk,
+      lastPushError: syncStatus.lastPushError,
+      pollIntervalMs: DEFAULT_POLL_MS
+    };
+  }
+
+  /**
+   * @param {((s: object) => void) | null} fn
+   * @returns {void}
+   */
+  function setStatusListener(fn) {
+    statusListener = typeof fn === 'function' ? fn : null;
+    emitStatus();
+  }
+
+  /**
+   * @returns {void}
+   */
+  function emitStatus() {
+    if (typeof statusListener !== 'function') return;
+    try {
+      statusListener(getSyncStatus());
+    } catch (e) {
+      /* ignore */
+    }
+  }
 
   /**
    * @returns {'supabase' | 'jsonbin' | null}
@@ -252,7 +315,10 @@
    * @returns {Promise<boolean>} 本机用户列表是否发生变化（需刷新 UI）
    */
   function pullOnce() {
-    if (!isEnabled() || !global.AsciiCameraGalleryStorage) return Promise.resolve(false);
+    if (!isEnabled() || !global.AsciiCameraGalleryStorage) {
+      emitStatus();
+      return Promise.resolve(false);
+    }
     var max = global.AsciiCameraGalleryStorage.MAX_USER_PHOTOS || 24;
     var load = global.AsciiCameraGalleryStorage.loadUserPhotos;
     var save = global.AsciiCameraGalleryStorage.saveUserPhotos;
@@ -269,8 +335,19 @@
         }
         return false;
       })
+      .then(function (changed) {
+        syncStatus.lastPullAt = Date.now();
+        syncStatus.lastPullOk = true;
+        syncStatus.lastPullError = '';
+        emitStatus();
+        return changed;
+      })
       .catch(function (err) {
         console.warn('[gallery-cloud-sync] pull failed', err);
+        syncStatus.lastPullAt = Date.now();
+        syncStatus.lastPullOk = false;
+        syncStatus.lastPullError = err && err.message ? String(err.message) : String(err);
+        emitStatus();
         return false;
       });
   }
@@ -280,7 +357,10 @@
    * @returns {Promise<void>}
    */
   function pushFromLocal() {
-    if (!isEnabled() || !global.AsciiCameraGalleryStorage) return Promise.resolve();
+    if (!isEnabled() || !global.AsciiCameraGalleryStorage) {
+      emitStatus();
+      return Promise.resolve();
+    }
     var max = global.AsciiCameraGalleryStorage.MAX_USER_PHOTOS || 24;
     var load = global.AsciiCameraGalleryStorage.loadUserPhotos;
     var local = load();
@@ -294,8 +374,18 @@
           photos: merged
         });
       })
+      .then(function () {
+        syncStatus.lastPushAt = Date.now();
+        syncStatus.lastPushOk = true;
+        syncStatus.lastPushError = '';
+        emitStatus();
+      })
       .catch(function (err) {
         console.warn('[gallery-cloud-sync] push failed', err);
+        syncStatus.lastPushAt = Date.now();
+        syncStatus.lastPushOk = false;
+        syncStatus.lastPushError = err && err.message ? String(err.message) : String(err);
+        emitStatus();
       });
   }
 
@@ -347,6 +437,8 @@
   global.AsciiCameraGalleryCloudSync = {
     isEnabled: isEnabled,
     getProvider: getProvider,
+    getSyncStatus: getSyncStatus,
+    setStatusListener: setStatusListener,
     pullOnce: pullOnce,
     pushFromLocal: pushFromLocal,
     schedulePush: schedulePush,

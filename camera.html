@@ -561,8 +561,11 @@ async function savePhoto(ascii) {
         );
       }
     } catch (eOpener) { /* 跨域或策略限制 */ }
+    /**
+     * 须立即推送到云端：若仅用 schedulePush(700ms)，标签页会在定时器触发前关闭，嵌入 Gallery 永远拉不到新图。
+     */
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-      AsciiCameraGalleryCloudSync.schedulePush();
+      await AsciiCameraGalleryCloudSync.pushFromLocal();
     }
     savedMsg.textContent = '已保存';
     savedMsg.style.color = '#ffd700';
