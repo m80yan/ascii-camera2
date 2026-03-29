@@ -503,11 +503,10 @@ function render() {
 }
 
 /**
- * 保存成功后关闭本标签。顶层场景下由 `storage` 事件刷新 Gallery；嵌入场景由 `postMessage` 写入 opener 内分区（见 `savePhoto`）。
- * 尝试将焦点还给 `opener` 以便用户看到正在刷新的 Gallery。
+ * 保存成功后不关闭本窗口：由 Gallery 用固定 `window.open` 名打开的相机页可反复使用；仅尝试把焦点还给嵌入里的 Gallery。
  * @returns {void}
  */
-function refreshGalleryAndClose() {
+function focusOpenerGalleryAfterSave() {
   try {
     var o = window.opener;
     if (o && o !== window && !o.closed) {
@@ -518,24 +517,12 @@ function refreshGalleryAndClose() {
       }
     }
   } catch (e2) {}
-  try {
-    window.close();
-  } catch (e3) {}
-  setTimeout(function () {
-    try {
-      if (document.visibilityState === 'visible') {
-        window.location.replace('gallery.html');
-      }
-    } catch (e4) {
-      window.location.replace('gallery.html');
-    }
-  }, 120);
 }
 
 /**
  * 将当前帧写入本机浏览器存储（与 Gallery 共用 `gallery-storage.js`）。
  * @param {string} ascii ASCII 内容
- * @returns {Promise<boolean>} 保存成功并已触发关闭/跳转流程时为 true
+ * @returns {Promise<boolean>} 保存成功时为 true
  */
 async function savePhoto(ascii) {
   try {
@@ -571,7 +558,10 @@ async function savePhoto(ascii) {
     savedMsg.style.color = '#ffd700';
     savedMsg.classList.add('show');
     await new Promise(function (r) { setTimeout(r, 400); });
-    refreshGalleryAndClose();
+    focusOpenerGalleryAfterSave();
+    setTimeout(function () {
+      savedMsg.classList.remove('show');
+    }, 2200);
     return true;
   } catch (e) {
     console.error(e);
