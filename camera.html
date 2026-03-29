@@ -219,7 +219,7 @@
 <h1>ASCII Camera</h1>
 <div id="iframe-hint" class="iframe-hint" hidden role="note">
   <span class="iframe-hint-text">Embedded preview blocks camera — use a full browser tab.</span>
-  <a id="iframe-open-tab" class="iframe-hint-link" href="#" target="_blank" rel="opener">Open in new tab</a>
+  <a id="iframe-open-tab" class="iframe-hint-link" href="#">Open in new tab</a>
 </div>
 <div class="cam-actions">
   <button id="startBtn" type="button">Start Camera</button>
@@ -341,12 +341,16 @@ function isEmbeddedInFrame() {
  * @returns {Window | null}
  */
 function openCameraInNewTab() {
-  return window.open(window.location.href, '_blank');
+  var name = AsciiCameraGalleryStorage.CAMERA_POPUP_WINDOW_NAME || 'ascii_camera_notion_embed';
+  return window.open(window.location.href, name);
 }
 
 if (iframeHint && iframeOpenTab && isEmbeddedInFrame()) {
   iframeHint.hidden = false;
-  iframeOpenTab.href = window.location.href;
+  iframeOpenTab.addEventListener('click', function (e) {
+    e.preventDefault();
+    openCameraInNewTab();
+  });
 }
 
 /** @type {boolean} */
@@ -541,8 +545,7 @@ async function savePhoto(ascii) {
      */
     try {
       var o = window.opener;
-      /** 仅当 Gallery 在子 frame（如 Notion 嵌入）时同步：顶层 Gallery 与 Camera 共用分区，再 postMessage 会重复写入。 */
-      if (o && o !== window && !o.closed && o !== o.top) {
+      if (o && o !== window && !o.closed && AsciiCameraGalleryStorage.galleryOpenerNeedsPostMessage(o)) {
         o.postMessage(
           {
             type: AsciiCameraGalleryStorage.GALLERY_PREPEND_MESSAGE_TYPE,

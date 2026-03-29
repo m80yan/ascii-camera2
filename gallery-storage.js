@@ -13,6 +13,27 @@
   var GALLERY_PREPEND_MESSAGE_TYPE = 'ASCII_CAMERA_GALLERY_PREPEND';
 
   /**
+   * 从嵌入页打开 Camera 时使用的 `window.open` 窗口名；避免 `_blank` 被宿主注入 `noopener` 导致丢失 `opener`。
+   * @type {string}
+   */
+  var CAMERA_POPUP_WINDOW_NAME = 'ascii_camera_notion_embed';
+
+  /**
+   * 是否应向 `window.opener` 发 `postMessage` 同步作品（嵌入 iframe 内 Gallery ↔ 顶层 Camera 的存储分区不同）。
+   * @param {Window | null | undefined} openerWin `camera` 页上的 `window.opener`
+   * @returns {boolean}
+   */
+  function galleryOpenerNeedsPostMessage(openerWin) {
+    if (!openerWin || openerWin.closed) return false;
+    try {
+      if (openerWin === openerWin.top) return false;
+      return true;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  /**
    * 内置 5 张示例 ASCII（所有访客可见）；`isDefault` 表示不可从本机列表删除。
    * 来自 samples/sheep.txt、car.txt、rex.txt、et.txt、selfie.txt（RTF）解析；更新后请运行：node scripts/build-gallery-defaults.js
    * @type {Array<{ascii:string,color:string,time:number,isDefault:boolean}>}
@@ -131,6 +152,8 @@
   global.AsciiCameraGalleryStorage = {
     STORAGE_KEY: STORAGE_KEY,
     GALLERY_PREPEND_MESSAGE_TYPE: GALLERY_PREPEND_MESSAGE_TYPE,
+    CAMERA_POPUP_WINDOW_NAME: CAMERA_POPUP_WINDOW_NAME,
+    galleryOpenerNeedsPostMessage: galleryOpenerNeedsPostMessage,
     DEFAULT_GALLERY_PHOTOS: DEFAULT_GALLERY_PHOTOS,
     loadUserPhotos: loadUserPhotos,
     saveUserPhotos: saveUserPhotos,

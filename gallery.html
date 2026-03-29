@@ -166,7 +166,7 @@
   <div id="header-actions">
     <button class="hdr-btn" id="upload-btn" type="button">Upload Image</button>
     <input type="file" id="upload-input" accept="image/*">
-    <a class="hdr-btn" id="live-btn" href="camera.html" target="_blank" rel="opener">Open Camera</a>
+    <a class="hdr-btn" id="live-btn" href="camera.html">Open Camera</a>
   </div>
 </div>
 <div id="empty" style="display:none">No photos yet.<br>Use Upload or Open Camera — your shots are saved in this browser only.</div>
@@ -709,6 +709,24 @@ function renderGallery(photos) {
     });
   });
 }
+
+/**
+ * Notion / 发布页常为 `target=_blank` 链接注入 `noopener`，新标签无 `window.opener`，嵌入画廊收不到 `postMessage`。
+ * 在用户手势内 `window.open` + 固定窗口名可保留 opener，与 `camera.html` 内 `CAMERA_POPUP_WINDOW_NAME` 一致。
+ */
+(function setupOpenCameraButton() {
+  var liveBtn = document.getElementById('live-btn');
+  if (!liveBtn) return;
+  var camUrl = new URL('camera.html', window.location.href).href;
+  var winName = AsciiCameraGalleryStorage.CAMERA_POPUP_WINDOW_NAME || 'ascii_camera_notion_embed';
+  liveBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    var w = window.open(camUrl, winName);
+    if (!w) {
+      window.alert('无法打开相机窗口。请在浏览器中允许本站弹出窗口，否则嵌入页无法把拍摄结果同步回画廊。');
+    }
+  });
+})();
 
 /**
  * 接收由 `camera.html`（新标签）经 `postMessage` 发来的作品，写入本窗口的 `localStorage` 并刷新网格。
