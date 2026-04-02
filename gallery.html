@@ -6,7 +6,41 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0a0a0a; color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; min-height: 100vh; padding: 24px 16px; }
-  #header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+  /**
+   * 顶栏随页面滚动保持吸顶；半透明 + 背景模糊，底部 `::after` 做渐变穿透模糊过渡。
+   * 负 margin 抵消 `body` 内边距，使条带横向贴边；`padding` 保持与原内容对齐。
+   */
+  #header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    margin: -24px -16px 20px -16px;
+    padding: 24px 16px 16px 16px;
+    background: rgba(10, 10, 10, 0.62);
+    backdrop-filter: blur(16px) saturate(1.15);
+    -webkit-backdrop-filter: blur(16px) saturate(1.15);
+    border-bottom: 1px solid rgba(0, 255, 65, 0.1);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  }
+  #header::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -14px;
+    height: 14px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(10, 10, 10, 0.45) 0%, rgba(10, 10, 10, 0) 100%);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.95) 0%, transparent 100%);
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.95) 0%, transparent 100%);
+  }
   /** 与 `#header` 的 margin 无关，仅标题行内对齐绿点 */
   h1 { font-size: 14px; letter-spacing: 4px; text-transform: uppercase; opacity: 0.6; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   #gallery-cloud-dot-wrap { display: none; align-items: center; flex-shrink: 0; }
