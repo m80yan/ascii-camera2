@@ -521,25 +521,56 @@ lightbox.addEventListener('click', (e) => { if (e.target === lightbox) lightbox.
 document.getElementById('lightbox-close').addEventListener('click', () => lightbox.classList.remove('open'));
 
 /**
- * 将灯箱内当前 ASCII 文本写入剪贴板（含旧浏览器回退）。
+ * 用隐藏 textarea + `execCommand('copy')` 复制（不依赖 Clipboard API）。
+ * Notion 等嵌入场景下父页常未通过 Permissions Policy 授予 `clipboard-write`，
+ * `navigator.clipboard.writeText` 会抛 `NotAllowedError`，此路径在多数浏览器仍可用。
+ * @param {string} text
+ * @returns {boolean}
+ */
+function copyAsciiViaExecCommand(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.left = '0';
+  ta.style.top = '0';
+  ta.style.opacity = '0';
+  ta.style.pointerEvents = 'none';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  var ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch (e) {
+    ok = false;
+  }
+  document.body.removeChild(ta);
+  return ok;
+}
+
+/**
+ * 将灯箱内当前 ASCII 文本写入剪贴板：优先 Clipboard API，失败则回退 execCommand。
  * @returns {Promise<void>}
  */
 async function copyLightboxAscii() {
   const text = lightboxPre.textContent || '';
   const btn = document.getElementById('lightbox-copy');
+  var copied = false;
   try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text);
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      } catch (e) {
+        copied = copyAsciiViaExecCommand(text);
+      }
     } else {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.position = 'fixed';
-      ta.style.left = '-9999px';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
+      copied = copyAsciiViaExecCommand(text);
+    }
+    if (!copied) {
+      throw new Error('copy failed');
     }
     if (btn) {
       const prev = btn.textContent;

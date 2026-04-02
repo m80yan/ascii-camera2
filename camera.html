@@ -549,10 +549,10 @@ async function savePhoto(ascii) {
       }
     } catch (eOpener) { /* 跨域或策略限制 */ }
     /**
-     * 须立即推送到云端：若仅用 schedulePush(700ms)，标签页会在定时器触发前关闭，嵌入 Gallery 永远拉不到新图。
+     * 云端推送不 await：避免 Notion/网络下 fetch 挂起或极慢时卡住「已保存」。嵌入里 Gallery 的拉取仍靠轮询合并。
      */
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-      await AsciiCameraGalleryCloudSync.pushFromLocal();
+      AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
     }
     savedMsg.textContent = '已保存';
     savedMsg.style.color = '#ffd700';
