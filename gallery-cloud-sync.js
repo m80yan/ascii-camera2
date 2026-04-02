@@ -210,14 +210,14 @@
    */
   function fetchRemotePayloadSupabase() {
     var c = getSupabaseConfig();
+    /** @note 勿加 `&_=Date.now()`：PostgREST 会把 `_` 当成列名解析，导致 400 failed to parse filter。 */
     var url =
       c.url +
       '/rest/v1/' +
       encodeURIComponent(c.table) +
       '?id=eq.' +
       encodeURIComponent(c.rowId) +
-      '&select=body&_=' +
-      Date.now();
+      '&select=body';
     return fetch(url, {
       method: 'GET',
       cache: 'no-store',
