@@ -157,6 +157,10 @@
   #upload-src-img { display: none; }
   /* 与缩略图/预览 pre 同字体，用于测量字宽÷行高 */
   .gallery-cell-probe { position: absolute; left: -9999px; top: 0; visibility: hidden; margin: 0; padding: 0; border: 0; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 6px; line-height: 6px; letter-spacing: 0; white-space: pre; }
+  #cloud-status-banner { display: none; font-size: 11px; line-height: 1.65; letter-spacing: 0.4px; color: #ffb84d; max-width: 760px; margin: 0 auto 18px; padding: 12px 14px; border: 1px solid rgba(255,184,77,0.35); border-radius: 4px; background: rgba(255,184,77,0.06); box-sizing: border-box; width: 100%; }
+  #cloud-sync-status { display: none; font-size: 10px; line-height: 1.55; letter-spacing: 0.35px; max-width: 760px; margin: 0 auto 14px; padding: 8px 12px; border-radius: 4px; box-sizing: border-box; width: 100%; }
+  #cloud-sync-status.cloud-sync-ok { color: rgba(0,255,65,0.55); border: 1px solid rgba(0,255,65,0.22); background: rgba(0,255,65,0.04); }
+  #cloud-sync-status.cloud-sync-err { color: #ff9999; border: 1px solid rgba(255,100,100,0.35); background: rgba(255,68,68,0.06); }
 </style>
 </head>
 <body>
@@ -169,6 +173,8 @@
     <a class="hdr-btn" id="live-btn" href="camera.html">Open Camera</a>
   </div>
 </div>
+<p id="cloud-status-banner" role="status"></p>
+<p id="cloud-sync-status" role="status" aria-live="polite"></p>
 <div id="empty" style="display:none">No photos yet.<br>Use Upload or Open Camera — your shots are saved in this browser only.</div>
 <div id="gallery"></div>
 <img id="upload-src-img" alt="">
@@ -252,7 +258,21 @@
     </div>
   </div>
 </div>
-<script src="config.local.js"></script>
+<script>
+/** `config.local.js` 由 `npm run build`（inject-config）生成；若未加载或为空则无法启用云端 */
+window.__ASCII_CONFIG_SCRIPT_ERROR__ = false;
+(function () {
+  /**
+   * https 下用 `/config.local.js`：避免 gallery 不在站点根目录时相对路径请求到错误 URL（此时直接打开根路径 config 仍正常，易误判）。
+   * file:// 下用相对路径，便于本地直接打开 HTML。
+   */
+  var src =
+    typeof location !== 'undefined' && location.protocol === 'file:'
+      ? 'config.local.js'
+      : '/config.local.js';
+  document.write('<script src="' + src + '" onerror="window.__ASCII_CONFIG_SCRIPT_ERROR__=true"><\/script>');
+})();
+</script>
 <script src="gallery-storage.js"></script>
 <script src="gallery-cloud-sync.js"></script>
 <script>
@@ -683,7 +703,7 @@ async function savePhoto(ascii, color) {
     AsciiCameraGalleryStorage.prependUserPhoto(photo);
     refreshGallery();
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-      AsciiCameraGalleryCloudSync.schedulePush();
+      AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
     }
     mirrorUserPhotoToFirstPartyTab(photo);
   } catch (e) {
@@ -700,7 +720,7 @@ function deletePhoto(userIndex) {
     AsciiCameraGalleryStorage.deleteUserPhotoAt(userIndex);
     refreshGallery();
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-      AsciiCameraGalleryCloudSync.schedulePush();
+      AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
     }
   } catch (e) { console.error(e); }
 }
@@ -840,7 +860,7 @@ window.addEventListener('message', function (ev) {
   });
   refreshGallery();
   if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-    AsciiCameraGalleryCloudSync.schedulePush();
+    AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
   }
 });
 
@@ -861,18 +881,107 @@ window.addEventListener('message', function (ev) {
   });
 })();
 
-refreshGallery();
-if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-  AsciiCameraGalleryCloudSync.pullOnce()
-    .then(function (changed) {
-      if (changed) refreshGallery();
-    })
-    .finally(function () {
-      AsciiCameraGalleryCloudSync.startPolling(function () {
+/**
+ * 未配置 Supabase/JSONBin 时提示；已配置则先拉取远端再渲染，便于多人共享同一作品墙。
+ */
+(function setupCloudBannerAndBoot() {
+  var banner = document.getElementById('cloud-status-banner');
+  var syncLine = document.getElementById('cloud-sync-status');
+  if (banner) {
+    if (!window.AsciiCameraGalleryCloudSync || !AsciiCameraGalleryCloudSync.isEnabled()) {
+      banner.style.display = 'block';
+      var su = (window.ASCII_CAMERA_SUPABASE_URL && String(window.ASCII_CAMERA_SUPABASE_URL).trim()) || '';
+      var sk = (window.ASCII_CAMERA_SUPABASE_ANON_KEY && String(window.ASCII_CAMERA_SUPABASE_ANON_KEY).trim()) || '';
+      var isFile = false;
+      try {
+        isFile = window.location.protocol === 'file:';
+      } catch (e) {
+        isFile = false;
+      }
+      if (window.__ASCII_CONFIG_SCRIPT_ERROR__) {
+        banner.textContent =
+          '未加载到 config.local.js（404 或路径错误）。静态站必须在构建时执行 npm run build 以生成该文件并随站点部署。若用 file:// 直接打开本地 HTML，请改用本地服务器（如 npx serve .）或通过已部署的 https 地址访问。';
+      } else if (!su && !sk) {
+        if (isFile) {
+          banner.textContent =
+            '本地云端未填写：已加载同目录下的 config.local.js，但 ASCII_CAMERA_SUPABASE_URL / ASCII_CAMERA_SUPABASE_ANON_KEY 仍为空。请用编辑器打开项目根目录的 config.local.js，把 Supabase 的 Project URL 与 anon public key 填进引号中（可复制 config.local.example.js 改名后填写）；或在终端 export 两变量后执行 npm run build 重新生成。与 Vercel 无关。';
+        } else {
+          banner.textContent =
+            '云端未注入：config.local.js 已加载，但 ASCII_CAMERA_SUPABASE_URL / ASCII_CAMERA_SUPABASE_ANON_KEY 为空。请在 Vercel → Settings → Environment Variables 添加这两条（名称完全一致），勾选 Production，保存后对项目执行一次 Redeploy，使构建日志出现「云端: supabase」。切勿只改变量不重新构建。详见 DEPLOY.md。';
+        }
+      } else {
+        banner.textContent =
+          '云端未配置：作品只存在本机浏览器。请检查环境变量是否拼写错误或被截断；数据库与 RLS 见 DEPLOY.md。';
+      }
+      if (syncLine) syncLine.style.display = 'none';
+    } else {
+      banner.style.display = 'none';
+      if (syncLine) {
+        syncLine.style.display = 'block';
+        syncLine.className = 'cloud-sync-ok';
+        syncLine.textContent = '云端：正在连接 Supabase…';
+      }
+      if (window.AsciiCameraGalleryCloudSync && typeof AsciiCameraGalleryCloudSync.setStatusListener === 'function') {
+        AsciiCameraGalleryCloudSync.setStatusListener(function (s) {
+          var el = document.getElementById('cloud-sync-status');
+          if (!el) return;
+          el.style.display = 'block';
+          var pullErr = s.lastPullError && String(s.lastPullError);
+          var pushErr = s.lastPushError && String(s.lastPushError);
+          if (pullErr) {
+            el.className = 'cloud-sync-err';
+            el.textContent =
+              '云端拉取失败（他人作品可能不显示）：' +
+              pullErr +
+              '。若在 Notion 嵌入内，请检查浏览器是否拦截对 *.supabase.co 的请求（开发者工具 → Network）。';
+            return;
+          }
+          if (pushErr) {
+            el.className = 'cloud-sync-err';
+            el.textContent =
+              '云端上传失败（他人看不到你刚保存的图）：' +
+              pushErr +
+              '。请核对 Supabase 表名、RLS、以及 anon key 是否完整。';
+            return;
+          }
+          if (s.lastPullOk === true && (s.lastPushOk === true || s.lastPushOk === null)) {
+            el.className = 'cloud-sync-ok';
+            el.textContent =
+              '云端同步已连通（Supabase）。全员需打开同一嵌入页；保存后几秒内应出现在他人界面。';
+            return;
+          }
+          el.className = 'cloud-sync-ok';
+          el.textContent = '云端：已配置，正在同步…';
+        });
+      }
+    }
+  }
+
+  function pollIntervalMs() {
+    try {
+      return window.self !== window.top ? 5000 : 12000;
+    } catch (e) {
+      return 5000;
+    }
+  }
+
+  if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
+    AsciiCameraGalleryCloudSync.pullOnce()
+      .then(function () {
         refreshGallery();
+      })
+      .catch(function () {
+        refreshGallery();
+      })
+      .finally(function () {
+        AsciiCameraGalleryCloudSync.startPolling(function () {
+          refreshGallery();
+        }, pollIntervalMs());
       });
-    });
-}
+  } else {
+    refreshGallery();
+  }
+})();
 </script>
 </body>
 </html>

@@ -12,7 +12,15 @@
 </head>
 <body>
 <pre>·</pre>
-<script src="config.local.js"></script>
+<script>
+(function () {
+  var src =
+    typeof location !== 'undefined' && location.protocol === 'file:'
+      ? 'config.local.js'
+      : '/config.local.js';
+  document.write('<script src="' + src + '"><\/script>');
+})();
+</script>
 <script src="gallery-storage.js"></script>
 <script src="gallery-cloud-sync.js"></script>
 <script>
@@ -45,7 +53,7 @@
         time: typeof p.time === 'number' ? p.time : Date.now()
       });
       if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-        AsciiCameraGalleryCloudSync.schedulePush();
+        AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
       }
     } catch (err) {
       console.warn('[gallery-bridge] prepend failed', err);

@@ -178,6 +178,34 @@
   }
 
   /**
+   * 从 fetch Response 读取可读错误信息（Supabase 常返回 JSON `{ message, hint }`）。
+   * @param {Response} res
+   * @returns {Promise<string>}
+   */
+  function readFetchErrorText(res) {
+    return res
+      .clone()
+      .text()
+      .then(function (t) {
+        var s = (t || '').trim().slice(0, 400);
+        if (!s) return '';
+        try {
+          var j = JSON.parse(s);
+          if (j && typeof j === 'object') {
+            var msg = j.message || j.error_description || j.hint || '';
+            if (typeof msg === 'string' && msg) return msg.slice(0, 300);
+          }
+        } catch (e) {
+          /* 非 JSON */
+        }
+        return s;
+      })
+      .catch(function () {
+        return '';
+      });
+  }
+
+  /**
    * @returns {Promise<{ schema: number, updatedAt: number, photos: Array<{ascii:string,color?:string,time?:number}> }>}
    */
   function fetchRemotePayloadSupabase() {
@@ -200,7 +228,13 @@
       }
     })
       .then(function (res) {
-        if (!res.ok) return Promise.reject(new Error('Supabase GET ' + res.status));
+        if (!res.ok) {
+          return readFetchErrorText(res).then(function (detail) {
+            return Promise.reject(
+              new Error('Supabase GET ' + res.status + (detail ? ': ' + detail : ''))
+            );
+          });
+        }
         return res.json();
       })
       .then(function (rows) {
@@ -208,6 +242,13 @@
           return { schema: 1, updatedAt: 0, photos: [] };
         }
         var body = rows[0].body;
+        if (typeof body === 'string') {
+          try {
+            body = JSON.parse(body);
+          } catch (e) {
+            body = {};
+          }
+        }
         return normalizePayloadRecord(body);
       });
   }
@@ -234,7 +275,13 @@
       },
       body: JSON.stringify([{ id: c.rowId, body: payload }])
     }).then(function (res) {
-      if (!res.ok) return Promise.reject(new Error('Supabase upsert ' + res.status));
+      if (!res.ok) {
+        return readFetchErrorText(res).then(function (detail) {
+          return Promise.reject(
+            new Error('Supabase upsert ' + res.status + (detail ? ': ' + detail : ''))
+          );
+        });
+      }
     });
   }
 
