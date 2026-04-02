@@ -627,7 +627,12 @@ document.getElementById('lightbox-copy').addEventListener('click', function (e) 
 });
 function promptDelete(i) { pendingDeleteIndex = i; confirmModal.classList.add('open'); }
 document.getElementById('confirm-cancel').addEventListener('click', () => { confirmModal.classList.remove('open'); pendingDeleteIndex = null; });
-document.getElementById('confirm-yes').addEventListener('click', () => { confirmModal.classList.remove('open'); if (pendingDeleteIndex !== null) deletePhoto(pendingDeleteIndex); pendingDeleteIndex = null; });
+document.getElementById('confirm-yes').addEventListener('click', () => {
+  confirmModal.classList.remove('open');
+  var idx = pendingDeleteIndex;
+  pendingDeleteIndex = null;
+  if (idx !== null) void deletePhoto(idx);
+});
 
 /**
  * 将字符串转为可安全插入 HTML 的文本（避免 `&`、`<` 等破坏 DOM 或产生 XSS）。
@@ -729,15 +734,18 @@ async function savePhoto(ascii, color) {
 
 /**
  * @param {number} userIndex `getMergedGalleryPhotos` 中用户条目的下标（仅前 `getUserPhotoCount()` 项可删）
+ * @returns {Promise<void>}
  */
-function deletePhoto(userIndex) {
+async function deletePhoto(userIndex) {
   try {
     AsciiCameraGalleryStorage.deleteUserPhotoAt(userIndex);
     refreshGallery();
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-      AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
+      await AsciiCameraGalleryCloudSync.pushFromLocal();
     }
-  } catch (e) { console.error(e); }
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 /**

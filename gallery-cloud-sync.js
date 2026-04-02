@@ -10,6 +10,10 @@
   /** @type {number | null} */
   var pushDebounceId = null;
   var PUSH_DEBOUNCE_MS = 700;
+  /** 上传进行中时跳过拉取，避免旧远端合并把本机已删作品写回。 */
+  var pushInFlight = false;
+  /** 最近一次成功 PUT 的 `updatedAt`；拉取到更旧快照时丢弃，避免慢 GET 晚到覆盖删除。 */
+  var lastSuccessfulPushUpdatedAt = 0;
   /** 轮询间隔（毫秒）；嵌入页可较快看到相机页上传的更新 */
   var DEFAULT_POLL_MS = 16000;
 
@@ -366,16 +370,30 @@
       emitStatus();
       return Promise.resolve(false);
     }
+    if (pushInFlight) {
+      return Promise.resolve(false);
+    }
     var max = global.AsciiCameraGalleryStorage.MAX_USER_PHOTOS || 24;
     var load = global.AsciiCameraGalleryStorage.loadUserPhotos;
     var save = global.AsciiCameraGalleryStorage.saveUserPhotos;
     var before = JSON.stringify(load());
     return fetchRemotePayload()
       .then(function (remote) {
+        if (pushInFlight) {
+          return false;
+        }
+        var rUpdated =
+          remote && typeof remote.updatedAt === 'number' ? remote.updatedAt : 0;
+        if (lastSuccessfulPushUpdatedAt > rUpdated) {
+          return false;
+        }
         var remotePhotos = remote && remote.photos ? remote.photos : [];
         var local = load();
         var merged = mergePhotoLists(local, remotePhotos, max);
         var after = JSON.stringify(merged);
+        if (pushInFlight) {
+          return false;
+        }
         if (before !== after) {
           save(merged);
           return true;
@@ -400,7 +418,7 @@
   }
 
   /**
-   * 读取本机与云端合并后写回远端（读-改-写）。
+   * 将当前本机列表写回远端（不再先 GET 再合并，否则删除后旧远端会把已删作品并回 PUT）。
    * @returns {Promise<void>}
    */
   function pushFromLocal() {
@@ -410,18 +428,17 @@
     }
     var max = global.AsciiCameraGalleryStorage.MAX_USER_PHOTOS || 24;
     var load = global.AsciiCameraGalleryStorage.loadUserPhotos;
+    pushInFlight = true;
     var local = load();
-    return fetchRemotePayload()
-      .then(function (remote) {
-        var remotePhotos = remote && remote.photos ? remote.photos : [];
-        var merged = mergePhotoLists(local, remotePhotos, max);
-        return putRemotePayload({
-          schema: 1,
-          updatedAt: Date.now(),
-          photos: merged
-        });
-      })
+    var photos = mergePhotoLists(local, [], max);
+    var pushUpdatedAt = Date.now();
+    return putRemotePayload({
+      schema: 1,
+      updatedAt: pushUpdatedAt,
+      photos: photos
+    })
       .then(function () {
+        lastSuccessfulPushUpdatedAt = pushUpdatedAt;
         syncStatus.lastPushAt = Date.now();
         syncStatus.lastPushOk = true;
         syncStatus.lastPushError = '';
@@ -433,6 +450,9 @@
         syncStatus.lastPushOk = false;
         syncStatus.lastPushError = err && err.message ? String(err.message) : String(err);
         emitStatus();
+      })
+      .finally(function () {
+        pushInFlight = false;
       });
   }
 
