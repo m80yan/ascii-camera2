@@ -620,16 +620,72 @@ function getAsciiDims(ascii) {
 }
 
 /**
+ * 是否处于第三方页面（如 Notion）的 iframe 嵌入中。
+ * @returns {boolean}
+ */
+function isEmbeddedInThirdPartyFrame() {
+  try {
+    return window.self !== window.top;
+  } catch (e) {
+    return true;
+  }
+}
+
+/**
+ * 嵌入分区保存后，向同源顶层弹窗写入同一作品，使「View original」打开的 `gallery.html` 能立即看到同一列表。
+ * 依赖用户手势内 `window.open`（与 Add to gallery 同一次点击）。
+ * @param {{ ascii: string, color: string, time: number }} photo
+ * @returns {void}
+ */
+function mirrorUserPhotoToFirstPartyTab(photo) {
+  if (!isEmbeddedInThirdPartyFrame()) return;
+  var url = new URL('gallery-bridge.html', window.location.href).href;
+  var w = window.open(url, '_blank', 'width=1,height=1,left=0,top=0');
+  if (!w) {
+    console.warn('[gallery] first-party mirror popup blocked — open in new tab may miss this photo until cloud sync.');
+    return;
+  }
+  var payload = {
+    type: AsciiCameraGalleryStorage.GALLERY_MIRROR_TOP_MESSAGE_TYPE,
+    photo: { ascii: photo.ascii, color: photo.color, time: photo.time }
+  };
+  var sent = false;
+  var n = 0;
+  var t = setInterval(function () {
+    if (sent || !w || w.closed) {
+      if (sent || n > 100) clearInterval(t);
+      return;
+    }
+    try {
+      w.postMessage(payload, window.location.origin);
+      sent = true;
+      clearInterval(t);
+      setTimeout(function () {
+        try { w.close(); } catch (e) {}
+      }, 500);
+    } catch (e) {
+      /* 弹窗尚未就绪时重试 */
+    }
+    n++;
+  }, 40);
+  setTimeout(function () {
+    clearInterval(t);
+  }, 5000);
+}
+
+/**
  * @param {string} ascii ASCII 内容
  * @param {string} [color] 颜色
  */
 async function savePhoto(ascii, color) {
   try {
-    AsciiCameraGalleryStorage.prependUserPhoto({ ascii: ascii, color: color || '#00ff41', time: Date.now() });
+    const photo = { ascii: ascii, color: color || '#00ff41', time: Date.now() };
+    AsciiCameraGalleryStorage.prependUserPhoto(photo);
     refreshGallery();
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
       AsciiCameraGalleryCloudSync.schedulePush();
     }
+    mirrorUserPhotoToFirstPartyTab(photo);
   } catch (e) {
     console.error(e);
     alert('Could not save to browser storage (quota or private mode).');
@@ -787,6 +843,23 @@ window.addEventListener('message', function (ev) {
     AsciiCameraGalleryCloudSync.schedulePush();
   }
 });
+
+/**
+ * Notion 嵌入：从顶层 Camera 返回本 iframe 时触发 `focus`，额外拉取云端，减轻仅依赖轮询的延迟。
+ */
+(function setupEmbedFocusPull() {
+  if (!window.AsciiCameraGalleryCloudSync || !AsciiCameraGalleryCloudSync.isEnabled()) return;
+  try {
+    if (window.self === window.top) return;
+  } catch (e) {
+    return;
+  }
+  window.addEventListener('focus', function () {
+    AsciiCameraGalleryCloudSync.pullOnce().then(function (changed) {
+      if (changed) refreshGallery();
+    });
+  });
+})();
 
 refreshGallery();
 if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {

@@ -13,6 +13,13 @@
   var GALLERY_PREPEND_MESSAGE_TYPE = 'ASCII_CAMERA_GALLERY_PREPEND';
 
   /**
+   * 嵌入 iframe 内保存作品后，由 `gallery-bridge.html`（顶层弹窗）接收 `postMessage`，写入首方分区的 `localStorage`。
+   * 与 `GALLERY_PREPEND_MESSAGE_TYPE`（Camera → 嵌入 Gallery）互补。
+   * @type {string}
+   */
+  var GALLERY_MIRROR_TOP_MESSAGE_TYPE = 'ASCII_CAMERA_MIRROR_FIRST_PARTY';
+
+  /**
    * 从嵌入页打开 Camera 时使用的 `window.open` 窗口名；避免 `_blank` 被宿主注入 `noopener` 导致丢失 `opener`。
    * @type {string}
    */
@@ -153,6 +160,7 @@
     STORAGE_KEY: STORAGE_KEY,
     MAX_USER_PHOTOS: MAX_USER_PHOTOS,
     GALLERY_PREPEND_MESSAGE_TYPE: GALLERY_PREPEND_MESSAGE_TYPE,
+    GALLERY_MIRROR_TOP_MESSAGE_TYPE: GALLERY_MIRROR_TOP_MESSAGE_TYPE,
     CAMERA_POPUP_WINDOW_NAME: CAMERA_POPUP_WINDOW_NAME,
     galleryOpenerNeedsPostMessage: galleryOpenerNeedsPostMessage,
     DEFAULT_GALLERY_PHOTOS: DEFAULT_GALLERY_PHOTOS,

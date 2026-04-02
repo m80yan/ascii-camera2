@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASCII Camera · first-party mirror</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { min-height: 100%; background: #000; color: #00ff41; font: 11px ui-monospace, monospace; }
+  body { display: flex; align-items: center; justify-content: center; padding: 8px; opacity: 0.2; }
+</style>
+</head>
+<body>
+<pre>·</pre>
+<script src="config.local.js"></script>
+<script src="gallery-storage.js"></script>
+<script src="gallery-cloud-sync.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /**
+   * 顶层首方分区写入：由嵌入中的 `gallery.html` 在「Add to gallery」同一次点击里 `window.open` 本页并 `postMessage`。
+   * 仅处理一条消息即关闭，避免与 iframe 分区重复写入同一逻辑照片多次。
+   */
+  var done = false;
+  var S = window.AsciiCameraGalleryStorage;
+  var T = S && S.GALLERY_MIRROR_TOP_MESSAGE_TYPE;
+  if (!T) {
+    console.error('[gallery-bridge] AsciiCameraGalleryStorage missing');
+    try { window.close(); } catch (e) {}
+    return;
+  }
+  window.addEventListener('message', function (ev) {
+    if (done || ev.origin !== window.location.origin) return;
+    var d = ev.data;
+    if (!d || d.type !== T || !d.photo) return;
+    done = true;
+    var p = d.photo;
+    if (typeof p.ascii !== 'string') return;
+    try {
+      S.prependUserPhoto({
+        ascii: p.ascii,
+        color: typeof p.color === 'string' ? p.color : '#00ff41',
+        time: typeof p.time === 'number' ? p.time : Date.now()
+      });
+      if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
+        AsciiCameraGalleryCloudSync.schedulePush();
+      }
+    } catch (err) {
+      console.warn('[gallery-bridge] prepend failed', err);
+    }
+    setTimeout(function () {
+      try { window.close(); } catch (e2) {}
+    }, 80);
+  });
+})();
+</script>
+</body>
+</html>
