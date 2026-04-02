@@ -7,7 +7,22 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0a0a0a; color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; min-height: 100vh; padding: 24px 16px; }
   #header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
-  h1 { font-size: 14px; letter-spacing: 4px; text-transform: uppercase; opacity: 0.6; }
+  /** 与 `#header` 的 margin 无关，仅标题行内对齐绿点 */
+  h1 { font-size: 14px; letter-spacing: 4px; text-transform: uppercase; opacity: 0.6; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #gallery-cloud-dot-wrap { display: none; align-items: center; flex-shrink: 0; }
+  /** 与 `camera.html` `#status .status-dot` 同 8px；呼吸动画区别于常亮 */
+  .gallery-cloud-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #00ff41;
+    flex-shrink: 0;
+    animation: gallery-cloud-dot-breathe 2.2s ease-in-out infinite;
+  }
+  @keyframes gallery-cloud-dot-breathe {
+    0%, 100% { opacity: 0.45; transform: scale(0.92); box-shadow: 0 0 6px rgba(0, 255, 65, 0.45); }
+    50% { opacity: 1; transform: scale(1); box-shadow: 0 0 10px rgba(0, 255, 65, 0.9); }
+  }
   #header-actions { display: flex; gap: 10px; align-items: center; }
   .hdr-btn { background: transparent; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; padding: 6px 16px; cursor: pointer; letter-spacing: 2px; text-transform: uppercase; transition: background 0.2s; text-decoration: none; display: inline-block; border: none; }
   #upload-btn { border: 1px solid #00ff41; color: #00ff41; }
@@ -158,15 +173,15 @@
   /* 与缩略图/预览 pre 同字体，用于测量字宽÷行高 */
   .gallery-cell-probe { position: absolute; left: -9999px; top: 0; visibility: hidden; margin: 0; padding: 0; border: 0; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 6px; line-height: 6px; letter-spacing: 0; white-space: pre; }
   #cloud-status-banner { display: none; font-size: 11px; line-height: 1.65; letter-spacing: 0.4px; color: #ffb84d; max-width: 760px; margin: 0 auto 18px; padding: 12px 14px; border: 1px solid rgba(255,184,77,0.35); border-radius: 4px; background: rgba(255,184,77,0.06); box-sizing: border-box; width: 100%; }
+  /** 成功态用标题旁呼吸绿点；此处仅展示拉取/上传错误 */
   #cloud-sync-status { display: none; font-size: 10px; line-height: 1.55; letter-spacing: 0.35px; max-width: 760px; margin: 0 auto 14px; padding: 8px 12px; border-radius: 4px; box-sizing: border-box; width: 100%; }
-  #cloud-sync-status.cloud-sync-ok { color: rgba(0,255,65,0.55); border: 1px solid rgba(0,255,65,0.22); background: rgba(0,255,65,0.04); }
   #cloud-sync-status.cloud-sync-err { color: #ff9999; border: 1px solid rgba(255,100,100,0.35); background: rgba(255,68,68,0.06); }
 </style>
 </head>
 <body>
 <pre id="gallery-cell-probe" class="gallery-cell-probe" aria-hidden="true">&#x2588;</pre>
 <div id="header">
-  <h1>Gallery</h1>
+  <h1><span>Gallery</span><span id="gallery-cloud-dot-wrap" aria-hidden="true"><span class="gallery-cloud-dot"></span></span></h1>
   <div id="header-actions">
     <button class="hdr-btn" id="upload-btn" type="button">Upload Image</button>
     <input type="file" id="upload-input" accept="image/*">
@@ -887,9 +902,11 @@ window.addEventListener('message', function (ev) {
 (function setupCloudBannerAndBoot() {
   var banner = document.getElementById('cloud-status-banner');
   var syncLine = document.getElementById('cloud-sync-status');
+  var dotWrap = document.getElementById('gallery-cloud-dot-wrap');
   if (banner) {
     if (!window.AsciiCameraGalleryCloudSync || !AsciiCameraGalleryCloudSync.isEnabled()) {
       banner.style.display = 'block';
+      if (dotWrap) dotWrap.style.display = 'none';
       var su = (window.ASCII_CAMERA_SUPABASE_URL && String(window.ASCII_CAMERA_SUPABASE_URL).trim()) || '';
       var sk = (window.ASCII_CAMERA_SUPABASE_ANON_KEY && String(window.ASCII_CAMERA_SUPABASE_ANON_KEY).trim()) || '';
       var isFile = false;
@@ -916,19 +933,19 @@ window.addEventListener('message', function (ev) {
       if (syncLine) syncLine.style.display = 'none';
     } else {
       banner.style.display = 'none';
+      if (dotWrap) dotWrap.style.display = 'inline-flex';
       if (syncLine) {
-        syncLine.style.display = 'block';
-        syncLine.className = 'cloud-sync-ok';
-        syncLine.textContent = '云端：正在连接 Supabase…';
+        syncLine.style.display = 'none';
+        syncLine.textContent = '';
       }
       if (window.AsciiCameraGalleryCloudSync && typeof AsciiCameraGalleryCloudSync.setStatusListener === 'function') {
         AsciiCameraGalleryCloudSync.setStatusListener(function (s) {
           var el = document.getElementById('cloud-sync-status');
           if (!el) return;
-          el.style.display = 'block';
           var pullErr = s.lastPullError && String(s.lastPullError);
           var pushErr = s.lastPushError && String(s.lastPushError);
           if (pullErr) {
+            el.style.display = 'block';
             el.className = 'cloud-sync-err';
             el.textContent =
               '云端拉取失败（他人作品可能不显示）：' +
@@ -937,6 +954,7 @@ window.addEventListener('message', function (ev) {
             return;
           }
           if (pushErr) {
+            el.style.display = 'block';
             el.className = 'cloud-sync-err';
             el.textContent =
               '云端上传失败（他人看不到你刚保存的图）：' +
@@ -944,14 +962,8 @@ window.addEventListener('message', function (ev) {
               '。请核对 Supabase 表名、RLS、以及 anon key 是否完整。';
             return;
           }
-          if (s.lastPullOk === true && (s.lastPushOk === true || s.lastPushOk === null)) {
-            el.className = 'cloud-sync-ok';
-            el.textContent =
-              '云端同步已连通（Supabase）。全员需打开同一嵌入页；保存后几秒内应出现在他人界面。';
-            return;
-          }
-          el.className = 'cloud-sync-ok';
-          el.textContent = '云端：已配置，正在同步…';
+          el.style.display = 'none';
+          el.textContent = '';
         });
       }
     }
