@@ -17,7 +17,7 @@ const supabaseTable = process.env.ASCII_CAMERA_SUPABASE_TABLE || 'ascii_gallery_
 const supabaseRowId = process.env.ASCII_CAMERA_SUPABASE_ROW_ID || 'default';
 
 const content =
-  '/** 构建生成 — 见 DEPLOY.md */\n' +
+  '/** Generated at build — see DEPLOY.md */\n' +
   'window.ASCII_CAMERA_SUPABASE_URL = ' +
   JSON.stringify(supabaseUrl) +
   ';\n' +
@@ -43,4 +43,4 @@ fs.writeFileSync(path.join(root, 'config.local.js'), content, 'utf8');
 var mode = 'off';
 if (supabaseUrl && supabaseAnon) mode = 'supabase';
 else if (binId && apiKey) mode = 'jsonbin';
-console.log('[inject-config] 已生成 config.local.js（云端: ' + mode + '）');
+console.log('[inject-config] wrote config.local.js (cloud: ' + mode + ')');

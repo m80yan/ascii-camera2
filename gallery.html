@@ -899,7 +899,9 @@ function renderGallery(photos) {
     e.preventDefault();
     var w = window.open(camUrl, winName);
     if (!w) {
-      window.alert('无法打开相机窗口。请在浏览器中允许本站弹出窗口，否则嵌入页无法把拍摄结果同步回画廊。');
+      window.alert(
+        'Could not open the camera window. Allow pop-ups for this site so the embed can sync snaps back to the gallery.'
+      );
     }
   });
 })();
@@ -963,18 +965,18 @@ window.addEventListener('message', function (ev) {
       }
       if (window.__ASCII_CONFIG_SCRIPT_ERROR__) {
         banner.textContent =
-          '未加载到 config.local.js（404 或路径错误）。静态站必须在构建时执行 npm run build 以生成该文件并随站点部署。若用 file:// 直接打开本地 HTML，请改用本地服务器（如 npx serve .）或通过已部署的 https 地址访问。';
+          'Failed to load config.local.js (404 or wrong path). Run npm run build for static hosting so this file is generated and deployed. If you opened HTML via file://, use a local server (e.g. npx serve .) or your deployed https URL.';
       } else if (!su && !sk) {
         if (isFile) {
           banner.textContent =
-            '本地云端未填写：已加载同目录下的 config.local.js，但 ASCII_CAMERA_SUPABASE_URL / ASCII_CAMERA_SUPABASE_ANON_KEY 仍为空。请用编辑器打开项目根目录的 config.local.js，把 Supabase 的 Project URL 与 anon public key 填进引号中（可复制 config.local.example.js 改名后填写）；或在终端 export 两变量后执行 npm run build 重新生成。与 Vercel 无关。';
+            'Cloud not configured locally: config.local.js loaded but ASCII_CAMERA_SUPABASE_URL / ASCII_CAMERA_SUPABASE_ANON_KEY are empty. Edit config.local.js in the project root with your Supabase Project URL and anon public key (see config.local.example.js), or export both variables and run npm run build again. Not applicable to Vercel when using file:// only.';
         } else {
           banner.textContent =
-            '云端未注入：config.local.js 已加载，但 ASCII_CAMERA_SUPABASE_URL / ASCII_CAMERA_SUPABASE_ANON_KEY 为空。请在 Vercel → Settings → Environment Variables 添加这两条（名称完全一致），勾选 Production，保存后对项目执行一次 Redeploy，使构建日志出现「云端: supabase」。切勿只改变量不重新构建。详见 DEPLOY.md。';
+            'Cloud not injected: config.local.js loaded but ASCII_CAMERA_SUPABASE_URL / ASCII_CAMERA_SUPABASE_ANON_KEY are empty. Add both under Vercel → Settings → Environment Variables (exact names), enable Production, save, then Redeploy so the build picks them up. Changing variables without a new build is not enough. See DEPLOY.md.';
         }
       } else {
         banner.textContent =
-          '云端未配置：作品只存在本机浏览器。请检查环境变量是否拼写错误或被截断；数据库与 RLS 见 DEPLOY.md。';
+          'Cloud not configured: photos stay in this browser only. Check env var names for typos or truncation; database and RLS are in DEPLOY.md.';
       }
       if (syncLine) syncLine.style.display = 'none';
     } else {
@@ -994,18 +996,18 @@ window.addEventListener('message', function (ev) {
             el.style.display = 'block';
             el.className = 'cloud-sync-err';
             el.textContent =
-              '云端拉取失败（他人作品可能不显示）：' +
+              "Cloud pull failed (others' work may be missing): " +
               pullErr +
-              '。若在 Notion 嵌入内，请检查浏览器是否拦截对 *.supabase.co 的请求（开发者工具 → Network）。';
+              '. In Notion embeds, check whether requests to *.supabase.co are blocked (DevTools → Network).';
             return;
           }
           if (pushErr) {
             el.style.display = 'block';
             el.className = 'cloud-sync-err';
             el.textContent =
-              '云端上传失败（他人看不到你刚保存的图）：' +
+              'Cloud push failed (others may not see what you saved): ' +
               pushErr +
-              '。请核对 Supabase 表名、RLS、以及 anon key 是否完整。';
+              '. Check Supabase table name, RLS, and that the anon key is complete.';
             return;
           }
           el.style.display = 'none';

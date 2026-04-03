@@ -1,7 +1,7 @@
 {
   "name": "ascii-camera",
   "private": true,
-  "description": "ASCII Camera + Gallery（本地 localStorage；内置 4 张示例图）",
+  "description": "ASCII Camera + Gallery (localStorage + built-in sample art)",
   "scripts": {
     "build": "node scripts/inject-config.js"
   }

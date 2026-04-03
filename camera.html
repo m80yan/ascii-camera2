@@ -306,6 +306,8 @@ var AsciiCameraGalleryStorage = window.AsciiCameraGalleryStorage;
 
 /** 测量失败时的字宽/行高比回退值 */
 const CELL_ASPECT_FALLBACK = 0.55;
+/** 分辨率列数上限；取景框高度按此固定，切换 Resolution 时 Style/Color/Resolution/Aspect 不随画布上下跳。 */
+const MAX_RES_COLS = 120;
 /** @type {{ cellAspect: number, lineHeightPx: number } | null} */
 let asciiCellMetricsCache = null;
 /** 使用块符与点阵，减轻笔画字符宽高差带来的形变 */
@@ -417,18 +419,27 @@ function invalidateAsciiCellMetrics() {
 }
 
 /**
- * 取景框 `#ascii-wrap` 最小高度：按 **3:4 竖屏** 所需行数（自拍竖屏时最高），避免切换 Aspect 时高度抖动。
+ * 取景框 `#ascii-wrap` 最小高度：恒按 **MAX_RES_COLS × 3:4** 所需行数（列数与竖屏比例下最高），
+ * 与当前 Resolution 无关，使下方四控件视觉锚点不变。
  */
 function updateAsciiWrapMinHeight() {
-  const cols = parseInt(resPicker.value, 10) || 100;
+  const cols = MAX_RES_COLS;
   const { cellAspect, lineHeightPx } = getAsciiCellMetrics();
   const rows34 = Math.max(1, Math.round((cols * cellAspect) / (3 / 4)));
   const innerPx = rows34 * lineHeightPx;
   asciiWrap.style.minHeight = (innerPx + 24) + 'px';
 }
 
+/**
+ * @returns {number} 当前选取的列数，限制在 1 … MAX_RES_COLS
+ */
+function getCols() {
+  const n = parseInt(resPicker.value, 10);
+  if (!Number.isFinite(n)) return 100;
+  return Math.min(MAX_RES_COLS, Math.max(1, n));
+}
+
 colorPicker.addEventListener('change', () => { out.style.color = colorPicker.value; });
-resPicker.addEventListener('change', updateAsciiWrapMinHeight);
 window.addEventListener('resize', function () {
   invalidateAsciiCellMetrics();
   updateAsciiWrapMinHeight();
@@ -506,7 +517,7 @@ function toAscii(cols) {
 }
 
 function render() {
-  out.textContent = toAscii(parseInt(resPicker.value, 10) || 100);
+  out.textContent = toAscii(getCols());
   animId = requestAnimationFrame(render);
 }
 
@@ -557,12 +568,12 @@ async function savePhoto(ascii) {
       }
     } catch (eOpener) { /* 跨域或策略限制 */ }
     /**
-     * 云端推送不 await：避免 Notion/网络下 fetch 挂起或极慢时卡住「已保存」。嵌入里 Gallery 的拉取仍靠轮询合并。
+     * Do not await cloud push: avoids blocking the SAVED message on slow fetch in Notion; gallery still merges via polling.
      */
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
       AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
     }
-    savedMsg.textContent = '已保存';
+    savedMsg.textContent = 'SAVED';
     savedMsg.style.color = '#ffd700';
     savedMsg.classList.add('show');
     await new Promise(function (r) { setTimeout(r, 400); });
@@ -573,7 +584,7 @@ async function savePhoto(ascii) {
     return true;
   } catch (e) {
     console.error(e);
-    savedMsg.textContent = '保存失败：存储空间不足或已禁用';
+    savedMsg.textContent = 'Save failed: storage full, unavailable, or disabled.';
     savedMsg.style.color = '#ff4444';
     savedMsg.classList.add('show');
     setTimeout(function () { savedMsg.classList.remove('show'); }, 2500);
@@ -628,11 +639,11 @@ startBtn.addEventListener('click', async () => {
 });
 
 /**
- * 3 秒倒计时（按钮显示 3→2→1）；勾选 Flash 时仅在最后 1 秒（显示「1」）全白遮罩；结束后抓拍并写入画廊。
+ * 3s countdown (button shows 3→2→1); with Flash, full white overlay only on the last second; then snap and save to gallery.
  */
 snapBtn.addEventListener('click', async () => {
   if (!stream || snapCountdownActive) return;
-  const cols = parseInt(resPicker.value, 10) || 100;
+  const cols = getCols();
   const labelBackup = 'Snap & Save';
   const ctl = [densityPicker, colorPicker, resPicker, aspectPicker];
   snapCountdownActive = true;
@@ -652,7 +663,7 @@ snapBtn.addEventListener('click', async () => {
     snapBtn.classList.add('snap-saving');
     snapBtn.disabled = true;
     snapBtn.setAttribute('aria-busy', 'true');
-    savedMsg.textContent = '保存中…';
+    savedMsg.textContent = 'Saving…';
     savedMsg.style.color = '#aaa';
     savedMsg.classList.add('show');
     exiting = await savePhoto(toAscii(cols));
