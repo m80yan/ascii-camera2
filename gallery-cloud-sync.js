@@ -136,25 +136,40 @@
 
   /**
    * 合并两组用户照片：按 time 降序，去重，截断为 max 条。
-   * @param {Array<{ascii:string,color?:string,time?:number}>} a
-   * @param {Array<{ascii:string,color?:string,time?:number}>} b
+   * `a` 为本机列表（无 `mine` 时视为本人）；`b` 为远端（无 `mine` 时视为非本人）。
+   * @param {Array<{ascii:string,color?:string,time?:number,mine?:boolean}>} a
+   * @param {Array<{ascii:string,color?:string,time?:number,mine?:boolean}>} b
    * @param {number} max
-   * @returns {Array<{ascii:string,color:string,time:number}>}
+   * @returns {Array<{ascii:string,color:string,time:number,mine:boolean}>}
    */
   function mergePhotoLists(a, b, max) {
     var map = Object.create(null);
-    function add(p) {
+    /**
+     * @param {{ ascii?: string, color?: string, time?: number, mine?: boolean }} p
+     * @param {boolean} fromRemote 仅经远端进入本机的条目一律 `mine: false`（忽略 JSON 中的 `mine`，避免他机把他人作品当成本地可 REMOVE）。
+     */
+    function add(p, fromRemote) {
       if (!p || typeof p.ascii !== 'string') return;
       var k = photoDedupeKey(p);
       if (!k || map[k]) return;
+      var mine = fromRemote
+        ? false
+        : typeof p.mine === 'boolean'
+          ? p.mine
+          : true;
       map[k] = {
         ascii: p.ascii,
         color: typeof p.color === 'string' ? p.color : '#00ff41',
-        time: typeof p.time === 'number' ? p.time : Date.now()
+        time: typeof p.time === 'number' ? p.time : Date.now(),
+        mine: mine
       };
     }
-    (a || []).forEach(add);
-    (b || []).forEach(add);
+    (a || []).forEach(function (pr) {
+      add(pr, false);
+    });
+    (b || []).forEach(function (pr) {
+      add(pr, true);
+    });
     var out = Object.keys(map).map(function (k) {
       return map[k];
     });

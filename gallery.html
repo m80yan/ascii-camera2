@@ -300,10 +300,10 @@
 </div>
 <div id="confirm-modal">
   <div id="confirm-box">
-    <p>Delete this photo?<br>This cannot be undone.</p>
+    <p>Remove this photo?<br>This cannot be undone.</p>
     <div id="confirm-actions">
       <button type="button" class="modal-btn" id="confirm-cancel">Cancel</button>
-      <button type="button" class="modal-btn" id="confirm-yes">Delete</button>
+      <button type="button" class="modal-btn" id="confirm-yes">Remove</button>
     </div>
   </div>
 </div>
@@ -767,11 +767,14 @@ async function savePhoto(ascii, color) {
 }
 
 /**
- * @param {number} userIndex `getMergedGalleryPhotos` 中用户条目的下标（仅前 `getUserPhotoCount()` 项可删）
+ * @param {number} userIndex `getMergedGalleryPhotos` 中用户条目的下标（仅 `mine !== false` 的项可移除）
  * @returns {Promise<void>}
  */
 async function deletePhoto(userIndex) {
   try {
+    var userList = AsciiCameraGalleryStorage.loadUserPhotos();
+    if (userIndex < 0 || userIndex >= userList.length) return;
+    if (userList[userIndex].mine === false) return;
     AsciiCameraGalleryStorage.deleteUserPhotoAt(userIndex);
     refreshGallery();
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
@@ -841,7 +844,7 @@ function setupGalleryThumbResize() {
 }
 
 /**
- * @param {Array<{ascii:string,color?:string,time?:number}>} photos 列表
+ * @param {Array<{ascii:string,color?:string,time?:number,mine?:boolean,isDefault?:boolean}>} photos 列表
  */
 function renderGallery(photos) {
   photosCache = photos;
@@ -851,8 +854,9 @@ function renderGallery(photos) {
   gallery.innerHTML = photos.map((p, i) => {
     const isUser = i < userCount;
     const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
-    const delHtml = isUser
-      ? '<button type="button" class="delete-btn" data-user-index="' + i + '">Delete</button>'
+    const canRemove = isUser && p.mine !== false;
+    const delHtml = canRemove
+      ? '<button type="button" class="delete-btn" data-user-index="' + i + '">Remove</button>'
       : '<span class="photo-time" style="opacity:0.25">—</span>';
     return (
       '<div class="photo-card" data-index="' + i + '">' +

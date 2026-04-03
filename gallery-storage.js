@@ -100,14 +100,15 @@
   }
 
   /**
-   * @param {{ascii:string,color?:string,time?:number}} photo 单条用户作品
+   * @param {{ascii:string,color?:string,time?:number,mine?:boolean}} photo 单条用户作品；默认 `mine: true` 表示本机发布（可 REMOVE）。
    */
   function prependUserPhoto(photo) {
     var list = loadUserPhotos();
     list.unshift({
       ascii: String(photo.ascii || ''),
       color: photo.color || '#00ff41',
-      time: typeof photo.time === 'number' ? photo.time : Date.now()
+      time: typeof photo.time === 'number' ? photo.time : Date.now(),
+      mine: typeof photo.mine === 'boolean' ? photo.mine : true
     });
     while (list.length > MAX_USER_PHOTOS) list.pop();
     try {
@@ -139,12 +140,12 @@
 
   /**
    * 用户照片（新在前）+ 5 张内置示例（所有访客可见）。
-   * @returns {Array<{ascii:string,color?:string,time:number,isDefault?:boolean}>}
+   * @returns {Array<{ascii:string,color?:string,time:number,mine?:boolean,isDefault?:boolean}>}
    */
   function getMergedGalleryPhotos() {
     var user = loadUserPhotos();
     var defs = DEFAULT_GALLERY_PHOTOS.map(function (p) {
-      return { ascii: p.ascii, color: p.color, time: p.time, isDefault: true };
+      return { ascii: p.ascii, color: p.color, time: p.time, isDefault: true, mine: false };
     });
     return user.concat(defs);
   }
