@@ -57,7 +57,7 @@ create policy "ascii_photo_likes_delete" on public.ascii_photo_likes
   for delete using (true);
 ```
 
-（上述 RLS 允许匿名读写整表，**anon key 也会出现在前端包里**——仅适合非敏感作品列表；勿存隐私数据。点赞表同样可被任意客户端读写，仅作轻量互动计数，**不是**用户认证体系。）
+（上述 RLS 允许匿名读写整表，**anon key 也会出现在前端包里**——仅适合非敏感作品列表；勿存隐私数据。点赞表同样可被任意客户端读写，仅作轻量互动计数，**不是**用户认证体系。画廊删除作品且 **PUT 同步成功** 后，会按 `photo_id` 删除 `ascii_photo_likes` 中对应行。）
 
 2. **Project Settings → API**：复制 **Project URL** 与 **anon public** key。
 

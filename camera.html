@@ -112,7 +112,7 @@
   .ctl-stack { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .ctl-stack .ctl-label { font-size: 11px; opacity: 0.5; letter-spacing: 1px; text-align: left; width: 100%; }
   .ctl-stack select { width: 100%; min-width: 0; }
-  /* 底部 2×2：左列与 Stop Camera 同宽，右列与 Snap & Save 同宽，与顶栏对齐居中（Frame 48091624） */
+  /* 底部 2×2：左列与 Stop Camera 同宽，右列与 Take Photo 同宽，与顶栏对齐居中（Frame 48091624） */
   .cam-controls-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -138,7 +138,7 @@
   button { background: transparent; border: 1px solid #00ff41; color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; cursor: pointer; letter-spacing: 2px; text-transform: uppercase; transition: background 0.2s; }
   button:hover { background: rgba(0,255,65,0.1); }
   button:disabled { opacity: 0.3; cursor: not-allowed; }
-  #snapBtn { border-color: #ffd700; color: #ffd700; }
+  #snapBtn { border-color: #ffd700; color: #ffd700; text-transform: none; letter-spacing: 1px; }
   #snapBtn:hover:not(:disabled) { background: rgba(255,215,0,0.1); }
   /* 保存中：保持 disabled，略提高对比度以便阅读 SAVING… */
   #snapBtn.snap-saving:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -223,7 +223,7 @@
 </div>
 <div class="cam-actions">
   <button id="startBtn" type="button">Start Camera</button>
-  <button id="snapBtn" type="button" disabled>Snap &amp; Save</button>
+  <button id="snapBtn" type="button" disabled>📷 Take Photo</button>
 </div>
 <div class="cam-status-row">
   <span aria-hidden="true"></span>
@@ -278,11 +278,10 @@
   <label class="ctl-stack cc-left">
     <span class="ctl-label">Aspect</span>
     <select id="aspectPicker">
-      <option value="free">Free</option>
+      <option value="1:1" selected>1:1</option>
       <option value="16:9">16:9</option>
       <option value="4:3">4:3</option>
       <option value="3:4">3:4 (Portrait)</option>
-      <option value="1:1" selected>1:1</option>
     </select>
   </label>
 </div>
@@ -335,6 +334,11 @@ const flashOverlay   = document.getElementById('flash-overlay');
 const flashToggle    = document.getElementById('flashToggle');
 const iframeHint     = document.getElementById('iframe-hint');
 const iframeOpenTab  = document.getElementById('iframe-open-tab');
+
+/** 拍照按钮就绪文案（与 HTML 初始一致） */
+const SNAP_LABEL_READY = '📷 Take Photo';
+/** 写入存储过程中按钮文案 */
+const SNAP_LABEL_SAVING = 'Saving...';
 
 /**
  * 是否在第三方 iframe 中（如 Notion embed）；跨域访问 `window.top` 会抛错，视为已嵌入。
@@ -470,7 +474,7 @@ function getAspectRatio() {
   if (v === '4:3') return 4 / 3;
   if (v === '3:4') return 3 / 4;
   if (v === '1:1') return 1;
-  return null;
+  return 1;
 }
 
 /**
@@ -539,19 +543,15 @@ function focusOpenerGalleryAfterSave() {
 }
 
 /**
- * 将当前帧写入本机浏览器存储（与 Gallery 共用 `gallery-storage.js`）。
+ * 将一帧 ASCII 写入本机存储并同步 opener / 云端（无 UI；由拍照流程控制冻结与按钮状态）。
  * @param {string} ascii ASCII 内容
- * @returns {Promise<boolean>} 保存成功时为 true
+ * @returns {Promise<boolean>} 持久化成功时为 true
  */
-async function savePhoto(ascii) {
+async function persistPhotoToGallery(ascii) {
   try {
     var photoPayload = { ascii: ascii, color: colorPicker.value, time: Date.now() };
     AsciiCameraGalleryStorage.prependUserPhoto(photoPayload);
     var savedRow = AsciiCameraGalleryStorage.loadUserPhotos()[0];
-    /**
-     * Notion 等嵌入场景：Camera 在顶层新标签写入的 `localStorage` 与 iframe 内 Gallery 分区不同。
-     * 若本页由 Gallery 以 `rel="opener"` 打开，则向 opener 发同源消息，由 Gallery 写入其分区并刷新。
-     */
     try {
       var o = window.opener;
       if (o && o !== window && !o.closed && AsciiCameraGalleryStorage.galleryOpenerNeedsPostMessage(o)) {
@@ -570,29 +570,26 @@ async function savePhoto(ascii) {
         );
       }
     } catch (eOpener) { /* 跨域或策略限制 */ }
-    /**
-     * Do not await cloud push: avoids blocking the SAVED message on slow fetch in Notion; gallery still merges via polling.
-     */
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
       AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
     }
-    savedMsg.textContent = 'SAVED';
-    savedMsg.style.color = '#ffd700';
-    savedMsg.classList.add('show');
-    await new Promise(function (r) { setTimeout(r, 400); });
-    focusOpenerGalleryAfterSave();
-    setTimeout(function () {
-      savedMsg.classList.remove('show');
-    }, 2200);
     return true;
   } catch (e) {
     console.error(e);
-    savedMsg.textContent = 'Save failed: storage full, unavailable, or disabled.';
-    savedMsg.style.color = '#ff4444';
-    savedMsg.classList.add('show');
-    setTimeout(function () { savedMsg.classList.remove('show'); }, 2500);
     return false;
   }
+}
+
+/**
+ * 恢复实时取景 RAF（冻结结束后调用；避免重复循环）。
+ * @returns {void}
+ */
+function restartLiveAsciiPreview() {
+  if (!stream) return;
+  if (animId != null) cancelAnimationFrame(animId);
+  animId = null;
+  out.style.color = colorPicker.value;
+  render();
 }
 
 function setStatusOffline() {
@@ -608,11 +605,13 @@ function setStatusLive() {
 startBtn.addEventListener('click', async () => {
   if (stream) {
     stream.getTracks().forEach(t => t.stop());
-    stream = null; cancelAnimationFrame(animId);
+    stream = null;
+    if (animId != null) cancelAnimationFrame(animId);
+    animId = null;
     startBtn.textContent = 'Start Camera';
     snapBtn.disabled = true;
     snapCountdownActive = false;
-    snapBtn.textContent = 'Snap & Save';
+    snapBtn.textContent = SNAP_LABEL_READY;
     setStatusOffline();
     out.textContent = '[ Click "Start Camera" to begin ]';
     return;
@@ -631,6 +630,7 @@ startBtn.addEventListener('click', async () => {
     video.srcObject = stream; await video.play();
     startBtn.textContent = 'Stop Camera';
     snapBtn.disabled = false;
+    snapBtn.textContent = SNAP_LABEL_READY;
     setStatusLive();
     out.style.color = colorPicker.value;
     render();
@@ -642,19 +642,17 @@ startBtn.addEventListener('click', async () => {
 });
 
 /**
- * 3s countdown (button shows 3→2→1); with Flash, full white overlay only on the last second; then snap and save to gallery.
+ * 3s 倒计时（按钮 3→2→1）；Flash 仅在最后一秒；结束后抓取一帧、冻结 `#ascii-out` 与落库内容一致，Saving… → SAVED → 恢复实时预览与连拍。
  */
 snapBtn.addEventListener('click', async () => {
   if (!stream || snapCountdownActive) return;
   const cols = getCols();
-  const labelBackup = 'Snap & Save';
   const ctl = [densityPicker, colorPicker, resPicker, aspectPicker];
   snapCountdownActive = true;
   snapBtn.disabled = true;
   startBtn.disabled = true;
   ctl.forEach(function (el) { el.disabled = true; });
   const useFlash = flashToggle.checked;
-  let exiting = false;
   try {
     for (let n = 3; n >= 1; n--) {
       snapBtn.textContent = String(n);
@@ -662,25 +660,56 @@ snapBtn.addEventListener('click', async () => {
       await sleep(1000);
       if (useFlash && n === 1) flashOverlay.classList.remove('on');
     }
-    snapBtn.textContent = 'SAVING…';
+    var capturedAscii = toAscii(cols);
+    if (animId != null) {
+      cancelAnimationFrame(animId);
+      animId = null;
+    }
+    out.textContent = capturedAscii;
+
+    snapBtn.textContent = SNAP_LABEL_SAVING;
     snapBtn.classList.add('snap-saving');
-    snapBtn.disabled = true;
     snapBtn.setAttribute('aria-busy', 'true');
-    savedMsg.textContent = 'Saving…';
+    savedMsg.textContent = SNAP_LABEL_SAVING;
     savedMsg.style.color = '#aaa';
     savedMsg.classList.add('show');
-    exiting = await savePhoto(toAscii(cols));
+
+    var ok = await persistPhotoToGallery(capturedAscii);
+
+    savedMsg.classList.remove('show');
+
+    if (ok) {
+      savedMsg.textContent = 'SAVED';
+      savedMsg.style.color = '#ffd700';
+      savedMsg.classList.add('show');
+      await sleep(400);
+      focusOpenerGalleryAfterSave();
+      await sleep(1800);
+      savedMsg.classList.remove('show');
+    } else {
+      savedMsg.textContent = 'Save failed: storage full, unavailable, or disabled.';
+      savedMsg.style.color = '#ff4444';
+      savedMsg.classList.add('show');
+      await sleep(2500);
+      savedMsg.classList.remove('show');
+    }
+  } catch (err) {
+    console.error(err);
+    savedMsg.textContent = 'Save failed: something went wrong.';
+    savedMsg.style.color = '#ff4444';
+    savedMsg.classList.add('show');
+    await sleep(2500);
+    savedMsg.classList.remove('show');
   } finally {
     flashOverlay.classList.remove('on');
-    if (!exiting) {
-      snapBtn.classList.remove('snap-saving');
-      snapBtn.removeAttribute('aria-busy');
-      snapBtn.textContent = labelBackup;
-      snapCountdownActive = false;
-      snapBtn.disabled = !stream;
-      startBtn.disabled = false;
-      ctl.forEach(function (el) { el.disabled = false; });
-    }
+    snapBtn.classList.remove('snap-saving');
+    snapBtn.removeAttribute('aria-busy');
+    snapCountdownActive = false;
+    startBtn.disabled = false;
+    ctl.forEach(function (el) { el.disabled = false; });
+    restartLiveAsciiPreview();
+    snapBtn.textContent = SNAP_LABEL_READY;
+    snapBtn.disabled = !stream;
   }
 });
 </script>

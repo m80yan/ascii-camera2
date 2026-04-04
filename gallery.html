@@ -949,10 +949,41 @@ async function deletePhoto(userIndex) {
     var userList = AsciiCameraGalleryStorage.loadUserPhotos();
     if (userIndex < 0 || userIndex >= userList.length) return;
     if (userList[userIndex].mine === false) return;
+    var backup = JSON.parse(JSON.stringify(userList));
+    var removed = userList[userIndex];
+    var photoIdForLikes = '';
+    if (removed && typeof removed.id === 'string' && removed.id) {
+      photoIdForLikes = removed.id;
+    } else if (AsciiCameraGalleryStorage.stableLegacyPhotoId) {
+      photoIdForLikes = AsciiCameraGalleryStorage.stableLegacyPhotoId(removed);
+    }
     AsciiCameraGalleryStorage.deleteUserPhotoAt(userIndex);
     refreshGallery();
-    if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-      await AsciiCameraGalleryCloudSync.pushFromLocal();
+    if (!window.AsciiCameraGalleryCloudSync || !AsciiCameraGalleryCloudSync.isEnabled()) {
+      return;
+    }
+    var pushed = await AsciiCameraGalleryCloudSync.pushFromLocal();
+    if (!pushed) {
+      AsciiCameraGalleryStorage.saveUserPhotos(backup);
+      refreshGallery();
+      var st =
+        typeof AsciiCameraGalleryCloudSync.getSyncStatus === 'function'
+          ? AsciiCameraGalleryCloudSync.getSyncStatus()
+          : null;
+      var detail = st && st.lastPushError ? String(st.lastPushError) : '';
+      window.alert(
+        'Could not sync this delete to the cloud. The photo was restored in your gallery.\n\n' +
+          'Local and deployed sites must use the same Supabase project (or JSONBin bin) in config for shared deletes to apply everywhere.\n\n' +
+          (detail ? 'Error: ' + detail : '')
+      );
+      return;
+    }
+    if (photoIdForLikes && typeof AsciiCameraGalleryCloudSync.deleteAllLikesForPhotoId === 'function') {
+      try {
+        await AsciiCameraGalleryCloudSync.deleteAllLikesForPhotoId(photoIdForLikes);
+      } catch (eL) {
+        console.warn('[gallery] cloud likes cleanup failed', eL);
+      }
     }
   } catch (e) {
     console.error(e);

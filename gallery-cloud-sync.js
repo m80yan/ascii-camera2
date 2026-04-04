@@ -441,12 +441,12 @@
 
   /**
    * 将当前本机列表写回远端（不再先 GET 再合并，否则删除后旧远端会把已删作品并回 PUT）。
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>} 已启用云端且 PUT 成功为 true；未配置云端视为成功；失败为 false
    */
   function pushFromLocal() {
     if (!isEnabled() || !global.AsciiCameraGalleryStorage) {
       emitStatus();
-      return Promise.resolve();
+      return Promise.resolve(true);
     }
     var max = global.AsciiCameraGalleryStorage.MAX_USER_PHOTOS || 24;
     var load = global.AsciiCameraGalleryStorage.loadUserPhotos;
@@ -465,6 +465,7 @@
         syncStatus.lastPushOk = true;
         syncStatus.lastPushError = '';
         emitStatus();
+        return true;
       })
       .catch(function (err) {
         console.warn('[gallery-cloud-sync] push failed', err);
@@ -472,6 +473,7 @@
         syncStatus.lastPushOk = false;
         syncStatus.lastPushError = err && err.message ? String(err.message) : String(err);
         emitStatus();
+        return false;
       })
       .finally(function () {
         pushInFlight = false;
@@ -662,6 +664,41 @@
     });
   }
 
+  /**
+   * 从点赞表移除某作品的全部点赞（作品从画廊同步删除后调用，避免云端残留 likes）。
+   * @param {string} photoId
+   * @returns {Promise<boolean>}
+   */
+  function deleteAllLikesForPhotoId(photoId) {
+    if (!photoId || typeof photoId !== 'string') return Promise.resolve(true);
+    if (!likesApiEnabled()) return Promise.resolve(true);
+    var c = getSupabaseConfig();
+    var table = getLikesTable();
+    var url =
+      c.url +
+      '/rest/v1/' +
+      encodeURIComponent(table) +
+      '?photo_id=eq.' +
+      encodeURIComponent(photoId);
+    return fetch(url, {
+      method: 'DELETE',
+      cache: 'no-store',
+      headers: {
+        apikey: c.anonKey,
+        Authorization: 'Bearer ' + c.anonKey
+      }
+    }).then(function (res) {
+      if (!res.ok && res.status !== 404) {
+        return readFetchErrorText(res).then(function (detail) {
+          return Promise.reject(
+            new Error('likes cleanup DELETE ' + res.status + (detail ? ': ' + detail : ''))
+          );
+        });
+      }
+      return true;
+    });
+  }
+
   global.AsciiCameraGalleryCloudSync = {
     isEnabled: isEnabled,
     getProvider: getProvider,
@@ -678,6 +715,7 @@
     getOrCreateClientId: getOrCreateClientId,
     fetchPhotoLikeState: fetchPhotoLikeState,
     addPhotoLike: addPhotoLike,
-    removePhotoLike: removePhotoLike
+    removePhotoLike: removePhotoLike,
+    deleteAllLikesForPhotoId: deleteAllLikesForPhotoId
   };
 })(typeof window !== 'undefined' ? window : globalThis);
