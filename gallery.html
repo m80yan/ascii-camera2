@@ -59,8 +59,19 @@
   }
   #header-actions { display: flex; gap: 10px; align-items: center; }
   .hdr-btn { background: transparent; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; padding: 6px 16px; cursor: pointer; letter-spacing: 2px; text-transform: uppercase; transition: background 0.2s; text-decoration: none; display: inline-block; border: none; }
-  #upload-btn { border: 1px solid #00ff41; color: #00ff41; }
-  #upload-btn:hover { background: rgba(0,255,65,0.1); }
+  #curate-mode-btn[hidden] {
+    display: none !important;
+  }
+  /** 与 `#upload-btn` 同款绿框与悬停（策展退出与上传操作视觉一致） */
+  #upload-btn,
+  #curate-mode-btn {
+    border: 1px solid #00ff41;
+    color: #00ff41;
+  }
+  #upload-btn:hover,
+  #curate-mode-btn:hover {
+    background: rgba(0, 255, 65, 0.1);
+  }
   #live-btn { border: 1px solid #ffd700; color: #ffd700; }
   #live-btn:hover { background: rgba(255,215,0,0.1); }
   #upload-input { display: none; }
@@ -114,6 +125,14 @@
   .photo-time { font-size: 10px; opacity: 0.4; letter-spacing: 1px; white-space: nowrap; }
   .delete-btn { background: transparent; border: none; color: #ff4444; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 10px; cursor: pointer; opacity: 0.5; letter-spacing: 1px; padding: 0; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
   .delete-btn:hover { opacity: 1; }
+  /** 策展模式：每张可删卡片上的 Remove 始终可见（不依赖悬停，便于本地策展与触控）。 */
+  body.gallery-curator-mode .photo-card .delete-btn {
+    opacity: 0.65;
+    transition: opacity 0.15s ease;
+  }
+  body.gallery-curator-mode .photo-card .delete-btn:hover {
+    opacity: 1;
+  }
   #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 100; align-items: center; justify-content: center; padding: 24px; cursor: default; }
   #lightbox.open { display: flex; }
   #lightbox-inner {
@@ -237,6 +256,9 @@
 <div id="header">
   <h1><span>Gallery</span><span id="gallery-cloud-dot-wrap" aria-hidden="true"><span class="gallery-cloud-dot"></span></span></h1>
   <div id="header-actions">
+    <button type="button" class="hdr-btn" id="curate-mode-btn" hidden aria-hidden="true" title="Curator mode is on — click to exit">
+      Exit Curate
+    </button>
     <button class="hdr-btn" id="upload-btn" type="button">Upload Image</button>
     <input type="file" id="upload-input" accept="image/*">
     <a class="hdr-btn" id="live-btn" href="camera.html">Open Camera</a>
@@ -477,6 +499,88 @@ const uploadColor = document.getElementById('upload-color');
 const uploadCols = document.getElementById('upload-cols');
 const uploadAspect = document.getElementById('upload-aspect');
 let pendingDeleteIndex = null, photosCache = [];
+
+/** localStorage 键：策展模式（轻量演示用，非服务端鉴权） */
+const ASCII_CURATOR_LS_KEY = 'ascii_curator_mode';
+
+/**
+ * @returns {boolean}
+ */
+function readCuratorModeFromStorage() {
+  try {
+    return window.localStorage.getItem(ASCII_CURATOR_LS_KEY) === 'true';
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * @param {boolean} on
+ * @returns {void}
+ */
+function writeCuratorModeToStorage(on) {
+  try {
+    if (on) window.localStorage.setItem(ASCII_CURATOR_LS_KEY, 'true');
+    else window.localStorage.removeItem(ASCII_CURATOR_LS_KEY);
+  } catch (e) {}
+}
+
+/**
+ * `?curate=1` 开启并持久化；`?curate=0` 关闭；处理完后从地址栏移除参数。
+ * @returns {boolean} 是否处于策展模式
+ */
+function initCuratorModeFromUrl() {
+  try {
+    var u = new URL(window.location.href);
+    var v = u.searchParams.get('curate');
+    if (v === '1') writeCuratorModeToStorage(true);
+    else if (v === '0') writeCuratorModeToStorage(false);
+    if (v === '1' || v === '0') {
+      u.searchParams.delete('curate');
+      var qs = u.searchParams.toString();
+      var path = u.pathname + (qs ? '?' + qs : '') + u.hash;
+      window.history.replaceState({}, '', path);
+    }
+  } catch (e) {}
+  return readCuratorModeFromStorage();
+}
+
+/** 为 true 时：卡片显示 Remove；可删本地列表项（含云端合并写入的 `mine:false`）。内置示例仅提示不可删。 */
+let curatorModeActive = initCuratorModeFromUrl();
+
+/**
+ * 顶栏「Exit Curate」显隐与 `body.gallery-curator-mode`（悬停显删）。
+ * @returns {void}
+ */
+function syncCuratorChrome() {
+  var btn = document.getElementById('curate-mode-btn');
+  if (btn) {
+    if (curatorModeActive) {
+      btn.hidden = false;
+      btn.setAttribute('aria-hidden', 'false');
+      btn.textContent = 'Exit Curate';
+      btn.title = 'Curator mode on — click to exit';
+      btn.setAttribute('aria-label', 'Curator mode on. Exit to hide remove controls.');
+    } else {
+      btn.hidden = true;
+      btn.setAttribute('aria-hidden', 'true');
+    }
+  }
+  document.body.classList.toggle('gallery-curator-mode', curatorModeActive);
+}
+
+syncCuratorChrome();
+
+(function setupCuratorExitButton() {
+  var btn = document.getElementById('curate-mode-btn');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    curatorModeActive = false;
+    writeCuratorModeToStorage(false);
+    syncCuratorChrome();
+    refreshGallery();
+  });
+})();
 
 window.addEventListener('resize', function () {
   invalidateGalleryCellMetrics();
@@ -941,14 +1045,15 @@ async function savePhoto(ascii, color) {
 }
 
 /**
- * @param {number} userIndex `getMergedGalleryPhotos` 中用户条目的下标（仅 `mine !== false` 的项可移除）
+ * @param {number} userIndex `loadUserPhotos()` 中的下标（与网格中前 `userCount` 张卡片一一对应）
  * @returns {Promise<void>}
  */
 async function deletePhoto(userIndex) {
   try {
     var userList = AsciiCameraGalleryStorage.loadUserPhotos();
     if (userIndex < 0 || userIndex >= userList.length) return;
-    if (userList[userIndex].mine === false) return;
+    // 云端合并写入的条目为 mine:false；策展模式需能删掉并 push，否则界面有 Remove 却无效果
+    if (userList[userIndex].mine === false && !curatorModeActive) return;
     var backup = JSON.parse(JSON.stringify(userList));
     var removed = userList[userIndex];
     var photoIdForLikes = '';
@@ -1059,10 +1164,13 @@ function renderGallery(photos) {
   gallery.innerHTML = photos.map((p, i) => {
     const isUser = i < userCount;
     const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
-    const canRemove = isUser && p.mine !== false;
-    const delHtml = canRemove
+    const canRemoveUser = curatorModeActive && isUser;
+    const canShowBuiltinRemove = curatorModeActive && !isUser && p.isDefault;
+    const delHtml = canRemoveUser
       ? '<button type="button" class="delete-btn" data-user-index="' + i + '">Remove</button>'
-      : '<span class="photo-time" style="opacity:0.25">—</span>';
+      : canShowBuiltinRemove
+        ? '<button type="button" class="delete-btn" data-builtin="1" title="内置示例">Remove</button>'
+        : '<span class="photo-time" style="opacity:0.25">—</span>';
     return (
       '<div class="photo-card" data-index="' + i + '">' +
         '<div class="photo-thumb">' +
@@ -1086,7 +1194,13 @@ function renderGallery(photos) {
   gallery.querySelectorAll('.delete-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      promptDelete(parseInt(btn.getAttribute('data-user-index'), 10));
+      if (btn.getAttribute('data-builtin') === '1') {
+        window.alert('内置示例图打包在页面中，无法从本地列表或云端移除。');
+        return;
+      }
+      var ui = parseInt(btn.getAttribute('data-user-index'), 10);
+      if (Number.isNaN(ui)) return;
+      promptDelete(ui);
     });
   });
 }
