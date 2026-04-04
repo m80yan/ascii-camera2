@@ -1,5 +1,6 @@
 /**
  * 从 samples/*.txt（RTF）解析 ASCII，写回 gallery-storage.js 的 DEFAULT_GALLERY_PHOTOS。
+ * 不包含 rex / selfie（二者为绿色 #00ff41，已从内置画廊移除）。
  * 用法：node scripts/build-gallery-defaults.js
  */
 const fs = require('fs');
@@ -11,9 +12,7 @@ const galleryPath = path.join(root, 'gallery-storage.js');
 
 const sheep = parseRtfSample(fs.readFileSync(path.join(root, 'samples/sheep.txt'), 'utf8'));
 const car = parseRtfSample(fs.readFileSync(path.join(root, 'samples/car.txt'), 'utf8'));
-const rex = parseRtfSample(fs.readFileSync(path.join(root, 'samples/rex.txt'), 'utf8'));
 const et = parseRtfSample(fs.readFileSync(path.join(root, 'samples/et.txt'), 'utf8'));
-const selfie = parseRtfSample(fs.readFileSync(path.join(root, 'samples/selfie.txt'), 'utf8'));
 
 /** @type {Array<{ascii:string,color:string,time:number,isDefault:boolean}>} */
 var defaults = [
@@ -30,21 +29,9 @@ var defaults = [
     isDefault: true
   },
   {
-    ascii: rex.ascii,
-    color: rex.colorHex,
-    time: 1704240000000,
-    isDefault: true
-  },
-  {
     ascii: et.ascii,
     color: et.colorHex,
     time: 1704326400000,
-    isDefault: true
-  },
-  {
-    ascii: selfie.ascii,
-    color: selfie.colorHex,
-    time: 1704412800000,
     isDefault: true
   }
 ];
@@ -56,6 +43,9 @@ var defaults = [
 function photoToJs(p) {
   return (
     '    {\n' +
+    "      id: 'builtin_sample_" +
+    p.time +
+    "',\n" +
     '      ascii: ' +
     JSON.stringify(p.ascii) +
     ',\n' +

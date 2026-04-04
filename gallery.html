@@ -217,9 +217,28 @@
   /* 设计稿 Frame 48091616：标题左上，预览区，下方单行四控件（标签在上、左对齐） */
   #upload-modal-inner h2 { font-size: 12px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; opacity: 0.9; margin: 0 0 14px; text-align: left; color: #00ff41; }
   #upload-modal-body { display: flex; flex-direction: column; gap: 14px; }
-  #upload-preview-wrap { background: #000; border: 1px solid rgba(0,255,65,0.25); border-radius: 4px; padding: 12px; min-height: 220px; max-height: min(52vh, 460px); overflow: auto; display: flex; justify-content: center; align-items: center; width: 100%; box-sizing: border-box; }
+  /* 固定高度：切换分辨率时外层高度不变，低分辨率在区内居中，过高则区内滚动 */
+  #upload-preview-wrap {
+    background: #000;
+    border: 1px solid rgba(0,255,65,0.25);
+    border-radius: 4px;
+    padding: 12px;
+    width: 100%;
+    box-sizing: border-box;
+    height: min(52vh, 460px);
+    max-height: min(52vh, 460px);
+    overflow: auto;
+    flex-shrink: 0;
+  }
+  #upload-preview-stage {
+    min-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+  }
   /* inline-block + line-height:1 + 实测宽高缩放，避免块字符与「0」字宽假设不一致导致 1:1 被压扁 */
-  #upload-preview-pre { font-family: monospace, ui-monospace, "Courier New", monospace; white-space: pre; letter-spacing: 0; margin: 0; display: inline-block; width: max-content; max-width: 100%; vertical-align: middle; line-height: 1; }
+  #upload-preview-pre { font-family: monospace, ui-monospace, "Courier New", monospace; white-space: pre; letter-spacing: 0; margin: 0; display: inline-block; width: max-content; max-width: 100%; vertical-align: middle; line-height: 1; flex-shrink: 0; }
   #upload-editor-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 16px; width: 100%; align-items: stretch; }
   .upload-ctl { display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: stretch; }
   .upload-ctl-label { font-size: 11px; opacity: 0.55; letter-spacing: 1px; text-align: left; width: 100%; }
@@ -274,7 +293,9 @@
     <h2>Edit &amp; preview</h2>
     <div id="upload-modal-body">
       <div id="upload-preview-wrap">
-        <pre id="upload-preview-pre"></pre>
+        <div id="upload-preview-stage">
+          <pre id="upload-preview-pre"></pre>
+        </div>
       </div>
       <div id="upload-editor-controls">
         <div class="upload-ctl">
@@ -300,8 +321,6 @@
         <div class="upload-ctl">
           <span class="upload-ctl-label">Resolution</span>
           <select id="upload-cols" aria-label="Resolution">
-            <option value="16">16 (Micro)</option>
-            <option value="24">24 (Small)</option>
             <option value="32">32 (Mini)</option>
             <option value="80">80 (Low)</option>
             <option value="100" selected>100 (Medium)</option>
@@ -667,11 +686,12 @@ function renderUploadPreview() {
   uploadPreviewPre.textContent = ascii;
   uploadPreviewPre.style.color = uploadColor.value;
   const wrap = document.getElementById('upload-preview-wrap');
-  const maxW = Math.min(640, (typeof window !== 'undefined' ? window.innerWidth - 48 : 640));
-  const maxH = Math.min(400, typeof window !== 'undefined' ? window.innerHeight * 0.42 : 400);
-  const pad = wrap ? parseFloat(getComputedStyle(wrap).paddingLeft) * 2 : 24;
-  const availW = Math.max(40, maxW - pad);
-  const availH = Math.max(40, maxH - pad);
+  const pad = wrap ? parseFloat(getComputedStyle(wrap).paddingLeft) + parseFloat(getComputedStyle(wrap).paddingRight) : 24;
+  const padY = wrap ? parseFloat(getComputedStyle(wrap).paddingTop) + parseFloat(getComputedStyle(wrap).paddingBottom) : 24;
+  const boxW = wrap ? wrap.clientWidth : Math.min(640, typeof window !== 'undefined' ? window.innerWidth - 48 : 640);
+  const boxH = wrap ? wrap.clientHeight : Math.min(400, typeof window !== 'undefined' ? window.innerHeight * 0.42 : 400);
+  const availW = Math.max(40, boxW - pad);
+  const availH = Math.max(40, boxH - padY);
   const BASE = 10;
   uploadPreviewPre.style.fontSize = BASE + 'px';
   uploadPreviewPre.style.lineHeight = '1';
