@@ -150,7 +150,7 @@
     padding-top: 12px;
     border-top: 1px solid rgba(0,255,65,0.12);
   }
-  #lightbox-close, #lightbox-copy {
+  #lightbox-close, #lightbox-download-png {
     background: transparent;
     border: 1px solid rgba(0,255,65,0.35);
     color: #00ff41;
@@ -161,7 +161,9 @@
     letter-spacing: 2px;
     text-transform: uppercase;
   }
-  #lightbox-close:hover, #lightbox-copy:hover { background: rgba(0,255,65,0.1); }
+  #lightbox-download-png { text-transform: none; letter-spacing: 1px; }
+  #lightbox-close:hover, #lightbox-download-png:hover { background: rgba(0,255,65,0.1); }
+  #lightbox-download-png:disabled { opacity: 0.55; cursor: wait; }
   #confirm-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 200; align-items: center; justify-content: center; }
   #confirm-modal.open { display: flex; }
   #confirm-box { background: #111; border: 1px solid rgba(255,68,68,0.4); border-radius: 4px; padding: 28px 32px; text-align: center; }
@@ -258,9 +260,9 @@
         <div class="upload-ctl">
           <span class="upload-ctl-label">Resolution</span>
           <select id="upload-cols" aria-label="Resolution">
-            <option value="80">80</option>
-            <option value="100" selected>100</option>
-            <option value="120">120</option>
+            <option value="80">80 (Low)</option>
+            <option value="100" selected>100 (Medium)</option>
+            <option value="120">120 (High)</option>
           </select>
         </div>
         <div class="upload-ctl">
@@ -294,7 +296,7 @@
     </div>
     <div id="lightbox-footer">
       <button type="button" id="lightbox-close">Close</button>
-      <button type="button" id="lightbox-copy">Copy ASCII</button>
+      <button type="button" id="lightbox-download-png">Download PNG</button>
     </div>
   </div>
 </div>
@@ -396,6 +398,40 @@ function measureMonospaceCellFromElement(el) {
   const cellAspect = charW > 0 && lineHeightPx > 0 ? charW / lineHeightPx : CELL_ASPECT_FALLBACK;
   return { cellAspect, lineHeightPx };
 }
+
+/**
+ * Reads resolved typography from a `<pre>`-like node for Canvas 2D export (matches on-screen monospace layout).
+ * Canvas `font` omits CSS `line-height`; vertical stride uses `lineHeightPx` separately.
+ * @param {HTMLElement} el
+ * @returns {{ font: string, lineHeightPx: number, color: string, letterSpacing: string }}
+ */
+function getComputedPreCanvasStyle(el) {
+  const cs = getComputedStyle(el);
+  const fontSize = parseFloat(cs.fontSize) || 12;
+  let lineHeightPx = parseFloat(cs.lineHeight);
+  if (!Number.isFinite(lineHeightPx) || cs.lineHeight === 'normal' || String(cs.lineHeight).endsWith('%')) {
+    lineHeightPx = fontSize;
+  }
+  const font = [cs.fontStyle, cs.fontWeight, cs.fontSize, cs.fontFamily].filter(Boolean).join(' ');
+  const letterSpacing =
+    cs.letterSpacing && cs.letterSpacing !== 'normal' ? cs.letterSpacing : '0px';
+  return { font, lineHeightPx, color: cs.color, letterSpacing };
+}
+
+/**
+ * Splits ASCII into lines; drops a single trailing empty line when text ends with `\n` (matches typical pre layout).
+ * @param {string} ascii
+ * @returns {string[]}
+ */
+function splitAsciiLinesForExport(ascii) {
+  const normalized = String(ascii).replace(/\r\n/g, '\n');
+  const lines = normalized.length ? normalized.split('\n') : [''];
+  if (normalized.endsWith('\n') && lines.length > 0 && lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+  return lines.length ? lines : [''];
+}
+
 const CHAR_SETS = {
   detailed: '\u2588\u2593\u2592\u2591\u00B7 ',
   simple:   '\u2588\u2592\u00B7 ',
@@ -590,74 +626,94 @@ lightbox.addEventListener('click', (e) => { if (e.target === lightbox) lightbox.
 document.getElementById('lightbox-close').addEventListener('click', () => lightbox.classList.remove('open'));
 
 /**
- * 用隐藏 textarea + `execCommand('copy')` 复制（不依赖 Clipboard API）。
- * Notion 等嵌入场景下父页常未通过 Permissions Policy 授予 `clipboard-write`，
- * `navigator.clipboard.writeText` 会抛 `NotAllowedError`，此路径在多数浏览器仍可用。
- * @param {string} text
- * @returns {boolean}
+ * Renders lightbox ASCII to PNG using the same computed font, line-height, and color as `#lightbox-pre`.
+ * @returns {void}
  */
-function copyAsciiViaExecCommand(text) {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.setAttribute('readonly', '');
-  ta.style.position = 'fixed';
-  ta.style.left = '0';
-  ta.style.top = '0';
-  ta.style.opacity = '0';
-  ta.style.pointerEvents = 'none';
-  document.body.appendChild(ta);
-  ta.focus();
-  ta.select();
-  ta.setSelectionRange(0, text.length);
-  var ok = false;
-  try {
-    ok = document.execCommand('copy');
-  } catch (e) {
-    ok = false;
-  }
-  document.body.removeChild(ta);
-  return ok;
+function downloadLightboxPng() {
+  const btn = document.getElementById('lightbox-download-png');
+  if (!btn || btn.disabled) return;
+  const defaultLabel = 'Download PNG';
+  const ascii = lightboxPre.textContent || '';
+  const pad = 24;
+  const style = getComputedPreCanvasStyle(lightboxPre);
+
+  btn.textContent = 'Downloading...';
+  btn.disabled = true;
+
+  requestAnimationFrame(function () {
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas 2D unavailable');
+      const lines = splitAsciiLinesForExport(ascii);
+      ctx.font = style.font;
+      if ('letterSpacing' in ctx) {
+        ctx.letterSpacing = style.letterSpacing;
+      }
+      var maxW = 0;
+      for (var i = 0; i < lines.length; i++) {
+        var w = ctx.measureText(lines[i]).width;
+        if (w > maxW) maxW = w;
+      }
+      var lineStep = style.lineHeightPx;
+      var cw = Math.max(1, Math.ceil(maxW + pad * 2));
+      var ch = Math.max(1, Math.ceil(lines.length * lineStep + pad * 2));
+      canvas.width = cw;
+      canvas.height = ch;
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.font = style.font;
+      if ('letterSpacing' in ctx) {
+        ctx.letterSpacing = style.letterSpacing;
+      }
+      ctx.fillStyle = style.color;
+      ctx.textBaseline = 'top';
+      ctx.textAlign = 'left';
+      for (var j = 0; j < lines.length; j++) {
+        ctx.fillText(lines[j], pad, pad + j * lineStep);
+      }
+
+      canvas.toBlob(
+        function (blob) {
+          if (!blob) {
+            btn.textContent = 'Failed';
+            setTimeout(function () {
+              btn.textContent = defaultLabel;
+              btn.disabled = false;
+            }, 2000);
+            return;
+          }
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = 'ascii-camera-' + Date.now() + '.png';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          btn.textContent = 'Downloaded';
+          setTimeout(function () {
+            btn.textContent = defaultLabel;
+            btn.disabled = false;
+          }, 2000);
+        },
+        'image/png',
+        1
+      );
+    } catch (err) {
+      console.error(err);
+      btn.textContent = 'Failed';
+      setTimeout(function () {
+        btn.textContent = defaultLabel;
+        btn.disabled = false;
+      }, 2000);
+    }
+  });
 }
 
-/**
- * 将灯箱内当前 ASCII 文本写入剪贴板：优先 Clipboard API，失败则回退 execCommand。
- * @returns {Promise<void>}
- */
-async function copyLightboxAscii() {
-  const text = lightboxPre.textContent || '';
-  const btn = document.getElementById('lightbox-copy');
-  var copied = false;
-  try {
-    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-      try {
-        await navigator.clipboard.writeText(text);
-        copied = true;
-      } catch (e) {
-        copied = copyAsciiViaExecCommand(text);
-      }
-    } else {
-      copied = copyAsciiViaExecCommand(text);
-    }
-    if (!copied) {
-      throw new Error('copy failed');
-    }
-    if (btn) {
-      const prev = btn.textContent;
-      btn.textContent = 'Copied';
-      setTimeout(function () { btn.textContent = prev; }, 2000);
-    }
-  } catch (err) {
-    console.error(err);
-    if (btn) {
-      const prev = btn.textContent;
-      btn.textContent = 'Failed';
-      setTimeout(function () { btn.textContent = prev; }, 2000);
-    }
-  }
-}
-document.getElementById('lightbox-copy').addEventListener('click', function (e) {
+document.getElementById('lightbox-download-png').addEventListener('click', function (e) {
   e.stopPropagation();
-  copyLightboxAscii();
+  downloadLightboxPng();
 });
 function promptDelete(i) { pendingDeleteIndex = i; confirmModal.classList.add('open'); }
 document.getElementById('confirm-cancel').addEventListener('click', () => { confirmModal.classList.remove('open'); pendingDeleteIndex = null; });
