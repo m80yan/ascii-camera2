@@ -1,6 +1,6 @@
 /**
  * @file 可选：云端同步用户作品列表（与 `gallery-storage.js` 的 localStorage 合并）。
- * - **Supabase**：每幅作品为 `ascii_photos` 独立一行（insert/delete + 拉取列表），不再整包覆盖 JSON blob，避免移动端覆盖全库。
+ * - **Supabase**：每幅作品为 `ascii_photos` 独立一行（`owner_id` 与点赞 `client_id` 同源；insert/delete + 拉取列表），不再整包覆盖 JSON blob，避免移动端覆盖全库。
  * - **JSONBin**：仍使用单 bin 整包读写（旧路径，易撞额度）。
  * 配置见 `config.local.js` / Vercel 环境变量（`scripts/inject-config.js`）。
  */
@@ -155,6 +155,27 @@
     var w = global;
     var t = w.ASCII_CAMERA_SUPABASE_PHOTOS_TABLE && String(w.ASCII_CAMERA_SUPABASE_PHOTOS_TABLE).trim();
     return t || 'ascii_photos';
+  }
+
+  var CLIENT_ID_STORAGE_KEY = 'ascii_gallery_client_id_v1';
+
+  /**
+   * 与点赞表 `client_id` 同源：匿名/本机稳定 id，写入 `ascii_photos.owner_id`。
+   * @returns {string}
+   */
+  function getOrCreateClientId() {
+    try {
+      var existing = global.localStorage && global.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+      if (existing && typeof existing === 'string' && existing.length > 4) return existing;
+      var id =
+        global.crypto && typeof global.crypto.randomUUID === 'function'
+          ? global.crypto.randomUUID()
+          : 'cid_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 14);
+      if (global.localStorage) global.localStorage.setItem(CLIENT_ID_STORAGE_KEY, id);
+      return id;
+    } catch (e) {
+      return 'cid_volatile_' + Date.now();
+    }
   }
 
   /**
@@ -342,7 +363,8 @@
 
   /**
    * 将 `ascii_photos` 行（`select=*`）转为画廊 UI 用条目：`time` 来自 `created_at`。
-   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string }} row
+   * `owner_id` 缺失或空时 `mine` 为 false（不猜测历史行归属）。
+   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown }} row
    * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean } | null}
    */
   function mapAsciiPhotoRow(row) {
@@ -351,12 +373,17 @@
     if (!id) return null;
     var t = row.created_at ? Date.parse(String(row.created_at)) : NaN;
     if (!Number.isFinite(t)) t = Date.now();
+    var ownerRaw = row.owner_id;
+    var owner =
+      ownerRaw != null && typeof ownerRaw === 'string' && ownerRaw.trim() ? ownerRaw.trim() : '';
+    var cur = getOrCreateClientId();
+    var mine = owner.length > 0 && owner === cur;
     return {
       id: id,
       ascii: row.ascii,
       color: typeof row.color === 'string' ? row.color : '#00ff41',
       time: t,
-      mine: true
+      mine: mine
     };
   }
 
@@ -441,11 +468,12 @@
       typeof photo.time === 'number' && Number.isFinite(photo.time)
         ? new Date(photo.time).toISOString()
         : new Date().toISOString();
-    /** @type {{ ascii: string, color: string, created_at: string, id?: string }} */
+    /** @type {{ ascii: string, color: string, created_at: string, owner_id: string, id?: string }} */
     var body = {
       ascii: photo.ascii,
       color: typeof photo.color === 'string' ? photo.color : '#00ff41',
-      created_at: createdIso
+      created_at: createdIso,
+      owner_id: getOrCreateClientId()
     };
     if (isUuidString(photo.id)) {
       body.id = photo.id;
@@ -833,13 +861,59 @@
   }
 
   /**
-   * 从 Supabase 按 UUID 删除一行；非 UUID 或未启用时视为成功。
+   * 在 `ascii_photos` 缓存中按主键查找一行（用于删除前校验归属）。
    * @param {string} photoId
+   * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean } | null}
+   */
+  function findCachedSupabasePhotoById(photoId) {
+    if (!photoId || typeof photoId !== 'string') return null;
+    for (var i = 0; i < supabaseGalleryUserCache.length; i++) {
+      var row = supabaseGalleryUserCache[i];
+      if (row && String(row.id) === photoId) return row;
+    }
+    return null;
+  }
+
+  /**
+   * 是否允许当前客户端以「本人作品」删除该行：先查内存缓存，再查 `localStorage` 用户列表（与 pull 后数据应对齐）。
+   * @param {string} photoId
+   * @returns {boolean}
+   */
+  function isSupabasePhotoMineById(photoId) {
+    var fromCache = findCachedSupabasePhotoById(photoId);
+    if (fromCache) return fromCache.mine === true;
+    if (!global.AsciiCameraGalleryStorage || typeof global.AsciiCameraGalleryStorage.loadUserPhotos !== 'function') {
+      return false;
+    }
+    var list = global.AsciiCameraGalleryStorage.loadUserPhotos();
+    for (var j = 0; j < list.length; j++) {
+      var p = list[j];
+      if (p && String(p.id) === photoId) return p.mine === true;
+    }
+    return false;
+  }
+
+  /**
+   * 从 Supabase 按 UUID 删除一行；非 UUID 或未启用时视为成功。
+   * 默认仅当缓存中该条 `mine === true` 时发 DELETE；策展模式由调用方传 `bypassOwnershipCheck`。
+   * @param {string} photoId
+   * @param {{ bypassOwnershipCheck?: boolean }} [opts]
    * @returns {Promise<boolean>}
    */
-  function deletePhotoRow(photoId) {
+  function deletePhotoRow(photoId, opts) {
     if (!isEnabled() || getProvider() !== 'supabase') {
       return Promise.resolve(true);
+    }
+    var bypass = opts && opts.bypassOwnershipCheck === true;
+    if (isUuidString(photoId) && !bypass) {
+      if (!isSupabasePhotoMineById(photoId)) {
+        if (typeof global.console !== 'undefined' && global.console.warn) {
+          global.console.warn(
+            '[gallery-sync] ascii_photos DELETE skipped (not owner) id=' + photoId
+          );
+        }
+        return Promise.resolve(false);
+      }
     }
     return deletePhotoRowSupabase(photoId).then(function (ok) {
       if (!ok) return false;
@@ -896,8 +970,6 @@
     }
   }
 
-  var CLIENT_ID_STORAGE_KEY = 'ascii_gallery_client_id_v1';
-
   /**
    * @returns {string}
    */
@@ -914,24 +986,6 @@
    */
   function likesApiEnabled() {
     return getProvider() === 'supabase';
-  }
-
-  /**
-   * @returns {string}
-   */
-  function getOrCreateClientId() {
-    try {
-      var existing = global.localStorage && global.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
-      if (existing && typeof existing === 'string' && existing.length > 4) return existing;
-      var id =
-        global.crypto && typeof global.crypto.randomUUID === 'function'
-          ? global.crypto.randomUUID()
-          : 'cid_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 14);
-      if (global.localStorage) global.localStorage.setItem(CLIENT_ID_STORAGE_KEY, id);
-      return id;
-    } catch (e) {
-      return 'cid_volatile_' + Date.now();
-    }
   }
 
   /**

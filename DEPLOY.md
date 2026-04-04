@@ -18,7 +18,8 @@ create table if not exists public.ascii_photos (
   id uuid primary key default gen_random_uuid(),
   ascii text not null,
   color text not null default '#00ff41',
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  owner_id text
 );
 
 alter table public.ascii_photos enable row level security;
@@ -56,9 +57,11 @@ create policy "ascii_photo_likes_delete" on public.ascii_photo_likes
   for delete using (true);
 ```
 
+**已有 `ascii_photos` 表、尚无 `owner_id` 时** 在 SQL Editor 执行：`alter table public.ascii_photos add column if not exists owner_id text;` 旧行 `owner_id` 为空时前端不视为本人作品，无法自助删除（策展模式仍可删）。
+
 **从旧版 `ascii_gallery_sync` 迁出：** 前端不再读写该表的 `body`。若线上仍有历史作品只存在 JSON blob 中，需在 Supabase 中自行写脚本把 `photos` 展开插入 `ascii_photos`，或接受新表从空开始。
 
-（上述 RLS 允许匿名读写整表，**anon key 也会出现在前端包里**——仅适合非敏感作品列表；勿存隐私数据。点赞表同样可被任意客户端读写，仅作轻量互动计数，**不是**用户认证体系。画廊在 Supabase 下删除作品会先 **DELETE `ascii_photos` 对应行**，再按 `photo_id` 清理 `ascii_photo_likes`。旧版单行 `ascii_gallery_sync.body` 已不再被前端使用，可在库中忽略或自行删除。）
+（上述 RLS 允许匿名读写整表，**anon key 也会出现在前端包里**——仅适合非敏感作品列表；勿存隐私数据。`owner_id` 为可伪造的客户端 id，仅用于 UI 上「删自己的图」与缓存校验；若需防恶意删他人行，应在服务端用 RLS/Edge Function 校验。点赞表同样可被任意客户端读写，仅作轻量互动计数，**不是**用户认证体系。画廊在 Supabase 下删除作品会先 **DELETE `ascii_photos` 对应行**，再按 `photo_id` 清理 `ascii_photo_likes`。旧版单行 `ascii_gallery_sync.body` 已不再被前端使用，可在库中忽略或自行删除。）
 
 2. **Project Settings → API**：复制 **Project URL** 与 **anon public** key。
 

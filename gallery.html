@@ -548,7 +548,7 @@ function initCuratorModeFromUrl() {
   return readCuratorModeFromStorage();
 }
 
-/** 为 true 时：卡片显示 Remove；可删本地列表项（含云端合并写入的 `mine:false`）。内置示例仅提示不可删。 */
+/** 为 true 时：用户区所有卡片显示 Remove（含他人作品）。普通访客仅对自己 `mine:true` 的作品显示 Remove。内置示例仅策展模式可点且会提示不可删。 */
 let curatorModeActive = initCuratorModeFromUrl();
 
 /**
@@ -1090,7 +1090,9 @@ async function deletePhoto(userIndex) {
       sync.isUuidPhotoId(photoIdForLikes);
 
     if (useSupabaseRow) {
-      var delOk = await sync.deletePhotoRow(photoIdForLikes);
+      var delOk = await sync.deletePhotoRow(photoIdForLikes, {
+        bypassOwnershipCheck: curatorModeActive
+      });
       if (!delOk) {
         var st2 = typeof sync.getSyncStatus === 'function' ? sync.getSyncStatus() : null;
         var detail2 = st2 && st2.lastPushError ? String(st2.lastPushError) : '';
@@ -1118,7 +1120,9 @@ async function deletePhoto(userIndex) {
     }
     var cloudOk = true;
     if (sync.getProvider() === 'supabase' && typeof sync.deletePhotoRow === 'function') {
-      cloudOk = await sync.deletePhotoRow(photoIdForLikes);
+      cloudOk = await sync.deletePhotoRow(photoIdForLikes, {
+        bypassOwnershipCheck: curatorModeActive
+      });
     } else {
       cloudOk = await sync.pushFromLocal();
     }
@@ -1257,7 +1261,7 @@ function renderGallery(photos, userCountOverride) {
   gallery.innerHTML = photos.map((p, i) => {
     const isUser = i < userCount;
     const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
-    const canRemoveUser = curatorModeActive && isUser;
+    const canRemoveUser = isUser && (p.mine === true || curatorModeActive);
     const canShowBuiltinRemove = curatorModeActive && !isUser && p.isDefault;
     const delHtml = canRemoveUser
       ? '<button type="button" class="delete-btn" data-user-index="' + i + '">Remove</button>'
