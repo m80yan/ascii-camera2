@@ -157,11 +157,18 @@
         : typeof p.mine === 'boolean'
           ? p.mine
           : true;
+      var sid =
+        typeof p.id === 'string' && p.id
+          ? p.id
+          : global.AsciiCameraGalleryStorage && typeof global.AsciiCameraGalleryStorage.stableLegacyPhotoId === 'function'
+            ? global.AsciiCameraGalleryStorage.stableLegacyPhotoId(p)
+            : 'photo_fallback';
       map[k] = {
         ascii: p.ascii,
         color: typeof p.color === 'string' ? p.color : '#00ff41',
         time: typeof p.time === 'number' ? p.time : Date.now(),
-        mine: mine
+        mine: mine,
+        id: sid
       };
     }
     (a || []).forEach(function (pr) {
@@ -516,6 +523,145 @@
     }
   }
 
+  var CLIENT_ID_STORAGE_KEY = 'ascii_gallery_client_id_v1';
+
+  /**
+   * @returns {string}
+   */
+  function getLikesTable() {
+    var w = global;
+    return (
+      (w.ASCII_CAMERA_SUPABASE_LIKES_TABLE && String(w.ASCII_CAMERA_SUPABASE_LIKES_TABLE).trim()) ||
+      'ascii_photo_likes'
+    );
+  }
+
+  /**
+   * @returns {boolean}
+   */
+  function likesApiEnabled() {
+    return getProvider() === 'supabase';
+  }
+
+  /**
+   * @returns {string}
+   */
+  function getOrCreateClientId() {
+    try {
+      var existing = global.localStorage && global.localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+      if (existing && typeof existing === 'string' && existing.length > 4) return existing;
+      var id =
+        global.crypto && typeof global.crypto.randomUUID === 'function'
+          ? global.crypto.randomUUID()
+          : 'cid_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 14);
+      if (global.localStorage) global.localStorage.setItem(CLIENT_ID_STORAGE_KEY, id);
+      return id;
+    } catch (e) {
+      return 'cid_volatile_' + Date.now();
+    }
+  }
+
+  /**
+   * @param {string} photoId
+   * @returns {Promise<{ count: number, likedByMe: boolean }>}
+   */
+  function fetchPhotoLikeState(photoId) {
+    if (!photoId || typeof photoId !== 'string') {
+      return Promise.resolve({ count: 0, likedByMe: false });
+    }
+    if (!likesApiEnabled()) {
+      return Promise.resolve({ count: 0, likedByMe: false });
+    }
+    var c = getSupabaseConfig();
+    var table = getLikesTable();
+    var clientId = getOrCreateClientId();
+    var url =
+      c.url +
+      '/rest/v1/' +
+      encodeURIComponent(table) +
+      '?photo_id=eq.' +
+      encodeURIComponent(photoId) +
+      '&select=client_id';
+    var headers = {
+      apikey: c.anonKey,
+      Authorization: 'Bearer ' + c.anonKey,
+      Accept: 'application/json'
+    };
+    return fetch(url, { method: 'GET', cache: 'no-store', headers: headers }).then(function (res) {
+      if (!res.ok) {
+        return Promise.reject(new Error('likes list ' + res.status));
+      }
+      return res.json();
+    }).then(function (rows) {
+      var list = Array.isArray(rows) ? rows : [];
+      var count = list.length;
+      var likedByMe = list.some(function (r) {
+        return r && r.client_id === clientId;
+      });
+      return { count: count, likedByMe: likedByMe };
+    });
+  }
+
+  /**
+   * @param {string} photoId
+   * @returns {Promise<void>}
+   */
+  function addPhotoLike(photoId) {
+    if (!likesApiEnabled() || !photoId) return Promise.resolve();
+    var c = getSupabaseConfig();
+    var table = getLikesTable();
+    var url = c.url + '/rest/v1/' + encodeURIComponent(table);
+    return fetch(url, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        apikey: c.anonKey,
+        Authorization: 'Bearer ' + c.anonKey,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify({ photo_id: photoId, client_id: getOrCreateClientId() })
+    }).then(function (res) {
+      if (res.ok || res.status === 409) return;
+      return readFetchErrorText(res).then(function (detail) {
+        return Promise.reject(new Error('like POST ' + res.status + (detail ? ': ' + detail : '')));
+      });
+    });
+  }
+
+  /**
+   * @param {string} photoId
+   * @returns {Promise<void>}
+   */
+  function removePhotoLike(photoId) {
+    if (!likesApiEnabled() || !photoId) return Promise.resolve();
+    var c = getSupabaseConfig();
+    var table = getLikesTable();
+    var cid = getOrCreateClientId();
+    var url =
+      c.url +
+      '/rest/v1/' +
+      encodeURIComponent(table) +
+      '?photo_id=eq.' +
+      encodeURIComponent(photoId) +
+      '&client_id=eq.' +
+      encodeURIComponent(cid);
+    return fetch(url, {
+      method: 'DELETE',
+      cache: 'no-store',
+      headers: {
+        apikey: c.anonKey,
+        Authorization: 'Bearer ' + c.anonKey
+      }
+    }).then(function (res) {
+      if (!res.ok && res.status !== 404) {
+        return readFetchErrorText(res).then(function (detail) {
+          return Promise.reject(new Error('like DELETE ' + res.status + (detail ? ': ' + detail : '')));
+        });
+      }
+    });
+  }
+
   global.AsciiCameraGalleryCloudSync = {
     isEnabled: isEnabled,
     getProvider: getProvider,
@@ -527,6 +673,11 @@
     startPolling: startPolling,
     stopPolling: stopPolling,
     /** @type {number} */
-    DEFAULT_POLL_MS: DEFAULT_POLL_MS
+    DEFAULT_POLL_MS: DEFAULT_POLL_MS,
+    likesApiEnabled: likesApiEnabled,
+    getOrCreateClientId: getOrCreateClientId,
+    fetchPhotoLikeState: fetchPhotoLikeState,
+    addPhotoLike: addPhotoLike,
+    removePhotoLike: removePhotoLike
   };
 })(typeof window !== 'undefined' ? window : globalThis);

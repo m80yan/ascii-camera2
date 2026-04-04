@@ -9,6 +9,7 @@ window.ASCII_CAMERA_SUPABASE_URL = '';
 window.ASCII_CAMERA_SUPABASE_ANON_KEY = '';
 window.ASCII_CAMERA_SUPABASE_TABLE = 'ascii_gallery_sync';
 window.ASCII_CAMERA_SUPABASE_ROW_ID = 'default';
+window.ASCII_CAMERA_SUPABASE_LIKES_TABLE = 'ascii_photo_likes';
 window.ASCII_CAMERA_BIN_ID = '';
 window.ASCII_CAMERA_API_KEY = '';
 window.ASCII_CAMERA_JSONBIN_AUTH = 'master';

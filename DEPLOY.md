@@ -34,9 +34,30 @@ create policy "ascii_gallery_sync_insert" on public.ascii_gallery_sync
   for insert with check (true);
 create policy "ascii_gallery_sync_update" on public.ascii_gallery_sync
   for update using (true);
+
+-- 灯箱「Like」：按 photo_id + client_id 去重，与作品列表同步表分离
+create table if not exists public.ascii_photo_likes (
+  photo_id text not null,
+  client_id text not null,
+  created_at timestamptz not null default now(),
+  primary key (photo_id, client_id)
+);
+
+alter table public.ascii_photo_likes enable row level security;
+
+drop policy if exists "ascii_photo_likes_select" on public.ascii_photo_likes;
+drop policy if exists "ascii_photo_likes_insert" on public.ascii_photo_likes;
+drop policy if exists "ascii_photo_likes_delete" on public.ascii_photo_likes;
+
+create policy "ascii_photo_likes_select" on public.ascii_photo_likes
+  for select using (true);
+create policy "ascii_photo_likes_insert" on public.ascii_photo_likes
+  for insert with check (true);
+create policy "ascii_photo_likes_delete" on public.ascii_photo_likes
+  for delete using (true);
 ```
 
-（上述 RLS 允许匿名读写整表，**anon key 也会出现在前端包里**——仅适合非敏感作品列表；勿存隐私数据。）
+（上述 RLS 允许匿名读写整表，**anon key 也会出现在前端包里**——仅适合非敏感作品列表；勿存隐私数据。点赞表同样可被任意客户端读写，仅作轻量互动计数，**不是**用户认证体系。）
 
 2. **Project Settings → API**：复制 **Project URL** 与 **anon public** key。
 
@@ -45,7 +66,7 @@ create policy "ascii_gallery_sync_update" on public.ascii_gallery_sync
    - `ASCII_CAMERA_SUPABASE_URL` = `https://xxxx.supabase.co`（勿尾斜杠）  
    - `ASCII_CAMERA_SUPABASE_ANON_KEY` = anon key  
 
-   可选：`ASCII_CAMERA_SUPABASE_TABLE`（默认 `ascii_gallery_sync`）、`ASCII_CAMERA_SUPABASE_ROW_ID`（默认 `default`）。
+   可选：`ASCII_CAMERA_SUPABASE_TABLE`（默认 `ascii_gallery_sync`）、`ASCII_CAMERA_SUPABASE_ROW_ID`（默认 `default`）、`ASCII_CAMERA_SUPABASE_LIKES_TABLE`（默认 `ascii_photo_likes`，需按上文 SQL 建表后灯箱云端点赞才可用）。
 
 4. **保存变量后必须重新 Deploy 一次**（或触发新构建），以便 `npm run build` → `inject-config.js` 把变量写入 `config.local.js`。仅改变量不重新构建时，线上仍会是无云端状态。
 

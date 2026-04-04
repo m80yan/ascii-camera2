@@ -15,6 +15,7 @@ const supabaseUrl = process.env.ASCII_CAMERA_SUPABASE_URL || '';
 const supabaseAnon = process.env.ASCII_CAMERA_SUPABASE_ANON_KEY || '';
 const supabaseTable = process.env.ASCII_CAMERA_SUPABASE_TABLE || 'ascii_gallery_sync';
 const supabaseRowId = process.env.ASCII_CAMERA_SUPABASE_ROW_ID || 'default';
+const supabaseLikesTable = process.env.ASCII_CAMERA_SUPABASE_LIKES_TABLE || 'ascii_photo_likes';
 
 const content =
   '/** Generated at build — see DEPLOY.md */\n' +
@@ -29,6 +30,9 @@ const content =
   ';\n' +
   'window.ASCII_CAMERA_SUPABASE_ROW_ID = ' +
   JSON.stringify(supabaseRowId) +
+  ';\n' +
+  'window.ASCII_CAMERA_SUPABASE_LIKES_TABLE = ' +
+  JSON.stringify(supabaseLikesTable) +
   ';\n' +
   'window.ASCII_CAMERA_BIN_ID = ' +
   JSON.stringify(binId) +

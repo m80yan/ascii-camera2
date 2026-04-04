@@ -47,11 +47,13 @@
     var p = d.photo;
     if (typeof p.ascii !== 'string') return;
     try {
-      S.prependUserPhoto({
+      var row = {
         ascii: p.ascii,
         color: typeof p.color === 'string' ? p.color : '#00ff41',
         time: typeof p.time === 'number' ? p.time : Date.now()
-      });
+      };
+      if (typeof p.id === 'string' && p.id) row.id = p.id;
+      S.prependUserPhoto(row);
       if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
         AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
       }

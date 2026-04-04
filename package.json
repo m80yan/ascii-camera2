@@ -3,6 +3,10 @@
   "private": true,
   "description": "ASCII Camera + Gallery (localStorage + built-in sample art)",
   "scripts": {
-    "build": "node scripts/inject-config.js"
+    "build": "node scripts/inject-config.js",
+    "dev": "serve . -l 3000"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
   }
 }

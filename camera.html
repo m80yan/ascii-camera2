@@ -547,6 +547,7 @@ async function savePhoto(ascii) {
   try {
     var photoPayload = { ascii: ascii, color: colorPicker.value, time: Date.now() };
     AsciiCameraGalleryStorage.prependUserPhoto(photoPayload);
+    var savedRow = AsciiCameraGalleryStorage.loadUserPhotos()[0];
     /**
      * Notion 等嵌入场景：Camera 在顶层新标签写入的 `localStorage` 与 iframe 内 Gallery 分区不同。
      * 若本页由 Gallery 以 `rel="opener"` 打开，则向 opener 发同源消息，由 Gallery 写入其分区并刷新。
@@ -554,14 +555,16 @@ async function savePhoto(ascii) {
     try {
       var o = window.opener;
       if (o && o !== window && !o.closed && AsciiCameraGalleryStorage.galleryOpenerNeedsPostMessage(o)) {
+        var msgPhoto = {
+          ascii: savedRow ? savedRow.ascii : photoPayload.ascii,
+          color: savedRow ? savedRow.color : photoPayload.color,
+          time: savedRow ? savedRow.time : photoPayload.time
+        };
+        if (savedRow && typeof savedRow.id === 'string' && savedRow.id) msgPhoto.id = savedRow.id;
         o.postMessage(
           {
             type: AsciiCameraGalleryStorage.GALLERY_PREPEND_MESSAGE_TYPE,
-            photo: {
-              ascii: photoPayload.ascii,
-              color: photoPayload.color,
-              time: photoPayload.time
-            }
+            photo: msgPhoto
           },
           window.location.origin
         );

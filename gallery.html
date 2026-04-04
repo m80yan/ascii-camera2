@@ -150,7 +150,7 @@
     padding-top: 12px;
     border-top: 1px solid rgba(0,255,65,0.12);
   }
-  #lightbox-close, #lightbox-download-png {
+  #lightbox-like, #lightbox-download-png {
     background: transparent;
     border: 1px solid rgba(0,255,65,0.35);
     color: #00ff41;
@@ -160,9 +160,27 @@
     cursor: pointer;
     letter-spacing: 2px;
     text-transform: uppercase;
+    box-sizing: border-box;
+    width: 196px;
+    max-width: 196px;
+    min-width: 196px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
+  #lightbox-like { text-transform: none; letter-spacing: 1px; }
   #lightbox-download-png { text-transform: none; letter-spacing: 1px; }
-  #lightbox-close:hover, #lightbox-download-png:hover { background: rgba(0,255,65,0.1); }
+  #lightbox-like:hover, #lightbox-download-png:hover { background: rgba(0,255,65,0.1); }
+  #lightbox-like.lightbox-like--liked {
+    color: #F96B6D;
+    border-color: rgba(249, 107, 109, 0.8);
+  }
+  #lightbox-like.lightbox-like--liked:hover { background: rgba(249, 107, 109, 0.12); }
   #lightbox-download-png:disabled { opacity: 0.55; cursor: wait; }
   #confirm-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 200; align-items: center; justify-content: center; }
   #confirm-modal.open { display: flex; }
@@ -295,7 +313,7 @@
       <pre id="lightbox-pre"></pre>
     </div>
     <div id="lightbox-footer">
-      <button type="button" id="lightbox-close">Close</button>
+      <button type="button" id="lightbox-like">Like</button>
       <button type="button" id="lightbox-download-png">Download PNG</button>
     </div>
   </div>
@@ -442,6 +460,13 @@ const gallery = document.getElementById('gallery');
 const empty = document.getElementById('empty');
 const lightbox = document.getElementById('lightbox');
 const lightboxPre = document.getElementById('lightbox-pre');
+const lightboxLikeBtn = document.getElementById('lightbox-like');
+/** @type {string} 当前灯箱作品 id，用于云端点赞 */
+let lightboxPhotoId = '';
+/** 打开灯箱递增，用于忽略过期的 fetch */
+let lightboxLikeSessionGen = 0;
+/** @type {{ liked: boolean, count: number }} */
+let lightboxLikeUiState = { liked: false, count: 0 };
 const confirmModal = document.getElementById('confirm-modal');
 const uploadInput = document.getElementById('upload-input');
 const uploadModal = document.getElementById('upload-modal');
@@ -600,14 +625,64 @@ function imageToAscii(img, cols, forcedAspect, chars) {
 }
 
 /**
- * @param {{ascii:string,color?:string,time?:number}} photo
+ * @param {{ ascii?: string, color?: string, time?: number, id?: string }} photo
+ * @returns {string}
+ */
+function resolveLightboxPhotoId(photo) {
+  if (photo && typeof photo.id === 'string' && photo.id) return photo.id;
+  if (window.AsciiCameraGalleryStorage && typeof AsciiCameraGalleryStorage.stableLegacyPhotoId === 'function') {
+    return AsciiCameraGalleryStorage.stableLegacyPhotoId(photo || {});
+  }
+  return '';
+}
+
+/**
+ * 未点赞不展示数量；已点赞仅展示总数文案（红样式表示当前用户已赞）。
+ * @returns {void}
+ */
+function applyLightboxLikeButton() {
+  if (!lightboxLikeBtn) return;
+  const st = lightboxLikeUiState;
+  if (!st.liked) {
+    lightboxLikeBtn.textContent = 'Like';
+    lightboxLikeBtn.classList.remove('lightbox-like--liked');
+    return;
+  }
+  const n = st.count;
+  lightboxLikeBtn.textContent =
+    n === 1 ? '1 like' : n > 1 ? n + ' likes' : '1 like';
+  lightboxLikeBtn.classList.add('lightbox-like--liked');
+}
+
+/**
+ * @param {{ascii:string,color?:string,time?:number,id?:string}} photo
  */
 function openLightbox(photo) {
+  lightboxLikeSessionGen++;
+  const session = lightboxLikeSessionGen;
+  lightboxPhotoId = resolveLightboxPhotoId(photo);
+  lightboxLikeUiState = { liked: false, count: 0 };
+  applyLightboxLikeButton();
+
   lightboxPre.textContent = photo.ascii;
   lightboxPre.style.color = photo.color || '#00ff41';
   lightboxPre.style.display = 'inline-block';
   lightboxPre.style.lineHeight = '1';
   lightbox.classList.add('open');
+
+  const sync = window.AsciiCameraGalleryCloudSync;
+  if (sync && typeof sync.likesApiEnabled === 'function' && sync.likesApiEnabled() && lightboxPhotoId) {
+    sync.fetchPhotoLikeState(lightboxPhotoId).then(function (st) {
+      if (session !== lightboxLikeSessionGen) return;
+      lightboxLikeUiState = { liked: st.likedByMe, count: st.count };
+      applyLightboxLikeButton();
+    }).catch(function () {
+      if (session !== lightboxLikeSessionGen) return;
+      lightboxLikeUiState = { liked: false, count: 0 };
+      applyLightboxLikeButton();
+    });
+  }
+
   requestAnimationFrame(function () {
     const maxW = Math.min(window.innerWidth * 0.88, 960) - 48;
     const maxH = Math.max(40, window.innerHeight * 0.78 - 48 - 72 - 4);
@@ -623,7 +698,47 @@ function openLightbox(photo) {
   });
 }
 lightbox.addEventListener('click', (e) => { if (e.target === lightbox) lightbox.classList.remove('open'); });
-document.getElementById('lightbox-close').addEventListener('click', () => lightbox.classList.remove('open'));
+
+if (lightboxLikeBtn) {
+  lightboxLikeBtn.addEventListener('click', function () {
+    const sync = window.AsciiCameraGalleryCloudSync;
+    const pid = lightboxPhotoId;
+    if (!pid || !sync || typeof sync.likesApiEnabled !== 'function' || !sync.likesApiEnabled()) return;
+
+    const prev = { liked: lightboxLikeUiState.liked, count: lightboxLikeUiState.count };
+    const session = lightboxLikeSessionGen;
+
+    if (!prev.liked) {
+      lightboxLikeUiState = { liked: true, count: prev.count + 1 };
+      applyLightboxLikeButton();
+      sync.addPhotoLike(pid).then(function () {
+        return sync.fetchPhotoLikeState(pid);
+      }).then(function (st) {
+        if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
+        lightboxLikeUiState = { liked: st.likedByMe, count: st.count };
+        applyLightboxLikeButton();
+      }).catch(function () {
+        if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
+        lightboxLikeUiState = { liked: false, count: 0 };
+        applyLightboxLikeButton();
+      });
+    } else {
+      lightboxLikeUiState = { liked: false, count: 0 };
+      applyLightboxLikeButton();
+      sync.removePhotoLike(pid).then(function () {
+        return sync.fetchPhotoLikeState(pid);
+      }).then(function (st) {
+        if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
+        lightboxLikeUiState = { liked: st.likedByMe, count: st.count };
+        applyLightboxLikeButton();
+      }).catch(function () {
+        if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
+        lightboxLikeUiState = prev;
+        applyLightboxLikeButton();
+      });
+    }
+  });
+}
 
 /**
  * Renders lightbox ASCII to PNG using the same computed font, line-height, and color as `#lightbox-pre`.
@@ -764,7 +879,7 @@ function isEmbeddedInThirdPartyFrame() {
 /**
  * 嵌入分区保存后，向同源顶层弹窗写入同一作品，使「View original」打开的 `gallery.html` 能立即看到同一列表。
  * 依赖用户手势内 `window.open`（与 Add to gallery 同一次点击）。
- * @param {{ ascii: string, color: string, time: number }} photo
+ * @param {{ ascii: string, color: string, time: number, id?: string }} photo
  * @returns {void}
  */
 function mirrorUserPhotoToFirstPartyTab(photo) {
@@ -775,9 +890,11 @@ function mirrorUserPhotoToFirstPartyTab(photo) {
     console.warn('[gallery] first-party mirror popup blocked — open in new tab may miss this photo until cloud sync.');
     return;
   }
+  var mirrorPhoto = { ascii: photo.ascii, color: photo.color, time: photo.time };
+  if (typeof photo.id === 'string' && photo.id) mirrorPhoto.id = photo.id;
   var payload = {
     type: AsciiCameraGalleryStorage.GALLERY_MIRROR_TOP_MESSAGE_TYPE,
-    photo: { ascii: photo.ascii, color: photo.color, time: photo.time }
+    photo: mirrorPhoto
   };
   var sent = false;
   var n = 0;
@@ -811,11 +928,12 @@ async function savePhoto(ascii, color) {
   try {
     const photo = { ascii: ascii, color: color || '#00ff41', time: Date.now() };
     AsciiCameraGalleryStorage.prependUserPhoto(photo);
+    const saved = AsciiCameraGalleryStorage.loadUserPhotos()[0];
     refreshGallery();
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
       AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
     }
-    mirrorUserPhotoToFirstPartyTab(photo);
+    mirrorUserPhotoToFirstPartyTab(saved || photo);
   } catch (e) {
     console.error(e);
     alert('Could not save to browser storage (quota or private mode).');
@@ -972,11 +1090,13 @@ window.addEventListener('message', function (ev) {
   if (!d || d.type !== AsciiCameraGalleryStorage.GALLERY_PREPEND_MESSAGE_TYPE || !d.photo) return;
   var p = d.photo;
   if (typeof p.ascii !== 'string') return;
-  AsciiCameraGalleryStorage.prependUserPhoto({
+  var incoming = {
     ascii: p.ascii,
     color: typeof p.color === 'string' ? p.color : '#00ff41',
     time: typeof p.time === 'number' ? p.time : Date.now()
-  });
+  };
+  if (typeof p.id === 'string' && p.id) incoming.id = p.id;
+  AsciiCameraGalleryStorage.prependUserPhoto(incoming);
   refreshGallery();
   if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
     AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
