@@ -54,8 +54,14 @@
       };
       if (typeof p.id === 'string' && p.id) row.id = p.id;
       S.prependUserPhoto(row);
+      var savedBridge = S.loadUserPhotos()[0];
       if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-        AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
+        var syncB = AsciiCameraGalleryCloudSync;
+        if (syncB.getProvider() === 'supabase' && typeof syncB.insertPhotoRow === 'function') {
+          syncB.insertPhotoRow(savedBridge || row).catch(function () {});
+        } else {
+          syncB.pushFromLocal().catch(function () {});
+        }
       }
     } catch (err) {
       console.warn('[gallery-bridge] prepend failed', err);

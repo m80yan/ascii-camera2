@@ -270,6 +270,9 @@
   <label class="ctl-stack cc-left">
     <span class="ctl-label">Resolution</span>
     <select id="resPicker">
+      <option value="16">16 (Micro)</option>
+      <option value="24">24 (Small)</option>
+      <option value="32">32 (Mini)</option>
       <option value="80">80 (Low)</option>
       <option value="100" selected>100 (Medium)</option>
       <option value="120">120 (High)</option>
@@ -571,7 +574,12 @@ async function persistPhotoToGallery(ascii) {
       }
     } catch (eOpener) { /* 跨域或策略限制 */ }
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-      AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
+      var syncCam = AsciiCameraGalleryCloudSync;
+      if (syncCam.getProvider() === 'supabase' && typeof syncCam.insertPhotoRow === 'function') {
+        syncCam.insertPhotoRow(savedRow || photoPayload).catch(function () {});
+      } else {
+        syncCam.pushFromLocal().catch(function () {});
+      }
     }
     return true;
   } catch (e) {

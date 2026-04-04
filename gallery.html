@@ -300,6 +300,9 @@
         <div class="upload-ctl">
           <span class="upload-ctl-label">Resolution</span>
           <select id="upload-cols" aria-label="Resolution">
+            <option value="16">16 (Micro)</option>
+            <option value="24">24 (Small)</option>
+            <option value="32">32 (Mini)</option>
             <option value="80">80 (Low)</option>
             <option value="100" selected>100 (Medium)</option>
             <option value="120">120 (High)</option>
@@ -1035,7 +1038,12 @@ async function savePhoto(ascii, color) {
     const saved = AsciiCameraGalleryStorage.loadUserPhotos()[0];
     refreshGallery();
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-      AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
+      var sync = AsciiCameraGalleryCloudSync;
+      if (sync.getProvider() === 'supabase' && typeof sync.insertPhotoRow === 'function') {
+        sync.insertPhotoRow(saved || photo).catch(function () {});
+      } else {
+        sync.pushFromLocal().catch(function () {});
+      }
     }
     mirrorUserPhotoToFirstPartyTab(saved || photo);
   } catch (e) {
@@ -1067,8 +1075,14 @@ async function deletePhoto(userIndex) {
     if (!window.AsciiCameraGalleryCloudSync || !AsciiCameraGalleryCloudSync.isEnabled()) {
       return;
     }
-    var pushed = await AsciiCameraGalleryCloudSync.pushFromLocal();
-    if (!pushed) {
+    var sync = AsciiCameraGalleryCloudSync;
+    var cloudOk = true;
+    if (sync.getProvider() === 'supabase' && typeof sync.deletePhotoRow === 'function') {
+      cloudOk = await sync.deletePhotoRow(photoIdForLikes);
+    } else {
+      cloudOk = await sync.pushFromLocal();
+    }
+    if (!cloudOk) {
       AsciiCameraGalleryStorage.saveUserPhotos(backup);
       refreshGallery();
       var st =
@@ -1242,9 +1256,15 @@ window.addEventListener('message', function (ev) {
   };
   if (typeof p.id === 'string' && p.id) incoming.id = p.id;
   AsciiCameraGalleryStorage.prependUserPhoto(incoming);
+  var savedFromMsg = AsciiCameraGalleryStorage.loadUserPhotos()[0];
   refreshGallery();
   if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-    AsciiCameraGalleryCloudSync.pushFromLocal().catch(function () {});
+    var sync2 = AsciiCameraGalleryCloudSync;
+    if (sync2.getProvider() === 'supabase' && typeof sync2.insertPhotoRow === 'function') {
+      sync2.insertPhotoRow(savedFromMsg || incoming).catch(function () {});
+    } else {
+      sync2.pushFromLocal().catch(function () {});
+    }
   }
 });
 

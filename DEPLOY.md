@@ -4,7 +4,7 @@
 
 - 画廊 **默认展示多张内置示例图**（所有访客相同）。
 - 用户通过 **上传 / 相机** 保存的内容默认在 **本机 localStorage**（与示例图合并展示）。
-- **可选云端同步**：配置后，Gallery **定时轮询** 拉取远端并与本机合并；上传、删除、相机保存 **去抖后推送**。适合 Notion 嵌入等存储分区不一致时对齐作品。
+- **可选云端同步（Supabase）**：每张照片为 **`ascii_photos` 表独立一行**（insert / delete / 列表查询），**不再**整包覆盖单行 JSON，避免移动端覆盖全库。Gallery 启动与轮询时 **拉取表内列表** 并与本机未上云条目合并；JSONBin 仍为旧版整包读写。
 - **Notion 嵌入内上传**：保存时会自动打开极小的同源弹窗 `gallery-bridge.html`，把同一条作品写入 **顶层首方** `localStorage`，使 **View original** 打开的 `gallery.html` 能立刻看到刚上传的图（需在浏览器允许本站弹出窗口）。部署时请确保 **`gallery-bridge.html`** 与 `gallery.html` 一并上传。
 - **推荐 [Supabase](https://supabase.com)**（免费层一般够用）。**JSONBin** 仍可作备选，但免费层常出现 `Requests exhausted`。
 
@@ -13,29 +13,28 @@
 1. 新建 Supabase 项目 → **SQL Editor** 执行：
 
 ```sql
-create table if not exists public.ascii_gallery_sync (
-  id text primary key,
-  body jsonb not null default '{"schema":1,"updatedAt":0,"photos":[]}'::jsonb
+-- 作品墙：一行一张照片（前端仅 insert / select / delete，无整行 body 覆盖）
+create table if not exists public.ascii_photos (
+  id uuid primary key default gen_random_uuid(),
+  ascii text not null,
+  color text not null default '#00ff41',
+  created_at timestamptz not null default now()
 );
 
-insert into public.ascii_gallery_sync (id, body)
-values ('default', '{"schema":1,"updatedAt":0,"photos":[]}'::jsonb)
-on conflict (id) do nothing;
+alter table public.ascii_photos enable row level security;
 
-alter table public.ascii_gallery_sync enable row level security;
+drop policy if exists "ascii_photos_select" on public.ascii_photos;
+drop policy if exists "ascii_photos_insert" on public.ascii_photos;
+drop policy if exists "ascii_photos_delete" on public.ascii_photos;
 
-drop policy if exists "ascii_gallery_sync_select" on public.ascii_gallery_sync;
-drop policy if exists "ascii_gallery_sync_insert" on public.ascii_gallery_sync;
-drop policy if exists "ascii_gallery_sync_update" on public.ascii_gallery_sync;
-
-create policy "ascii_gallery_sync_select" on public.ascii_gallery_sync
+create policy "ascii_photos_select" on public.ascii_photos
   for select using (true);
-create policy "ascii_gallery_sync_insert" on public.ascii_gallery_sync
+create policy "ascii_photos_insert" on public.ascii_photos
   for insert with check (true);
-create policy "ascii_gallery_sync_update" on public.ascii_gallery_sync
-  for update using (true);
+create policy "ascii_photos_delete" on public.ascii_photos
+  for delete using (true);
 
--- 灯箱「Like」：按 photo_id + client_id 去重，与作品列表同步表分离
+-- 灯箱「Like」：按 photo_id + client_id 去重，与作品列表表分离
 create table if not exists public.ascii_photo_likes (
   photo_id text not null,
   client_id text not null,
@@ -57,7 +56,9 @@ create policy "ascii_photo_likes_delete" on public.ascii_photo_likes
   for delete using (true);
 ```
 
-（上述 RLS 允许匿名读写整表，**anon key 也会出现在前端包里**——仅适合非敏感作品列表；勿存隐私数据。点赞表同样可被任意客户端读写，仅作轻量互动计数，**不是**用户认证体系。画廊删除作品且 **PUT 同步成功** 后，会按 `photo_id` 删除 `ascii_photo_likes` 中对应行。）
+**从旧版 `ascii_gallery_sync` 迁出：** 前端不再读写该表的 `body`。若线上仍有历史作品只存在 JSON blob 中，需在 Supabase 中自行写脚本把 `photos` 展开插入 `ascii_photos`，或接受新表从空开始。
+
+（上述 RLS 允许匿名读写整表，**anon key 也会出现在前端包里**——仅适合非敏感作品列表；勿存隐私数据。点赞表同样可被任意客户端读写，仅作轻量互动计数，**不是**用户认证体系。画廊在 Supabase 下删除作品会先 **DELETE `ascii_photos` 对应行**，再按 `photo_id` 清理 `ascii_photo_likes`。旧版单行 `ascii_gallery_sync.body` 已不再被前端使用，可在库中忽略或自行删除。）
 
 2. **Project Settings → API**：复制 **Project URL** 与 **anon public** key。
 
@@ -66,7 +67,7 @@ create policy "ascii_photo_likes_delete" on public.ascii_photo_likes
    - `ASCII_CAMERA_SUPABASE_URL` = `https://xxxx.supabase.co`（勿尾斜杠）  
    - `ASCII_CAMERA_SUPABASE_ANON_KEY` = anon key  
 
-   可选：`ASCII_CAMERA_SUPABASE_TABLE`（默认 `ascii_gallery_sync`）、`ASCII_CAMERA_SUPABASE_ROW_ID`（默认 `default`）、`ASCII_CAMERA_SUPABASE_LIKES_TABLE`（默认 `ascii_photo_likes`，需按上文 SQL 建表后灯箱云端点赞才可用）。
+   可选：`ASCII_CAMERA_SUPABASE_PHOTOS_TABLE`（默认 `ascii_photos`）、`ASCII_CAMERA_SUPABASE_LIKES_TABLE`（默认 `ascii_photo_likes`）。`ASCII_CAMERA_SUPABASE_TABLE` / `ASCII_CAMERA_SUPABASE_ROW_ID` 仅与旧版 JSON  blob 有关，当前画廊已不再读写。
 
 4. **保存变量后必须重新 Deploy 一次**（或触发新构建），以便 `npm run build` → `inject-config.js` 把变量写入 `config.local.js`。仅改变量不重新构建时，线上仍会是无云端状态。
 
@@ -84,14 +85,14 @@ create policy "ascii_photo_likes_delete" on public.ascii_photo_likes
 AsciiCameraGalleryCloudSync.getSyncStatus()
 ```
 
-若返回 `enabled: true` 且 `provider: "supabase"`，说明前端已读到 URL 与 anon key。再上传或保存一张作品，等待约 1 秒后再次执行；若 `lastPushOk: true`（且需要时 `lastPullOk: true`），说明与 Supabase 的读写请求成功。若 `lastPushError` / `lastPullError` 有内容，多为 RLS、表名、行 id 或网络（含嵌入页拦截 `fetch`）问题。
+若返回 `enabled: true` 且 `provider: "supabase"`，说明前端已读到 URL 与 anon key。再上传或保存一张作品，等待约 1 秒后再次执行；若 `lastPushOk: true`（插入或删除成功）且 `lastPullOk: true`，说明与 Supabase 的请求成功。若 `lastPushError` / `lastPullError` 有内容，多为 RLS、表名或网络（含嵌入页拦截 `fetch`）问题。
 
 ### Notion 嵌入里「配置了云端但仍不同步」
 
 1. 部署后的 **Gallery 页面顶部** 会有一行 **云端同步状态**（绿色为正常，红色为失败并带简短原因）。先看红字内容。
 2. 在 **Notion 里打开嵌入页** → 浏览器 **F12** → **Network**，筛选 **`supabase`** 或 **`rest/v1`**：  
    - 若对 `xxxx.supabase.co` 的请求为 **红色 Failed** 或 **(blocked)**，说明 **当前环境禁止向 Supabase 发请求**（企业策略、隐私插件、或宿主限制）。可换 **手机流量 / 另一网络** 或在 **地址栏直接打开** `https://你的域名/gallery.html`（非嵌入）对比：若仅嵌入失败，多半是 **iframe 内跨站请求被拦**。
-3. 在 **Supabase → Table Editor** 打开表 **`ascii_gallery_sync`**，点 **`default` 那一行**，看 **`body`** 里的 **`photos`** 是否在有人保存后 **会更新**。若 **始终不变**，说明 **上传请求未成功写入**（重点查 RLS、anon key、表名）。若 **会变** 但别人看不到，则是 **别人浏览器拉取失败**（Network 里看 GET 是否 200）。
+3. 在 **Supabase → Table Editor** 打开表 **`ascii_photos`**：保存作品后是否 **新增一行**（`created_at` 最新）。若 **没有新行**，说明 **insert 未成功**（重点查 RLS、表名、anon key）。若 **表里有数据** 但别人看不到，则是 **别人浏览器拉取失败**（Network 里对 `ascii_photos` 的 GET 是否 200）。
 
 ## 3. JSONBin（备选）
 

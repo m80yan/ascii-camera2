@@ -1,7 +1,7 @@
 /**
  * @file 可选：云端同步用户作品列表（与 `gallery-storage.js` 的 localStorage 合并）。
- * 拉取时以远端 `photos` 为权威（可同步删除）；再并入本机尚未出现在远端且 `mine !== false` 的条目。
- * 支持 Supabase（推荐，免费层较宽裕）或 JSONBin v3（易遇请求额度限制）。
+ * - **Supabase**：每幅作品为 `ascii_photos` 独立一行（insert/delete + 拉取列表），不再整包覆盖 JSON blob，避免移动端覆盖全库。
+ * - **JSONBin**：仍使用单 bin 整包读写（旧路径，易撞额度）。
  * 配置见 `config.local.js` / Vercel 环境变量（`scripts/inject-config.js`）。
  */
 (function (global) {
@@ -138,9 +138,30 @@
     return {
       url: String(w.ASCII_CAMERA_SUPABASE_URL || '').replace(/\/$/, ''),
       anonKey: String(w.ASCII_CAMERA_SUPABASE_ANON_KEY || '').trim(),
+      /** 仅 JSONBin 时代遗留；Supabase 作品已改用 {@link getSupabasePhotosTable}。 */
       table: (w.ASCII_CAMERA_SUPABASE_TABLE && String(w.ASCII_CAMERA_SUPABASE_TABLE).trim()) || 'ascii_gallery_sync',
       rowId: (w.ASCII_CAMERA_SUPABASE_ROW_ID && String(w.ASCII_CAMERA_SUPABASE_ROW_ID).trim()) || 'default'
     };
+  }
+
+  /**
+   * @returns {string} PostgREST 表名，每行一张照片。
+   */
+  function getSupabasePhotosTable() {
+    var w = global;
+    var t = w.ASCII_CAMERA_SUPABASE_PHOTOS_TABLE && String(w.ASCII_CAMERA_SUPABASE_PHOTOS_TABLE).trim();
+    return t || 'ascii_photos';
+  }
+
+  /**
+   * @param {string | undefined} s
+   * @returns {boolean}
+   */
+  function isUuidString(s) {
+    return (
+      typeof s === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)
+    );
   }
 
   /**
@@ -316,18 +337,40 @@
   }
 
   /**
-   * @returns {Promise<{ schema: number, updatedAt: number, photos: Array<{ascii:string,color?:string,time?:number}> }>}
+   * 将 `ascii_photos` 行转为与 `gallery-storage` 一致的作品形状（来自远端，统一 `mine: false`）。
+   * @param {{ id?: string, ascii?: string, color?: string, created_at?: string }} row
+   * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean } | null}
    */
-  function fetchRemotePayloadSupabase() {
+  function mapAsciiPhotoRow(row) {
+    if (!row || typeof row.ascii !== 'string') return null;
+    var id = typeof row.id === 'string' && row.id ? row.id : '';
+    if (!id) return null;
+    var t = row.created_at ? Date.parse(String(row.created_at)) : NaN;
+    if (!Number.isFinite(t)) t = Date.now();
+    return {
+      id: id,
+      ascii: row.ascii,
+      color: typeof row.color === 'string' ? row.color : '#00ff41',
+      time: t,
+      mine: false
+    };
+  }
+
+  /**
+   * 拉取 Supabase `ascii_photos` 表（按 `created_at` 新在前，限制条数）。
+   * @param {number} limit
+   * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean }>>}
+   */
+  function fetchAsciiPhotosFromSupabase(limit) {
     var c = getSupabaseConfig();
-    /** @note 勿加 `&_=Date.now()`：PostgREST 会把 `_` 当成列名解析，导致 400 failed to parse filter。 */
+    var table = getSupabasePhotosTable();
+    var lim = Math.max(1, Math.min(500, typeof limit === 'number' ? limit : 24));
     var url =
       c.url +
       '/rest/v1/' +
-      encodeURIComponent(c.table) +
-      '?id=eq.' +
-      encodeURIComponent(c.rowId) +
-      '&select=body';
+      encodeURIComponent(table) +
+      '?select=id,ascii,color,created_at&order=created_at.desc&limit=' +
+      encodeURIComponent(String(lim));
     return fetch(url, {
       method: 'GET',
       cache: 'no-store',
@@ -341,39 +384,48 @@
         if (!res.ok) {
           return readFetchErrorText(res).then(function (detail) {
             return Promise.reject(
-              new Error('Supabase GET ' + res.status + (detail ? ': ' + detail : ''))
+              new Error('Supabase ascii_photos GET ' + res.status + (detail ? ': ' + detail : ''))
             );
           });
         }
         return res.json();
       })
       .then(function (rows) {
-        if (!Array.isArray(rows) || rows.length === 0) {
-          return { schema: 1, updatedAt: 0, photos: [] };
+        if (!Array.isArray(rows)) return [];
+        var out = [];
+        for (var i = 0; i < rows.length; i++) {
+          var m = mapAsciiPhotoRow(rows[i]);
+          if (m) out.push(m);
         }
-        var body = rows[0].body;
-        if (typeof body === 'string') {
-          try {
-            body = JSON.parse(body);
-          } catch (e) {
-            body = {};
-          }
-        }
-        return normalizePayloadRecord(body);
+        return out;
       });
   }
 
   /**
-   * @param {{ schema: number, updatedAt: number, photos: Array<{ascii:string,color:string,time:number}> }} payload
-   * @returns {Promise<void>}
+   * 向 `ascii_photos` 插入一行（不整包覆盖）；`id` 为 UUID 时与本地 `prependUserPhoto` 对齐。
+   * @param {{ ascii: string, color?: string, time?: number, id?: string }} photo
+   * @returns {Promise<boolean>}
    */
-  function putRemotePayloadSupabase(payload) {
+  function insertPhotoRowSupabase(photo) {
+    if (!photo || typeof photo.ascii !== 'string') return Promise.resolve(false);
     var c = getSupabaseConfig();
-    var url =
-      c.url +
-      '/rest/v1/' +
-      encodeURIComponent(c.table) +
-      '?on_conflict=id';
+    var table = getSupabasePhotosTable();
+    var url = c.url + '/rest/v1/' + encodeURIComponent(table);
+    var createdIso =
+      typeof photo.time === 'number' && Number.isFinite(photo.time)
+        ? new Date(photo.time).toISOString()
+        : new Date().toISOString();
+    /** @type {{ ascii: string, color: string, created_at: string, id?: string }} */
+    var body = {
+      ascii: photo.ascii,
+      color: typeof photo.color === 'string' ? photo.color : '#00ff41',
+      created_at: createdIso
+    };
+    if (isUuidString(photo.id)) {
+      body.id = photo.id;
+    }
+    var prefer = isUuidString(photo.id) ? 'return=minimal' : 'return=representation';
+    pushInFlight = true;
     return fetch(url, {
       method: 'POST',
       cache: 'no-store',
@@ -381,18 +433,107 @@
         apikey: c.anonKey,
         Authorization: 'Bearer ' + c.anonKey,
         'Content-Type': 'application/json',
-        Prefer: 'resolution=merge-duplicates,return=minimal'
+        Prefer: prefer
       },
-      body: JSON.stringify([{ id: c.rowId, body: payload }])
-    }).then(function (res) {
-      if (!res.ok) {
+      body: JSON.stringify(body)
+    })
+      .then(function (res) {
+        if (res.ok || res.status === 409) {
+          if (res.status === 409) return true;
+          if (prefer === 'return=representation') {
+            return res.json().then(function (rows) {
+              var row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+              var newId = row && typeof row.id === 'string' ? row.id : '';
+              if (
+                newId &&
+                global.AsciiCameraGalleryStorage &&
+                typeof global.AsciiCameraGalleryStorage.setUserPhotoIdAt === 'function'
+              ) {
+                global.AsciiCameraGalleryStorage.setUserPhotoIdAt(0, newId);
+              }
+              return true;
+            });
+          }
+          return true;
+        }
         return readFetchErrorText(res).then(function (detail) {
           return Promise.reject(
-            new Error('Supabase upsert ' + res.status + (detail ? ': ' + detail : ''))
+            new Error('ascii_photos insert ' + res.status + (detail ? ': ' + detail : ''))
           );
         });
+      })
+      .catch(function (err) {
+        console.warn('[gallery-cloud-sync] ascii_photos insert failed', err);
+        syncStatus.lastPushAt = Date.now();
+        syncStatus.lastPushOk = false;
+        syncStatus.lastPushError = err && err.message ? String(err.message) : String(err);
+        emitStatus();
+        return false;
+      })
+      .then(function (ok) {
+        if (ok) {
+          syncStatus.lastPushAt = Date.now();
+          syncStatus.lastPushOk = true;
+          syncStatus.lastPushError = '';
+          emitStatus();
+        }
+        return ok;
+      })
+      .finally(function () {
+        pushInFlight = false;
+      });
+  }
+
+  /**
+   * 按主键删除 `ascii_photos` 一行；非 UUID 的遗留 id 仅跳过远端（本地已删）。
+   * @param {string} photoId
+   * @returns {Promise<boolean>}
+   */
+  function deletePhotoRowSupabase(photoId) {
+    if (!photoId || typeof photoId !== 'string') return Promise.resolve(true);
+    if (!isUuidString(photoId)) return Promise.resolve(true);
+    var c = getSupabaseConfig();
+    var table = getSupabasePhotosTable();
+    var url =
+      c.url +
+      '/rest/v1/' +
+      encodeURIComponent(table) +
+      '?id=eq.' +
+      encodeURIComponent(photoId);
+    pushInFlight = true;
+    return fetch(url, {
+      method: 'DELETE',
+      cache: 'no-store',
+      headers: {
+        apikey: c.anonKey,
+        Authorization: 'Bearer ' + c.anonKey
       }
-    });
+    })
+      .then(function (res) {
+        if (res.ok || res.status === 404) {
+          syncStatus.lastPushAt = Date.now();
+          syncStatus.lastPushOk = true;
+          syncStatus.lastPushError = '';
+          emitStatus();
+          return true;
+        }
+        return readFetchErrorText(res).then(function (detail) {
+          return Promise.reject(
+            new Error('ascii_photos DELETE ' + res.status + (detail ? ': ' + detail : ''))
+          );
+        });
+      })
+      .catch(function (err) {
+        console.warn('[gallery-cloud-sync] ascii_photos delete failed', err);
+        syncStatus.lastPushAt = Date.now();
+        syncStatus.lastPushOk = false;
+        syncStatus.lastPushError = err && err.message ? String(err.message) : String(err);
+        emitStatus();
+        return false;
+      })
+      .finally(function () {
+        pushInFlight = false;
+      });
   }
 
   /**
@@ -451,7 +592,6 @@
    */
   function fetchRemotePayload() {
     var p = getProvider();
-    if (p === 'supabase') return fetchRemotePayloadSupabase();
     if (p === 'jsonbin') return fetchRemotePayloadJsonBin();
     return Promise.resolve({ schema: 1, updatedAt: 0, photos: [] });
   }
@@ -462,9 +602,48 @@
    */
   function putRemotePayload(payload) {
     var p = getProvider();
-    if (p === 'supabase') return putRemotePayloadSupabase(payload);
     if (p === 'jsonbin') return putRemotePayloadJsonBin(payload);
     return Promise.resolve();
+  }
+
+  /**
+   * Supabase：从 `ascii_photos` 拉取并写入本机（与未上云条目合并）。
+   * @returns {Promise<boolean>}
+   */
+  function pullOnceSupabase() {
+    var max = global.AsciiCameraGalleryStorage.MAX_USER_PHOTOS || 24;
+    var load = global.AsciiCameraGalleryStorage.loadUserPhotos;
+    var save = global.AsciiCameraGalleryStorage.saveUserPhotos;
+    var before = JSON.stringify(load());
+    return fetchAsciiPhotosFromSupabase(max)
+      .then(function (remotePhotos) {
+        if (pushInFlight) {
+          return false;
+        }
+        var local = load();
+        var merged = mergePullRemoteFirst(remotePhotos, local, max);
+        var after = JSON.stringify(merged);
+        if (before !== after) {
+          save(merged);
+          return true;
+        }
+        return false;
+      })
+      .then(function (changed) {
+        syncStatus.lastPullAt = Date.now();
+        syncStatus.lastPullOk = true;
+        syncStatus.lastPullError = '';
+        emitStatus();
+        return changed;
+      })
+      .catch(function (err) {
+        console.warn('[gallery-cloud-sync] Supabase pull failed', err);
+        syncStatus.lastPullAt = Date.now();
+        syncStatus.lastPullOk = false;
+        syncStatus.lastPullError = err && err.message ? String(err.message) : String(err);
+        emitStatus();
+        return false;
+      });
   }
 
   /**
@@ -478,6 +657,9 @@
     }
     if (pushInFlight) {
       return Promise.resolve(false);
+    }
+    if (getProvider() === 'supabase') {
+      return pullOnceSupabase();
     }
     var max = global.AsciiCameraGalleryStorage.MAX_USER_PHOTOS || 24;
     var load = global.AsciiCameraGalleryStorage.loadUserPhotos;
@@ -526,11 +708,16 @@
   }
 
   /**
-   * 将当前本机列表写回远端（不再先 GET 再合并，否则删除后旧远端会把已删作品并回 PUT）。
+   * 将当前本机列表写回远端。Supabase 已改为逐行 insert/delete，此处对 Supabase 为 no-op（成功）。
+   * JSONBin 仍为整包 PUT。
    * @returns {Promise<boolean>} 已启用云端且 PUT 成功为 true；未配置云端视为成功；失败为 false
    */
   function pushFromLocal() {
     if (!isEnabled() || !global.AsciiCameraGalleryStorage) {
+      emitStatus();
+      return Promise.resolve(true);
+    }
+    if (getProvider() === 'supabase') {
       emitStatus();
       return Promise.resolve(true);
     }
@@ -565,6 +752,30 @@
       .finally(function () {
         pushInFlight = false;
       });
+  }
+
+  /**
+   * 新增一幅作品到 Supabase（单行 insert）；非 Supabase 或未启用时视为成功。
+   * @param {{ ascii: string, color?: string, time?: number, id?: string }} photo
+   * @returns {Promise<boolean>}
+   */
+  function insertPhotoRow(photo) {
+    if (!isEnabled() || getProvider() !== 'supabase') {
+      return Promise.resolve(true);
+    }
+    return insertPhotoRowSupabase(photo);
+  }
+
+  /**
+   * 从 Supabase 按 UUID 删除一行；非 UUID 或未启用时视为成功。
+   * @param {string} photoId
+   * @returns {Promise<boolean>}
+   */
+  function deletePhotoRow(photoId) {
+    if (!isEnabled() || getProvider() !== 'supabase') {
+      return Promise.resolve(true);
+    }
+    return deletePhotoRowSupabase(photoId);
   }
 
   /**
@@ -793,6 +1004,8 @@
     setStatusListener: setStatusListener,
     pullOnce: pullOnce,
     pushFromLocal: pushFromLocal,
+    insertPhotoRow: insertPhotoRow,
+    deletePhotoRow: deletePhotoRow,
     schedulePush: schedulePush,
     startPolling: startPolling,
     stopPolling: stopPolling,

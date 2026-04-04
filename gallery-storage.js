@@ -178,6 +178,20 @@
   }
 
   /**
+   * 云端 insert 返回新 UUID 时写回列表首条（与 `prependUserPhoto` 后下标 0 对齐）。
+   * @param {number} index
+   * @param {string} id
+   * @returns {void}
+   */
+  function setUserPhotoIdAt(index, id) {
+    if (typeof id !== 'string' || !id) return;
+    var list = loadUserPhotos();
+    if (index < 0 || index >= list.length) return;
+    list[index] = Object.assign({}, list[index], { id: id });
+    saveUserPhotos(list);
+  }
+
+  /**
    * @param {number} index 仅用户照片区下标（0 … userCount-1）
    */
   function deleteUserPhotoAt(index) {
@@ -224,6 +238,7 @@
     loadUserPhotos: loadUserPhotos,
     saveUserPhotos: saveUserPhotos,
     prependUserPhoto: prependUserPhoto,
+    setUserPhotoIdAt: setUserPhotoIdAt,
     deleteUserPhotoAt: deleteUserPhotoAt,
     getMergedGalleryPhotos: getMergedGalleryPhotos,
     getUserPhotoCount: getUserPhotoCount,
