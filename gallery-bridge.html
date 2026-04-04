@@ -46,29 +46,34 @@
     done = true;
     var p = d.photo;
     if (typeof p.ascii !== 'string') return;
-    try {
-      var row = {
-        ascii: p.ascii,
-        color: typeof p.color === 'string' ? p.color : '#00ff41',
-        time: typeof p.time === 'number' ? p.time : Date.now()
-      };
-      if (typeof p.id === 'string' && p.id) row.id = p.id;
-      S.prependUserPhoto(row);
-      var savedBridge = S.loadUserPhotos()[0];
-      if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-        var syncB = AsciiCameraGalleryCloudSync;
-        if (syncB.getProvider() === 'supabase' && typeof syncB.insertPhotoRow === 'function') {
-          syncB.insertPhotoRow(savedBridge || row).catch(function () {});
-        } else {
-          syncB.pushFromLocal().catch(function () {});
+    void (async function () {
+      try {
+        var row = {
+          ascii: p.ascii,
+          color: typeof p.color === 'string' ? p.color : '#00ff41',
+          time: typeof p.time === 'number' ? p.time : Date.now()
+        };
+        if (typeof p.id === 'string' && p.id) row.id = p.id;
+        S.prependUserPhoto(row);
+        var savedBridge = S.loadUserPhotos()[0];
+        if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
+          var syncB = AsciiCameraGalleryCloudSync;
+          if (syncB.getProvider() === 'supabase' && typeof syncB.insertPhotoRow === 'function') {
+            var brOk = await syncB.insertPhotoRow(savedBridge || row);
+            if (!brOk) {
+              S.deleteUserPhotoAt(0);
+            }
+          } else {
+            syncB.pushFromLocal().catch(function () {});
+          }
         }
+      } catch (err) {
+        console.warn('[gallery-bridge] prepend failed', err);
       }
-    } catch (err) {
-      console.warn('[gallery-bridge] prepend failed', err);
-    }
-    setTimeout(function () {
-      try { window.close(); } catch (e2) {}
-    }, 80);
+      setTimeout(function () {
+        try { window.close(); } catch (e2) {}
+      }, 80);
+    })();
   });
 })();
 </script>

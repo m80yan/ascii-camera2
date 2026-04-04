@@ -1040,12 +1040,22 @@ async function savePhoto(ascii, color) {
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
       var sync = AsciiCameraGalleryCloudSync;
       if (sync.getProvider() === 'supabase' && typeof sync.insertPhotoRow === 'function') {
-        sync.insertPhotoRow(saved || photo).catch(function () {});
+        var insOk = await sync.insertPhotoRow(saved || photo);
+        if (!insOk) {
+          AsciiCameraGalleryStorage.deleteUserPhotoAt(0);
+          refreshGallery();
+          window.alert(
+            'Could not save to ascii_photos. Check console [gallery-sync] logs and Supabase RLS.'
+          );
+          return;
+        }
+        refreshGallery();
       } else {
         sync.pushFromLocal().catch(function () {});
       }
     }
-    mirrorUserPhotoToFirstPartyTab(saved || photo);
+    var mirrorRef = AsciiCameraGalleryStorage.loadUserPhotos()[0] || saved || photo;
+    mirrorUserPhotoToFirstPartyTab(mirrorRef);
   } catch (e) {
     console.error(e);
     alert('Could not save to browser storage (quota or private mode).');
@@ -1070,12 +1080,42 @@ async function deletePhoto(userIndex) {
     } else if (AsciiCameraGalleryStorage.stableLegacyPhotoId) {
       photoIdForLikes = AsciiCameraGalleryStorage.stableLegacyPhotoId(removed);
     }
-    AsciiCameraGalleryStorage.deleteUserPhotoAt(userIndex);
-    refreshGallery();
-    if (!window.AsciiCameraGalleryCloudSync || !AsciiCameraGalleryCloudSync.isEnabled()) {
+    var sync = window.AsciiCameraGalleryCloudSync;
+    var useSupabaseRow =
+      sync &&
+      sync.isEnabled() &&
+      sync.getProvider() === 'supabase' &&
+      typeof sync.deletePhotoRow === 'function' &&
+      typeof sync.isUuidPhotoId === 'function' &&
+      sync.isUuidPhotoId(photoIdForLikes);
+
+    if (useSupabaseRow) {
+      var delOk = await sync.deletePhotoRow(photoIdForLikes);
+      if (!delOk) {
+        var st2 = typeof sync.getSyncStatus === 'function' ? sync.getSyncStatus() : null;
+        var detail2 = st2 && st2.lastPushError ? String(st2.lastPushError) : '';
+        window.alert(
+          'Could not delete from ascii_photos. Gallery unchanged.\n\n' +
+            (detail2 ? 'Error: ' + detail2 : '')
+        );
+        return;
+      }
+      refreshGallery();
+      if (photoIdForLikes && typeof sync.deleteAllLikesForPhotoId === 'function') {
+        try {
+          await sync.deleteAllLikesForPhotoId(photoIdForLikes);
+        } catch (eL) {
+          console.warn('[gallery] cloud likes cleanup failed', eL);
+        }
+      }
       return;
     }
-    var sync = AsciiCameraGalleryCloudSync;
+
+    AsciiCameraGalleryStorage.deleteUserPhotoAt(userIndex);
+    refreshGallery();
+    if (!sync || !sync.isEnabled()) {
+      return;
+    }
     var cloudOk = true;
     if (sync.getProvider() === 'supabase' && typeof sync.deletePhotoRow === 'function') {
       cloudOk = await sync.deletePhotoRow(photoIdForLikes);
@@ -1100,8 +1140,8 @@ async function deletePhoto(userIndex) {
     if (photoIdForLikes && typeof AsciiCameraGalleryCloudSync.deleteAllLikesForPhotoId === 'function') {
       try {
         await AsciiCameraGalleryCloudSync.deleteAllLikesForPhotoId(photoIdForLikes);
-      } catch (eL) {
-        console.warn('[gallery] cloud likes cleanup failed', eL);
+      } catch (eL2) {
+        console.warn('[gallery] cloud likes cleanup failed', eL2);
       }
     }
   } catch (e) {
@@ -1110,10 +1150,31 @@ async function deletePhoto(userIndex) {
 }
 
 /**
- * 重新从 localStorage + 默认图合并并渲染。
+ * 重新渲染网格：Supabase 下仅使用 `ascii_photos` 缓存 + 内置示例；否则 localStorage 合并。
  */
 function refreshGallery() {
-  renderGallery(AsciiCameraGalleryStorage.getMergedGalleryPhotos());
+  var sync = window.AsciiCameraGalleryCloudSync;
+  if (
+    sync &&
+    sync.isEnabled() &&
+    sync.getProvider() === 'supabase' &&
+    typeof sync.getPhotosForGalleryRender === 'function'
+  ) {
+    var pack = sync.getPhotosForGalleryRender();
+    if (typeof console !== 'undefined' && console.info) {
+      console.info(
+        '[gallery] render source=ascii_photos userRows=' +
+          pack.userCount +
+          ' totalCards=' +
+          pack.photos.length +
+          ' (not ascii_gallery_sync)'
+      );
+    }
+    renderGallery(pack.photos, pack.userCount);
+    return;
+  }
+  var merged = AsciiCameraGalleryStorage.getMergedGalleryPhotos();
+  renderGallery(merged, AsciiCameraGalleryStorage.getUserPhotoCount());
 }
 
 function timeAgo(ts) {
@@ -1168,13 +1229,31 @@ function setupGalleryThumbResize() {
 }
 
 /**
- * @param {Array<{ascii:string,color?:string,time?:number,mine?:boolean,isDefault?:boolean}>} photos 列表
+ * 从合并列表推断用户区长度（连续非 `isDefault` 前缀）。
+ * @param {Array<{isDefault?:boolean}>} photos
+ * @returns {number}
  */
-function renderGallery(photos) {
+function inferUserPhotoCountFromPhotos(photos) {
+  var n = 0;
+  for (var i = 0; i < photos.length; i++) {
+    if (photos[i].isDefault) break;
+    n++;
+  }
+  return n;
+}
+
+/**
+ * @param {Array<{ascii:string,color?:string,time?:number,mine?:boolean,isDefault?:boolean}>} photos 列表
+ * @param {number} [userCountOverride] 用户区张数；省略时按 `isDefault` 推断或读 localStorage
+ */
+function renderGallery(photos, userCountOverride) {
   photosCache = photos;
   if (photos.length === 0) { empty.style.display = 'block'; gallery.innerHTML = ''; return; }
   empty.style.display = 'none';
-  const userCount = AsciiCameraGalleryStorage.getUserPhotoCount();
+  const userCount =
+    typeof userCountOverride === 'number' && Number.isFinite(userCountOverride)
+      ? userCountOverride
+      : inferUserPhotoCountFromPhotos(photos);
   gallery.innerHTML = photos.map((p, i) => {
     const isUser = i < userCount;
     const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
@@ -1244,28 +1323,36 @@ function renderGallery(photos) {
  * 与 `storage` 事件互补：跨存储分区时其它标签的 `localStorage` 变更不会触发本 iframe 的 `storage`。
  */
 window.addEventListener('message', function (ev) {
-  if (ev.origin !== window.location.origin) return;
-  var d = ev.data;
-  if (!d || d.type !== AsciiCameraGalleryStorage.GALLERY_PREPEND_MESSAGE_TYPE || !d.photo) return;
-  var p = d.photo;
-  if (typeof p.ascii !== 'string') return;
-  var incoming = {
-    ascii: p.ascii,
-    color: typeof p.color === 'string' ? p.color : '#00ff41',
-    time: typeof p.time === 'number' ? p.time : Date.now()
-  };
-  if (typeof p.id === 'string' && p.id) incoming.id = p.id;
-  AsciiCameraGalleryStorage.prependUserPhoto(incoming);
-  var savedFromMsg = AsciiCameraGalleryStorage.loadUserPhotos()[0];
-  refreshGallery();
-  if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-    var sync2 = AsciiCameraGalleryCloudSync;
-    if (sync2.getProvider() === 'supabase' && typeof sync2.insertPhotoRow === 'function') {
-      sync2.insertPhotoRow(savedFromMsg || incoming).catch(function () {});
-    } else {
-      sync2.pushFromLocal().catch(function () {});
+  void (async function () {
+    if (ev.origin !== window.location.origin) return;
+    var d = ev.data;
+    if (!d || d.type !== AsciiCameraGalleryStorage.GALLERY_PREPEND_MESSAGE_TYPE || !d.photo) return;
+    var p = d.photo;
+    if (typeof p.ascii !== 'string') return;
+    var incoming = {
+      ascii: p.ascii,
+      color: typeof p.color === 'string' ? p.color : '#00ff41',
+      time: typeof p.time === 'number' ? p.time : Date.now()
+    };
+    if (typeof p.id === 'string' && p.id) incoming.id = p.id;
+    AsciiCameraGalleryStorage.prependUserPhoto(incoming);
+    var savedFromMsg = AsciiCameraGalleryStorage.loadUserPhotos()[0];
+    refreshGallery();
+    if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
+      var sync2 = AsciiCameraGalleryCloudSync;
+      if (sync2.getProvider() === 'supabase' && typeof sync2.insertPhotoRow === 'function') {
+        var msgOk = await sync2.insertPhotoRow(savedFromMsg || incoming);
+        if (!msgOk) {
+          AsciiCameraGalleryStorage.deleteUserPhotoAt(0);
+          refreshGallery();
+        } else {
+          refreshGallery();
+        }
+      } else {
+        sync2.pushFromLocal().catch(function () {});
+      }
     }
-  }
+  })();
 });
 
 /**

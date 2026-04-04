@@ -576,7 +576,10 @@ async function persistPhotoToGallery(ascii) {
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
       var syncCam = AsciiCameraGalleryCloudSync;
       if (syncCam.getProvider() === 'supabase' && typeof syncCam.insertPhotoRow === 'function') {
-        syncCam.insertPhotoRow(savedRow || photoPayload).catch(function () {});
+        var camIns = await syncCam.insertPhotoRow(savedRow || photoPayload);
+        if (!camIns) {
+          AsciiCameraGalleryStorage.deleteUserPhotoAt(0);
+        }
       } else {
         syncCam.pushFromLocal().catch(function () {});
       }

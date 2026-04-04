@@ -44,6 +44,10 @@
 
   /** 最近一次成功 PUT 的 `updatedAt`；拉取到更旧快照时丢弃；刷新页面后从 localStorage 恢复。 */
   var lastSuccessfulPushUpdatedAt = readLastSuccessfulPushUpdatedAtFromStorage();
+  /** Supabase：用户作品区与 `ascii_photos` 同步的缓存（画廊渲染读此路径，不读 `ascii_gallery_sync.body`）。 */
+  var supabaseGalleryUserCache = [];
+  /** 是否已打印「仅 ascii_photos」调试说明 */
+  var loggedAsciiPhotosSsoNotice = false;
   /** 轮询间隔（毫秒）；嵌入页可较快看到相机页上传的更新 */
   var DEFAULT_POLL_MS = 16000;
 
@@ -337,13 +341,13 @@
   }
 
   /**
-   * 将 `ascii_photos` 行转为与 `gallery-storage` 一致的作品形状（来自远端，统一 `mine: false`）。
-   * @param {{ id?: string, ascii?: string, color?: string, created_at?: string }} row
+   * 将 `ascii_photos` 行（`select=*`）转为画廊 UI 用条目：`time` 来自 `created_at`。
+   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string }} row
    * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean } | null}
    */
   function mapAsciiPhotoRow(row) {
     if (!row || typeof row.ascii !== 'string') return null;
-    var id = typeof row.id === 'string' && row.id ? row.id : '';
+    var id = row.id != null ? String(row.id).trim() : '';
     if (!id) return null;
     var t = row.created_at ? Date.parse(String(row.created_at)) : NaN;
     if (!Number.isFinite(t)) t = Date.now();
@@ -352,12 +356,12 @@
       ascii: row.ascii,
       color: typeof row.color === 'string' ? row.color : '#00ff41',
       time: t,
-      mine: false
+      mine: true
     };
   }
 
   /**
-   * 拉取 Supabase `ascii_photos` 表（按 `created_at` 新在前，限制条数）。
+   * 拉取 `ascii_photos`：`select=*`，`order=created_at.desc`（与 Supabase JS 客户端语义一致）。
    * @param {number} limit
    * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean }>>}
    */
@@ -369,7 +373,7 @@
       c.url +
       '/rest/v1/' +
       encodeURIComponent(table) +
-      '?select=id,ascii,color,created_at&order=created_at.desc&limit=' +
+      '?select=*&order=created_at.desc&limit=' +
       encodeURIComponent(String(lim));
     return fetch(url, {
       method: 'GET',
@@ -397,8 +401,30 @@
           var m = mapAsciiPhotoRow(rows[i]);
           if (m) out.push(m);
         }
+        if (typeof global.console !== 'undefined' && global.console.info) {
+          global.console.info(
+            '[gallery-sync] ascii_photos GET ok mappedRows=' +
+              out.length +
+              ' rawJsonRows=' +
+              rows.length +
+              ' (NOT ascii_gallery_sync)'
+          );
+        }
         return out;
       });
+  }
+
+  /**
+   * 供 `gallery.html` 渲染：用户区 = 缓存表数据，示例图仅表为空时视觉上只有内置卡（仍 concat 示例）。
+   * @returns {{ photos: Array<{id:string,ascii:string,color?:string,time?:number,mine?:boolean,isDefault?:boolean}>, userCount: number }}
+   */
+  function getPhotosForGalleryRender() {
+    var builtins =
+      global.AsciiCameraGalleryStorage && typeof global.AsciiCameraGalleryStorage.getBuiltinGalleryCards === 'function'
+        ? global.AsciiCameraGalleryStorage.getBuiltinGalleryCards()
+        : [];
+    var user = supabaseGalleryUserCache.slice();
+    return { photos: user.concat(builtins), userCount: user.length };
   }
 
   /**
@@ -443,7 +469,7 @@
           if (prefer === 'return=representation') {
             return res.json().then(function (rows) {
               var row = Array.isArray(rows) && rows[0] ? rows[0] : null;
-              var newId = row && typeof row.id === 'string' ? row.id : '';
+              var newId = row && row.id != null ? String(row.id) : '';
               if (
                 newId &&
                 global.AsciiCameraGalleryStorage &&
@@ -463,7 +489,9 @@
         });
       })
       .catch(function (err) {
-        console.warn('[gallery-cloud-sync] ascii_photos insert failed', err);
+        if (typeof global.console !== 'undefined' && global.console.warn) {
+          global.console.warn('[gallery-sync] ascii_photos INSERT failed', err);
+        }
         syncStatus.lastPushAt = Date.now();
         syncStatus.lastPushOk = false;
         syncStatus.lastPushError = err && err.message ? String(err.message) : String(err);
@@ -472,6 +500,9 @@
       })
       .then(function (ok) {
         if (ok) {
+          if (typeof global.console !== 'undefined' && global.console.info) {
+            global.console.info('[gallery-sync] ascii_photos INSERT success');
+          }
           syncStatus.lastPushAt = Date.now();
           syncStatus.lastPushOk = true;
           syncStatus.lastPushError = '';
@@ -511,6 +542,11 @@
     })
       .then(function (res) {
         if (res.ok || res.status === 404) {
+          if (typeof global.console !== 'undefined' && global.console.info) {
+            global.console.info(
+              '[gallery-sync] ascii_photos DELETE success id=' + photoId + ' http=' + res.status
+            );
+          }
           syncStatus.lastPushAt = Date.now();
           syncStatus.lastPushOk = true;
           syncStatus.lastPushError = '';
@@ -524,7 +560,9 @@
         });
       })
       .catch(function (err) {
-        console.warn('[gallery-cloud-sync] ascii_photos delete failed', err);
+        if (typeof global.console !== 'undefined' && global.console.warn) {
+          global.console.warn('[gallery-sync] ascii_photos DELETE failed id=' + photoId, err);
+        }
         syncStatus.lastPushAt = Date.now();
         syncStatus.lastPushOk = false;
         syncStatus.lastPushError = err && err.message ? String(err.message) : String(err);
@@ -607,27 +645,44 @@
   }
 
   /**
-   * Supabase：从 `ascii_photos` 拉取并写入本机（与未上云条目合并）。
+   * Supabase：仅以 `ascii_photos` 覆盖缓存与 `localStorage` 用户列表（不合并旧本地、不用 JSON blob）。
+   * 拉取失败时保留上次成功缓存，不把画廊替换成「仅示例」。
    * @returns {Promise<boolean>}
    */
   function pullOnceSupabase() {
+    if (pushInFlight) {
+      if (typeof global.console !== 'undefined' && global.console.info) {
+        global.console.info('[gallery-sync] ascii_photos pull skipped (pushInFlight)');
+      }
+      return Promise.resolve(false);
+    }
+    if (
+      !loggedAsciiPhotosSsoNotice &&
+      typeof global.console !== 'undefined' &&
+      global.console.info
+    ) {
+      loggedAsciiPhotosSsoNotice = true;
+      global.console.info(
+        '[gallery-sync] gallery data source = ascii_photos only (ascii_gallery_sync.body unused)'
+      );
+    }
     var max = global.AsciiCameraGalleryStorage.MAX_USER_PHOTOS || 24;
-    var load = global.AsciiCameraGalleryStorage.loadUserPhotos;
     var save = global.AsciiCameraGalleryStorage.saveUserPhotos;
-    var before = JSON.stringify(load());
+    var beforeSnap = JSON.stringify(supabaseGalleryUserCache);
     return fetchAsciiPhotosFromSupabase(max)
       .then(function (remotePhotos) {
         if (pushInFlight) {
           return false;
         }
-        var local = load();
-        var merged = mergePullRemoteFirst(remotePhotos, local, max);
-        var after = JSON.stringify(merged);
-        if (before !== after) {
-          save(merged);
-          return true;
+        supabaseGalleryUserCache = remotePhotos.slice();
+        save(remotePhotos);
+        var afterSnap = JSON.stringify(supabaseGalleryUserCache);
+        if (typeof global.console !== 'undefined' && global.console.info) {
+          global.console.info(
+            '[gallery-sync] ascii_photos applied to gallery cache rows=' + supabaseGalleryUserCache.length
+          );
         }
-        return false;
+        return beforeSnap !== afterSnap;
       })
       .then(function (changed) {
         syncStatus.lastPullAt = Date.now();
@@ -637,7 +692,13 @@
         return changed;
       })
       .catch(function (err) {
-        console.warn('[gallery-cloud-sync] Supabase pull failed', err);
+        if (typeof global.console !== 'undefined' && global.console.warn) {
+          global.console.warn(
+            '[gallery-sync] ascii_photos pull FAILED — keeping last good cache rows=' +
+              supabaseGalleryUserCache.length,
+            err
+          );
+        }
         syncStatus.lastPullAt = Date.now();
         syncStatus.lastPullOk = false;
         syncStatus.lastPullError = err && err.message ? String(err.message) : String(err);
@@ -763,7 +824,12 @@
     if (!isEnabled() || getProvider() !== 'supabase') {
       return Promise.resolve(true);
     }
-    return insertPhotoRowSupabase(photo);
+    return insertPhotoRowSupabase(photo).then(function (ok) {
+      if (!ok) return false;
+      return pullOnce().then(function () {
+        return true;
+      });
+    });
   }
 
   /**
@@ -775,7 +841,12 @@
     if (!isEnabled() || getProvider() !== 'supabase') {
       return Promise.resolve(true);
     }
-    return deletePhotoRowSupabase(photoId);
+    return deletePhotoRowSupabase(photoId).then(function (ok) {
+      if (!ok) return false;
+      return pullOnce().then(function () {
+        return true;
+      });
+    });
   }
 
   /**
@@ -802,7 +873,9 @@
     function tick() {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       pullOnce().then(function (changed) {
-        if (changed) onRemoteChanged();
+        if (changed || getProvider() === 'supabase') {
+          onRemoteChanged();
+        }
       });
     }
     pollTimerId = setInterval(tick, ms);
@@ -1006,6 +1079,9 @@
     pushFromLocal: pushFromLocal,
     insertPhotoRow: insertPhotoRow,
     deletePhotoRow: deletePhotoRow,
+    getPhotosForGalleryRender: getPhotosForGalleryRender,
+    /** @type {(s: string) => boolean} */
+    isUuidPhotoId: isUuidString,
     schedulePush: schedulePush,
     startPolling: startPolling,
     stopPolling: stopPolling,

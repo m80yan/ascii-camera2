@@ -202,12 +202,11 @@
   }
 
   /**
-   * 用户照片（新在前）+ 5 张内置示例（所有访客可见）。
+   * 仅内置示例卡片（与 {@link getMergedGalleryPhotos} 中 defs 一致）。
    * @returns {Array<{id:string,ascii:string,color?:string,time:number,mine?:boolean,isDefault?:boolean}>}
    */
-  function getMergedGalleryPhotos() {
-    var user = loadUserPhotos();
-    var defs = DEFAULT_GALLERY_PHOTOS.map(function (p) {
+  function getBuiltinGalleryCards() {
+    return DEFAULT_GALLERY_PHOTOS.map(function (p) {
       return {
         ascii: p.ascii,
         color: p.color,
@@ -217,7 +216,15 @@
         id: typeof p.id === 'string' && p.id ? p.id : stableLegacyPhotoId(p)
       };
     });
-    return user.concat(defs);
+  }
+
+  /**
+   * 用户照片（新在前）+ 5 张内置示例（所有访客可见）。
+   * @returns {Array<{id:string,ascii:string,color?:string,time:number,mine?:boolean,isDefault?:boolean}>}
+   */
+  function getMergedGalleryPhotos() {
+    var user = loadUserPhotos();
+    return user.concat(getBuiltinGalleryCards());
   }
 
   /**
@@ -241,6 +248,7 @@
     setUserPhotoIdAt: setUserPhotoIdAt,
     deleteUserPhotoAt: deleteUserPhotoAt,
     getMergedGalleryPhotos: getMergedGalleryPhotos,
+    getBuiltinGalleryCards: getBuiltinGalleryCards,
     getUserPhotoCount: getUserPhotoCount,
     generatePhotoId: generatePhotoId,
     stableLegacyPhotoId: stableLegacyPhotoId
