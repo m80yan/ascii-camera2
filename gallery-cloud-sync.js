@@ -1,5 +1,6 @@
 /**
  * @file 可选：云端同步用户作品列表（与 `gallery-storage.js` 的 localStorage 合并）。
+ * 拉取时以远端 `photos` 为权威（可同步删除）；再并入本机尚未出现在远端且 `mine !== false` 的条目。
  * 支持 Supabase（推荐，免费层较宽裕）或 JSONBin v3（易遇请求额度限制）。
  * 配置见 `config.local.js` / Vercel 环境变量（`scripts/inject-config.js`）。
  */
@@ -12,8 +13,37 @@
   var PUSH_DEBOUNCE_MS = 700;
   /** 上传进行中时跳过拉取，避免旧远端合并把本机已删作品写回。 */
   var pushInFlight = false;
-  /** 最近一次成功 PUT 的 `updatedAt`；拉取到更旧快照时丢弃，避免慢 GET 晚到覆盖删除。 */
-  var lastSuccessfulPushUpdatedAt = 0;
+  /** 与 `localStorage` 键同步：最近一次成功推送或已采纳的远端 `updatedAt`，用于忽略更旧的 GET。 */
+  var LAST_PUSH_UPDATED_AT_LS_KEY = 'ascii_gallery_last_push_updated_at';
+
+  /**
+   * @returns {number}
+   */
+  function readLastSuccessfulPushUpdatedAtFromStorage() {
+    try {
+      var v = global.localStorage.getItem(LAST_PUSH_UPDATED_AT_LS_KEY);
+      if (!v) return 0;
+      var n = parseInt(v, 10);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  /**
+   * @param {number} ts
+   * @returns {void}
+   */
+  function writeLastSuccessfulPushUpdatedAtToStorage(ts) {
+    try {
+      global.localStorage.setItem(LAST_PUSH_UPDATED_AT_LS_KEY, String(ts));
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  /** 最近一次成功 PUT 的 `updatedAt`；拉取到更旧快照时丢弃；刷新页面后从 localStorage 恢复。 */
+  var lastSuccessfulPushUpdatedAt = readLastSuccessfulPushUpdatedAtFromStorage();
   /** 轮询间隔（毫秒）；嵌入页可较快看到相机页上传的更新 */
   var DEFAULT_POLL_MS = 16000;
 
@@ -176,6 +206,60 @@
     });
     (b || []).forEach(function (pr) {
       add(pr, true);
+    });
+    var out = Object.keys(map).map(function (k) {
+      return map[k];
+    });
+    out.sort(function (x, y) {
+      return (y.time || 0) - (x.time || 0);
+    });
+    return out.slice(0, max);
+  }
+
+  /**
+   * 拉取专用合并：先采纳远端列表（删除会从服务端传播到所有客户端），再并入本机「尚未在远端出现」的条目。
+   * 忽略本地 `mine === false`（来自旧版「本地优先」合并的缓存），避免把已在云端删掉的作品并回。
+   * @param {Array<{ascii:string,color?:string,time?:number,mine?:boolean,id?:string}>} remotePhotos
+   * @param {Array<{ascii:string,color?:string,time?:number,mine?:boolean,id?:string}>} local
+   * @param {number} max
+   * @returns {Array<{ascii:string,color:string,time:number,mine:boolean,id:string}>}
+   */
+  function mergePullRemoteFirst(remotePhotos, local, max) {
+    var map = Object.create(null);
+    /**
+     * @param {{ ascii?: string, color?: string, time?: number, mine?: boolean, id?: string }} p
+     * @param {boolean} fromRemote
+     * @returns {void}
+     */
+    function addOne(p, fromRemote) {
+      if (!p || typeof p.ascii !== 'string') return;
+      var k = photoDedupeKey(p);
+      if (!k || map[k]) return;
+      var mine = fromRemote
+        ? false
+        : typeof p.mine === 'boolean'
+          ? p.mine
+          : true;
+      var sid =
+        typeof p.id === 'string' && p.id
+          ? p.id
+          : global.AsciiCameraGalleryStorage && typeof global.AsciiCameraGalleryStorage.stableLegacyPhotoId === 'function'
+            ? global.AsciiCameraGalleryStorage.stableLegacyPhotoId(p)
+            : 'photo_fallback';
+      map[k] = {
+        ascii: p.ascii,
+        color: typeof p.color === 'string' ? p.color : '#00ff41',
+        time: typeof p.time === 'number' ? p.time : Date.now(),
+        mine: mine,
+        id: sid
+      };
+    }
+    (remotePhotos || []).forEach(function (pr) {
+      addOne(pr, true);
+    });
+    (local || []).forEach(function (pr) {
+      if (pr && typeof pr.mine === 'boolean' && pr.mine === false) return;
+      addOne(pr, false);
     });
     var out = Object.keys(map).map(function (k) {
       return map[k];
@@ -411,11 +495,13 @@
         }
         var remotePhotos = remote && remote.photos ? remote.photos : [];
         var local = load();
-        var merged = mergePhotoLists(local, remotePhotos, max);
+        var merged = mergePullRemoteFirst(remotePhotos, local, max);
         var after = JSON.stringify(merged);
         if (pushInFlight) {
           return false;
         }
+        lastSuccessfulPushUpdatedAt = Math.max(lastSuccessfulPushUpdatedAt, rUpdated);
+        writeLastSuccessfulPushUpdatedAtToStorage(lastSuccessfulPushUpdatedAt);
         if (before !== after) {
           save(merged);
           return true;
@@ -461,6 +547,7 @@
     })
       .then(function () {
         lastSuccessfulPushUpdatedAt = pushUpdatedAt;
+        writeLastSuccessfulPushUpdatedAtToStorage(pushUpdatedAt);
         syncStatus.lastPushAt = Date.now();
         syncStatus.lastPushOk = true;
         syncStatus.lastPushError = '';
