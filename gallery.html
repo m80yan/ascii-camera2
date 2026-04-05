@@ -243,7 +243,52 @@
   }
   #lightbox-like.lightbox-like--liked:hover { background: rgba(249, 107, 109, 0.12); }
   #lightbox-download-png:disabled { opacity: 0.55; cursor: wait; }
-  #lightbox-open-to-download[hidden] { display: none !important; }
+  /**
+   * `#lightbox-download-png` 等与 `[hidden]`：上方共用规则里 `display:inline-flex` 特异性高于 UA 对 `[hidden]` 的 display:none，
+   * 会导致嵌入里仍显示「Download」；此处强制隐藏。
+   */
+  #lightbox-download-png[hidden],
+  #lightbox-open-to-download[hidden] {
+    display: none !important;
+  }
+  /**
+   * 嵌入 / Notion：页脚级互斥。仅显示 Open to download，彻底隐藏直连下载（双保险，不依赖单属性）。
+   */
+  #lightbox-footer.lightbox-footer--embed-fallback-download #lightbox-download-png {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    position: absolute !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    clip-path: inset(50%) !important;
+    white-space: nowrap !important;
+  }
+  #lightbox-footer.lightbox-footer--embed-fallback-download #lightbox-open-to-download {
+    display: inline-flex !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    position: static !important;
+    width: auto !important;
+    max-width: min(260px, 92vw) !important;
+    min-width: 196px !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 6px 16px !important;
+    border: 1px solid rgba(0,255,65,0.35) !important;
+    overflow: hidden !important;
+    clip: auto !important;
+    clip-path: none !important;
+  }
+  /** 直接打开全页：永不展示 Open to download（与 `[hidden]` 叠加） */
+  #lightbox-footer:not(.lightbox-footer--embed-fallback-download) #lightbox-open-to-download {
+    display: none !important;
+  }
   #confirm-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 200; align-items: center; justify-content: center; }
   #confirm-modal.open { display: flex; }
   #confirm-box { background: #111; border: 1px solid rgba(255,68,68,0.4); border-radius: 4px; padding: 28px 32px; text-align: center; }
@@ -1477,19 +1522,31 @@ function tryConsumeGalleryOpenQuery() {
 }
 
 /**
- * 嵌入：仅显示「Open to download」；直接打开：仅显示 PNG/GIF 下载。
+ * 嵌入：仅「Open to download」；直接打开：仅「Download .png / .gif」。二者互斥（`hidden` + 页脚 class + CSS）。
  * @returns {void}
  */
 function syncLightboxDownloadButtonsVisibility() {
   var restrict = isGalleryEmbedDownloadRestricted();
   var dl = document.getElementById('lightbox-download-png');
   var op = document.getElementById('lightbox-open-to-download');
+  var foot = document.getElementById('lightbox-footer');
+  if (foot) {
+    foot.classList.toggle('lightbox-footer--embed-fallback-download', restrict);
+  }
   if (dl) {
-    dl.hidden = restrict;
+    if (restrict) {
+      dl.setAttribute('hidden', '');
+    } else {
+      dl.removeAttribute('hidden');
+    }
     dl.setAttribute('aria-hidden', restrict ? 'true' : 'false');
   }
   if (op) {
-    op.hidden = !restrict;
+    if (restrict) {
+      op.removeAttribute('hidden');
+    } else {
+      op.setAttribute('hidden', '');
+    }
     op.setAttribute('aria-hidden', restrict ? 'false' : 'true');
   }
 }
