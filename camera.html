@@ -17,7 +17,9 @@
     align-items: stretch;
     min-height: calc(100vh - 48px);
   }
-  h1 { font-size: 14px; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 20px; opacity: 0.6; text-align: center; align-self: center; width: 100%; }
+  h1 { font-size: 14px; letter-spacing: normal; text-transform: uppercase; margin-bottom: 20px; opacity: 0.6; text-align: center; align-self: center; width: 100%; }
+  h1 .cam-title-prefix { letter-spacing: 0.06em; }
+  h1 .cam-title-name { letter-spacing: 4px; }
   .cam-actions {
     display: flex;
     flex-wrap: wrap;
@@ -216,7 +218,7 @@
 <body>
 <div id="flash-overlay" aria-hidden="true"></div>
 <div id="camera-shell">
-<h1>ASCII Camera</h1>
+<h1><span class="cam-title-prefix">[◉”]</span> <span class="cam-title-name">ASCII CAMERA</span></h1>
 <div id="iframe-hint" class="iframe-hint" hidden role="note">
   <span class="iframe-hint-text">Embedded preview blocks camera — use a full browser tab.</span>
   <a id="iframe-open-tab" class="iframe-hint-link" href="#">Open in new tab</a>
@@ -270,8 +272,6 @@
   <label class="ctl-stack cc-left">
     <span class="ctl-label">Resolution</span>
     <select id="resPicker">
-      <option value="16">16 (Micro)</option>
-      <option value="24">24 (Small)</option>
       <option value="32">32 (Mini)</option>
       <option value="80">80 (Low)</option>
       <option value="100" selected>100 (Medium)</option>
