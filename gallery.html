@@ -122,6 +122,39 @@
     gap: 8px;
     min-height: 36px;
   }
+  /** 用户卡：左时间 | 中 .gif（仅动画）| 右 Remove */
+  .photo-meta--3col {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 8px;
+    min-height: 36px;
+  }
+  .photo-meta--3col .photo-meta-left {
+    justify-self: start;
+    text-align: left;
+    font-size: 10px;
+    opacity: 0.4;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .photo-meta--3col .photo-meta-center {
+    justify-self: center;
+    text-align: center;
+    font-size: 10px;
+    opacity: 0.4;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+  .photo-meta--3col .photo-meta-right {
+    justify-self: end;
+    text-align: right;
+    min-width: 0;
+  }
+  .photo-meta--3col .photo-meta-right .delete-btn {
+    margin: 0;
+  }
   .photo-time { font-size: 10px; opacity: 0.4; letter-spacing: 1px; white-space: nowrap; }
   .delete-btn { background: transparent; border: none; color: #ff4444; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 10px; cursor: pointer; opacity: 0.5; letter-spacing: 1px; padding: 0; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
   .delete-btn:hover { opacity: 1; }
@@ -507,6 +540,12 @@ const lightboxPre = document.getElementById('lightbox-pre');
 const lightboxLikeBtn = document.getElementById('lightbox-like');
 /** @type {string} 当前灯箱作品 id，用于云端点赞 */
 let lightboxPhotoId = '';
+/** @type {{ ascii?: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], fps?: number } | null} 灯箱当前条目（用于 GIF 导出） */
+let lightboxOpenPhoto = null;
+/** @type {ReturnType<typeof setInterval> | null} 网格悬停 ASCII 动画定时器（同时仅一张在播） */
+let galleryThumbAnimTimer = null;
+/** @type {ReturnType<typeof setInterval> | null} 灯箱内 ASCII 帧动画 */
+let lightboxAsciiAnimTimer = null;
 /** 打开灯箱递增，用于忽略过期的 fetch */
 let lightboxLikeSessionGen = 0;
 /** @type {{ liked: boolean, count: number }} */
@@ -752,6 +791,26 @@ function imageToAscii(img, cols, forcedAspect, chars) {
 }
 
 /**
+ * @param {{ ascii?: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[] }} photo
+ * @returns {Promise<string[] | null>}
+ */
+function resolveLightboxAsciiFrames(photo) {
+  if (!photo || photo.isAnimated !== true) return Promise.resolve(null);
+  if (Array.isArray(photo.frames) && photo.frames.length > 0) {
+    return Promise.resolve(photo.frames);
+  }
+  var pid = typeof photo.id === 'string' ? photo.id : '';
+  var sync = window.AsciiCameraGalleryCloudSync;
+  if (!pid || !sync || typeof sync.fetchAsciiPhotoFramesById !== 'function') {
+    return Promise.resolve(null);
+  }
+  return sync.fetchAsciiPhotoFramesById(pid).then(function (fr) {
+    if (fr && fr.length) photo.frames = fr;
+    return fr;
+  });
+}
+
+/**
  * @param {{ ascii?: string, color?: string, time?: number, id?: string }} photo
  * @returns {string}
  */
@@ -782,14 +841,32 @@ function applyLightboxLikeButton() {
 }
 
 /**
- * @param {{ascii:string,color?:string,time?:number,id?:string}} photo
+ * 停止灯箱 ASCII 帧循环。
+ * @returns {void}
+ */
+function stopLightboxAsciiAnim() {
+  if (lightboxAsciiAnimTimer != null) {
+    clearInterval(lightboxAsciiAnimTimer);
+    lightboxAsciiAnimTimer = null;
+  }
+}
+
+/**
+ * @param {{ascii:string,color?:string,time?:number,id?:string,isAnimated?:boolean,frames?:string[],fps?:number}} photo
  */
 function openLightbox(photo) {
+  stopLightboxAsciiAnim();
+  lightboxOpenPhoto = photo || null;
   lightboxLikeSessionGen++;
   const session = lightboxLikeSessionGen;
   lightboxPhotoId = resolveLightboxPhotoId(photo);
   lightboxLikeUiState = { liked: false, count: 0 };
   applyLightboxLikeButton();
+
+  var dlBtn = document.getElementById('lightbox-download-png');
+  if (dlBtn) {
+    dlBtn.textContent = photo && photo.isAnimated === true ? 'Download .gif' : 'Download PNG';
+  }
 
   lightboxPre.textContent = photo.ascii;
   lightboxPre.style.color = photo.color || '#00ff41';
@@ -823,8 +900,37 @@ function openLightbox(photo) {
     lightboxPre.style.fontSize = fs + 'px';
     lightboxPre.style.lineHeight = '1';
   });
+
+  if (photo && photo.isAnimated === true) {
+    resolveLightboxAsciiFrames(photo).then(function (frames) {
+      if (
+        session !== lightboxLikeSessionGen ||
+        !frames ||
+        !frames.length ||
+        !lightbox.classList.contains('open')
+      ) {
+        return;
+      }
+      var fps = typeof photo.fps === 'number' && photo.fps > 0 ? photo.fps : 6;
+      var delay = Math.max(16, Math.round(1000 / fps));
+      var idx = 0;
+      lightboxAsciiAnimTimer = setInterval(function () {
+        if (session !== lightboxLikeSessionGen || !lightbox.classList.contains('open')) {
+          stopLightboxAsciiAnim();
+          return;
+        }
+        idx = (idx + 1) % frames.length;
+        lightboxPre.textContent = frames[idx];
+      }, delay);
+    });
+  }
 }
-lightbox.addEventListener('click', (e) => { if (e.target === lightbox) lightbox.classList.remove('open'); });
+lightbox.addEventListener('click', (e) => {
+  if (e.target === lightbox) {
+    stopLightboxAsciiAnim();
+    lightbox.classList.remove('open');
+  }
+});
 
 if (lightboxLikeBtn) {
   lightboxLikeBtn.addEventListener('click', function () {
@@ -953,9 +1059,134 @@ function downloadLightboxPng() {
   });
 }
 
+/**
+ * 将多帧 ASCII 在前端合成 GIF（不上传）；帧来源与灯箱悬停动画相同（`resolveLightboxAsciiFrames`）。
+ * 使用动态 `import('gifenc')`，避免 gif.js Worker 在本地/部分环境下失败。
+ * @returns {void}
+ */
+function downloadLightboxGif() {
+  var btn = document.getElementById('lightbox-download-png');
+  if (!btn || btn.disabled) return;
+  var defaultLabel = 'Download .gif';
+  var photo = lightboxOpenPhoto;
+  btn.textContent = 'Preparing...';
+  btn.disabled = true;
+  Promise.all([
+    resolveLightboxAsciiFrames(photo || {}),
+    import('https://unpkg.com/gifenc@1.0.3/dist/gifenc.esm.js')
+  ])
+    .then(function (tuple) {
+      var frames = tuple[0];
+      var gifenc = tuple[1];
+      var GIFEncoder = gifenc.GIFEncoder;
+      var quantize = gifenc.quantize;
+      var applyPalette = gifenc.applyPalette;
+      if (!frames || !frames.length) {
+        btn.textContent = 'No frames';
+        setTimeout(function () {
+          btn.textContent = defaultLabel;
+          btn.disabled = false;
+        }, 2000);
+        return;
+      }
+      var style = getComputedPreCanvasStyle(lightboxPre);
+      var fps = photo && typeof photo.fps === 'number' && photo.fps > 0 ? photo.fps : 6;
+      var delayMs = Math.max(16, Math.round(1000 / fps));
+      var pad = 24;
+      var allLines = frames.map(function (fr) {
+        return splitAsciiLinesForExport(fr);
+      });
+      var maxW = 0;
+      var maxLines = 0;
+      var probe = document.createElement('canvas');
+      var pctx = probe.getContext('2d');
+      if (!pctx) {
+        btn.textContent = 'Failed';
+        setTimeout(function () {
+          btn.textContent = defaultLabel;
+          btn.disabled = false;
+        }, 2000);
+        return;
+      }
+      pctx.font = style.font;
+      if ('letterSpacing' in pctx) pctx.letterSpacing = style.letterSpacing;
+      for (var fi = 0; fi < allLines.length; fi++) {
+        var L = allLines[fi];
+        if (L.length > maxLines) maxLines = L.length;
+        for (var j = 0; j < L.length; j++) {
+          var w = pctx.measureText(L[j]).width;
+          if (w > maxW) maxW = w;
+        }
+      }
+      var lineStep = style.lineHeightPx;
+      var cw = Math.max(1, Math.ceil(maxW + pad * 2));
+      var ch = Math.max(1, Math.ceil(maxLines * lineStep + pad * 2));
+      var gif = GIFEncoder();
+      /** @type {number[][] | null} */
+      var sharedPalette = null;
+      for (var k = 0; k < frames.length; k++) {
+        var c = document.createElement('canvas');
+        c.width = cw;
+        c.height = ch;
+        var ctx = c.getContext('2d');
+        if (!ctx) continue;
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.font = style.font;
+        if ('letterSpacing' in ctx) ctx.letterSpacing = style.letterSpacing;
+        ctx.fillStyle = style.color;
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+        var linesK = allLines[k];
+        for (var y = 0; y < linesK.length; y++) {
+          ctx.fillText(linesK[y], pad, pad + y * lineStep);
+        }
+        var imageData = ctx.getImageData(0, 0, cw, ch);
+        if (k === 0) {
+          sharedPalette = quantize(imageData.data, 256);
+        }
+        if (!sharedPalette) continue;
+        var index = applyPalette(imageData.data, sharedPalette);
+        if (k === 0) {
+          gif.writeFrame(index, cw, ch, { palette: sharedPalette, delay: delayMs });
+        } else {
+          gif.writeFrame(index, cw, ch, { delay: delayMs });
+        }
+      }
+      gif.finish();
+      var out = gif.bytes();
+      var blob = new Blob([out], { type: 'image/gif' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'ascii-camera-' + Date.now() + '.gif';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      btn.textContent = 'Downloaded';
+      setTimeout(function () {
+        btn.textContent = defaultLabel;
+        btn.disabled = false;
+      }, 2000);
+    })
+    .catch(function (err) {
+      console.error(err);
+      btn.textContent = 'Failed';
+      setTimeout(function () {
+        btn.textContent = defaultLabel;
+        btn.disabled = false;
+      }, 2000);
+    });
+}
+
 document.getElementById('lightbox-download-png').addEventListener('click', function (e) {
   e.stopPropagation();
-  downloadLightboxPng();
+  if (lightboxOpenPhoto && lightboxOpenPhoto.isAnimated === true) {
+    downloadLightboxGif();
+  } else {
+    downloadLightboxPng();
+  }
 });
 function promptDelete(i) { pendingDeleteIndex = i; confirmModal.classList.add('open'); }
 document.getElementById('confirm-cancel').addEventListener('click', () => { confirmModal.classList.remove('open'); pendingDeleteIndex = null; });
@@ -1090,10 +1321,11 @@ async function deletePhoto(userIndex) {
   try {
     var userList = AsciiCameraGalleryStorage.loadUserPhotos();
     if (userIndex < 0 || userIndex >= userList.length) return;
-    // 云端合并写入的条目为 mine:false；策展模式需能删掉并 push，否则界面有 Remove 却无效果
-    if (userList[userIndex].mine === false && !curatorModeActive) return;
+    var row = userList[userIndex];
+    // 云端合并写入的条目为 mine:false；本人或策展模式可删
+    if (row.mine === false && !curatorModeActive) return;
     var backup = JSON.parse(JSON.stringify(userList));
-    var removed = userList[userIndex];
+    var removed = row;
     var photoIdForLikes = '';
     if (removed && typeof removed.id === 'string' && removed.id) {
       photoIdForLikes = removed.id;
@@ -1267,10 +1499,59 @@ function inferUserPhotoCountFromPhotos(photos) {
 }
 
 /**
- * @param {Array<{ascii:string,color?:string,time?:number,mine?:boolean,isDefault?:boolean}>} photos 列表
+ * 停止缩略图悬停动画并清除定时器。
+ * @returns {void}
+ */
+function clearGalleryThumbAnim() {
+  if (galleryThumbAnimTimer != null) {
+    clearInterval(galleryThumbAnimTimer);
+    galleryThumbAnimTimer = null;
+  }
+}
+
+/**
+ * 悬停时拉取 `frames`（若尚无）并循环切换 ASCII 帧；仅当前悬停卡播放。
+ * @param {HTMLElement} card
+ * @param {{ ascii: string, id?: string, isAnimated?: boolean, frames?: string[], fps?: number }} photo
+ * @param {number} cacheIndex `photosCache` 下标
+ * @returns {void}
+ */
+function startGalleryThumbAsciiAnim(card, photo, cacheIndex) {
+  clearGalleryThumbAnim();
+  if (!photo || photo.isAnimated !== true) return;
+  var pre = card.querySelector('.photo-thumb pre');
+  if (!pre) return;
+  var fps = typeof photo.fps === 'number' && photo.fps > 0 ? photo.fps : 6;
+  var delay = Math.max(16, Math.round(1000 / fps));
+  var run = function (frames) {
+    if (!frames || !frames.length) return;
+    var idx = 0;
+    galleryThumbAnimTimer = setInterval(function () {
+      idx = (idx + 1) % frames.length;
+      pre.textContent = frames[idx];
+    }, delay);
+  };
+  if (Array.isArray(photo.frames) && photo.frames.length > 0) {
+    run(photo.frames);
+    return;
+  }
+  var pid = typeof photo.id === 'string' ? photo.id : '';
+  var sync = window.AsciiCameraGalleryCloudSync;
+  if (!pid || !sync || typeof sync.fetchAsciiPhotoFramesById !== 'function') return;
+  sync.fetchAsciiPhotoFramesById(pid).then(function (fr) {
+    if (!fr || !fr.length) return;
+    photo.frames = fr;
+    if (cacheIndex >= 0 && photosCache[cacheIndex]) photosCache[cacheIndex].frames = fr;
+    run(fr);
+  });
+}
+
+/**
+ * @param {Array<{ascii:string,color?:string,time?:number,mine?:boolean,isDefault?:boolean,isAnimated?:boolean,frames?:string[],fps?:number,id?:string}>} photos 列表
  * @param {number} [userCountOverride] 用户区张数；省略时按 `isDefault` 推断或读 localStorage
  */
 function renderGallery(photos, userCountOverride) {
+  clearGalleryThumbAnim();
   photosCache = photos;
   if (photos.length === 0) { empty.style.display = 'block'; gallery.innerHTML = ''; return; }
   empty.style.display = 'none';
@@ -1281,20 +1562,58 @@ function renderGallery(photos, userCountOverride) {
   gallery.innerHTML = photos.map((p, i) => {
     const isUser = i < userCount;
     const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
+    const isAnimUser = isUser && p.isAnimated === true;
     const canRemoveUser = isUser && (p.mine === true || curatorModeActive);
     const canShowBuiltinRemove = curatorModeActive && !isUser && p.isDefault;
-    const delHtml = canRemoveUser
-      ? '<button type="button" class="delete-btn" data-user-index="' + i + '">Remove</button>'
-      : canShowBuiltinRemove
+    let metaHtml = '';
+    if (isUser) {
+      const centerGif = isAnimUser
+        ? '<span class="photo-meta-center photo-meta-gif">.gif</span>'
+        : '<span class="photo-meta-center" aria-hidden="true"></span>';
+      let rightCell = '';
+      if (canRemoveUser) {
+        rightCell =
+          '<div class="photo-meta-right">' +
+          '<button type="button" class="delete-btn" data-user-index="' +
+          i +
+          '">Remove</button></div>';
+      } else {
+        rightCell = '<div class="photo-meta-right"><span class="photo-time" style="opacity:0.2">—</span></div>';
+      }
+      metaHtml =
+        '<div class="photo-meta photo-meta--3col">' +
+        '<span class="photo-meta-left">' +
+        escapeHtml(timeLabel) +
+        '</span>' +
+        centerGif +
+        rightCell +
+        '</div>';
+    } else {
+      const delHtml = canShowBuiltinRemove
         ? '<button type="button" class="delete-btn" data-builtin="1" title="内置示例">Remove</button>'
         : '<span class="photo-time" style="opacity:0.25">—</span>';
+      metaHtml =
+        '<div class="photo-meta"><span class="photo-time">' +
+        escapeHtml(timeLabel) +
+        '</span>' +
+        delHtml +
+        '</div>';
+    }
     return (
-      '<div class="photo-card" data-index="' + i + '">' +
+      '<div class="photo-card" data-index="' +
+        i +
+        '"' +
+        (isAnimUser ? ' data-ascii-animated="1"' : '') +
+        '>' +
         '<div class="photo-thumb">' +
-          '<pre style="color:' + (p.color||'#00ff41') + '">' + escapeHtml(p.ascii) + '</pre>' +
+        '<pre style="color:' +
+        (p.color || '#00ff41') +
+        '">' +
+        escapeHtml(p.ascii) +
+        '</pre>' +
         '</div>' +
-        '<div class="photo-meta"><span class="photo-time">' + escapeHtml(timeLabel) + '</span>' + delHtml + '</div>' +
-      '</div>'
+        metaHtml +
+        '</div>'
     );
   }).join('');
   setupGalleryThumbResize();
@@ -1306,6 +1625,18 @@ function renderGallery(photos, userCountOverride) {
       const t = /** @type {HTMLElement} */ (e.target);
       if (t.classList.contains('delete-btn')) return;
       openLightbox(photosCache[parseInt(card.dataset.index, 10)]);
+    });
+    card.addEventListener('mouseenter', function () {
+      var idx = parseInt(card.getAttribute('data-index') || '0', 10);
+      var ph = photosCache[idx];
+      if (ph && ph.isAnimated === true) startGalleryThumbAsciiAnim(card, ph, idx);
+    });
+    card.addEventListener('mouseleave', function () {
+      clearGalleryThumbAnim();
+      var idx = parseInt(card.getAttribute('data-index') || '0', 10);
+      var ph = photosCache[idx];
+      var pre = card.querySelector('.photo-thumb pre');
+      if (pre && ph && typeof ph.ascii === 'string') pre.textContent = ph.ascii;
     });
   });
   gallery.querySelectorAll('.delete-btn').forEach(btn => {
@@ -1359,13 +1690,28 @@ window.addEventListener('message', function (ev) {
       time: typeof p.time === 'number' ? p.time : Date.now()
     };
     if (typeof p.id === 'string' && p.id) incoming.id = p.id;
+    if (p.isAnimated === true) {
+      incoming.isAnimated = true;
+      if (typeof p.frameCount === 'number' && Number.isFinite(p.frameCount)) {
+        incoming.frameCount = p.frameCount;
+      }
+      if (typeof p.fps === 'number' && Number.isFinite(p.fps)) incoming.fps = p.fps;
+      if (typeof p.durationMs === 'number' && Number.isFinite(p.durationMs)) {
+        incoming.durationMs = p.durationMs;
+      }
+    }
     AsciiCameraGalleryStorage.prependUserPhoto(incoming);
     var savedFromMsg = AsciiCameraGalleryStorage.loadUserPhotos()[0];
     refreshGallery();
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
       var sync2 = AsciiCameraGalleryCloudSync;
       if (sync2.getProvider() === 'supabase' && typeof sync2.insertPhotoRow === 'function') {
-        var msgOk = await sync2.insertPhotoRow(savedFromMsg || incoming);
+        /** @type {Record<string, unknown>} */
+        var cloudRow = Object.assign({}, savedFromMsg || incoming);
+        if (p.isAnimated === true && Array.isArray(p.frames) && p.frames.length > 0) {
+          cloudRow.frames = p.frames;
+        }
+        var msgOk = await sync2.insertPhotoRow(cloudRow);
         if (!msgOk) {
           AsciiCameraGalleryStorage.deleteUserPhotoAt(0);
           refreshGallery();

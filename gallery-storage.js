@@ -134,17 +134,29 @@
   }
 
   /**
-   * @param {{ascii:string,color?:string,time?:number,mine?:boolean,id?:string}} photo 单条用户作品；默认 `mine: true`；无 `id` 时生成新 id。
+   * @param {{ascii:string,color?:string,time?:number,mine?:boolean,id?:string,isAnimated?:boolean,frameCount?:number,fps?:number,durationMs?:number}} photo 单条用户作品；默认 `mine: true`；无 `id` 时生成新 id。动画帧仅存云端，本地仅存元数据。
    */
   function prependUserPhoto(photo) {
     var list = loadUserPhotos();
-    list.unshift({
+    /** @type {{ascii:string,color:string,time:number,mine:boolean,id:string,isAnimated?:boolean,frameCount?:number,fps?:number,durationMs?:number}} */
+    var row = {
       ascii: String(photo.ascii || ''),
       color: photo.color || '#00ff41',
       time: typeof photo.time === 'number' ? photo.time : Date.now(),
       mine: typeof photo.mine === 'boolean' ? photo.mine : true,
       id: typeof photo.id === 'string' && photo.id ? photo.id : generatePhotoId()
-    });
+    };
+    if (photo.isAnimated === true) {
+      row.isAnimated = true;
+      if (typeof photo.frameCount === 'number' && Number.isFinite(photo.frameCount)) {
+        row.frameCount = photo.frameCount;
+      }
+      if (typeof photo.fps === 'number' && Number.isFinite(photo.fps)) row.fps = photo.fps;
+      if (typeof photo.durationMs === 'number' && Number.isFinite(photo.durationMs)) {
+        row.durationMs = photo.durationMs;
+      }
+    }
+    list.unshift(row);
     while (list.length > MAX_USER_PHOTOS) list.pop();
     try {
       saveUserPhotos(list);

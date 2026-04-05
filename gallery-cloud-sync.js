@@ -1,6 +1,6 @@
 /**
  * @file 可选：云端同步用户作品列表（与 `gallery-storage.js` 的 localStorage 合并）。
- * - **Supabase**：每幅作品为 `ascii_photos` 独立一行（`owner_id` 与点赞 `client_id` 同源；insert/delete + 拉取列表），不再整包覆盖 JSON blob，避免移动端覆盖全库。
+ * - **Supabase**：每幅作品为 `ascii_photos` 独立一行（`owner_id`＝`ascii_camera_device_id_v1`；点赞用独立 `client_id`；insert/delete + 拉取列表），不再整包覆盖 JSON blob，避免移动端覆盖全库。
  * - **JSONBin**：仍使用单 bin 整包读写（旧路径，易撞额度）。
  * 配置见 `config.local.js` / Vercel 环境变量（`scripts/inject-config.js`）。
  */
@@ -158,9 +158,39 @@
   }
 
   var CLIENT_ID_STORAGE_KEY = 'ascii_gallery_client_id_v1';
+  /** 作品归属 `owner_id` 专用；与点赞 `client_id` 分离。 */
+  var DEVICE_ID_STORAGE_KEY = 'ascii_camera_device_id_v1';
 
   /**
-   * 与点赞表 `client_id` 同源：匿名/本机稳定 id，写入 `ascii_photos.owner_id`。
+   * 本机稳定设备 id，写入 `ascii_photos.owner_id`；与 `mine` 判定同源。
+   * 优先读专用键；若无则迁移旧版 `ascii_gallery_client_id_v1` 一次；仍无则 `randomUUID`。
+   * @returns {string}
+   */
+  function getOrCreateDeviceId() {
+    try {
+      var ls = global.localStorage;
+      if (ls) {
+        var d = ls.getItem(DEVICE_ID_STORAGE_KEY);
+        if (d && typeof d === 'string' && d.length > 4) return d;
+        var legacy = ls.getItem(CLIENT_ID_STORAGE_KEY);
+        if (legacy && typeof legacy === 'string' && legacy.length > 4) {
+          ls.setItem(DEVICE_ID_STORAGE_KEY, legacy);
+          return legacy;
+        }
+      }
+      var id =
+        global.crypto && typeof global.crypto.randomUUID === 'function'
+          ? global.crypto.randomUUID()
+          : 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 14);
+      if (ls) ls.setItem(DEVICE_ID_STORAGE_KEY, id);
+      return id;
+    } catch (e) {
+      return 'dev_volatile_' + Date.now();
+    }
+  }
+
+  /**
+   * 点赞表 `client_id` 用（与 `owner_id` / device_id 独立）。
    * @returns {string}
    */
   function getOrCreateClientId() {
@@ -362,10 +392,10 @@
   }
 
   /**
-   * 将 `ascii_photos` 行（`select=*`）转为画廊 UI 用条目：`time` 来自 `created_at`。
+   * 将 `ascii_photos` 行转为画廊 UI 用条目：`time` 来自 `created_at`；列表拉取不含 `frames`（悬停时再取）。
    * `owner_id` 缺失或空时 `mine` 为 false（不猜测历史行归属）。
-   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown }} row
-   * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean } | null}
+   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown, is_animated?: unknown, frame_count?: unknown, fps?: unknown, duration_ms?: unknown }} row
+   * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number } | null}
    */
   function mapAsciiPhotoRow(row) {
     if (!row || typeof row.ascii !== 'string') return null;
@@ -376,31 +406,47 @@
     var ownerRaw = row.owner_id;
     var owner =
       ownerRaw != null && typeof ownerRaw === 'string' && ownerRaw.trim() ? ownerRaw.trim() : '';
-    var cur = getOrCreateClientId();
+    var cur = getOrCreateDeviceId();
     var mine = owner.length > 0 && owner === cur;
-    return {
+    var isAnimated = row.is_animated === true;
+    /** @type {{ id: string, ascii: string, color: string, time: number, mine: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }} */
+    var out = {
       id: id,
       ascii: row.ascii,
       color: typeof row.color === 'string' ? row.color : '#00ff41',
       time: t,
       mine: mine
     };
+    if (isAnimated) {
+      out.isAnimated = true;
+      var fc = row.frame_count;
+      out.frameCount = typeof fc === 'number' && Number.isFinite(fc) ? fc : undefined;
+      var fp = row.fps;
+      out.fps = typeof fp === 'number' && Number.isFinite(fp) ? fp : undefined;
+      var dm = row.duration_ms;
+      out.durationMs = typeof dm === 'number' && Number.isFinite(dm) ? dm : undefined;
+    }
+    return out;
   }
 
   /**
-   * 拉取 `ascii_photos`：`select=*`，`order=created_at.desc`（与 Supabase JS 客户端语义一致）。
+   * 拉取 `ascii_photos` 列表：不含 `frames` 列，减轻首屏体积。
    * @param {number} limit
-   * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean }>>}
+   * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }>>}
    */
   function fetchAsciiPhotosFromSupabase(limit) {
     var c = getSupabaseConfig();
     var table = getSupabasePhotosTable();
     var lim = Math.max(1, Math.min(500, typeof limit === 'number' ? limit : 24));
+    var cols =
+      'id,ascii,color,created_at,owner_id,is_animated,frame_count,fps,duration_ms';
     var url =
       c.url +
       '/rest/v1/' +
       encodeURIComponent(table) +
-      '?select=*&order=created_at.desc&limit=' +
+      '?select=' +
+      encodeURIComponent(cols) +
+      '&order=created_at.desc&limit=' +
       encodeURIComponent(String(lim));
     return fetch(url, {
       method: 'GET',
@@ -455,8 +501,54 @@
   }
 
   /**
+   * 按主键仅拉取 `frames`（悬停 / 导出 GIF）；非 UUID 或失败时返回 null。
+   * @param {string} photoId
+   * @returns {Promise<string[] | null>}
+   */
+  function fetchAsciiPhotoFramesById(photoId) {
+    if (!photoId || typeof photoId !== 'string' || !isUuidString(photoId)) {
+      return Promise.resolve(null);
+    }
+    var c = getSupabaseConfig();
+    var table = getSupabasePhotosTable();
+    var url =
+      c.url +
+      '/rest/v1/' +
+      encodeURIComponent(table) +
+      '?id=eq.' +
+      encodeURIComponent(photoId) +
+      '&select=frames&limit=1';
+    return fetch(url, {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        apikey: c.anonKey,
+        Authorization: 'Bearer ' + c.anonKey,
+        Accept: 'application/json'
+      }
+    })
+      .then(function (res) {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then(function (rows) {
+        if (!Array.isArray(rows) || !rows[0]) return null;
+        var f = rows[0].frames;
+        if (!Array.isArray(f)) return null;
+        var out = [];
+        for (var i = 0; i < f.length; i++) {
+          if (typeof f[i] === 'string') out.push(f[i]);
+        }
+        return out.length ? out : null;
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+
+  /**
    * 向 `ascii_photos` 插入一行（不整包覆盖）；`id` 为 UUID 时与本地 `prependUserPhoto` 对齐。
-   * @param {{ ascii: string, color?: string, time?: number, id?: string }} photo
+   * @param {{ ascii: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} photo
    * @returns {Promise<boolean>}
    */
   function insertPhotoRowSupabase(photo) {
@@ -468,13 +560,32 @@
       typeof photo.time === 'number' && Number.isFinite(photo.time)
         ? new Date(photo.time).toISOString()
         : new Date().toISOString();
-    /** @type {{ ascii: string, color: string, created_at: string, owner_id: string, id?: string }} */
+    var isAnim = photo.isAnimated === true;
+    /** @type {{ ascii: string, color: string, created_at: string, owner_id: string, id?: string, is_animated: boolean, frames: string[] | null, frame_count: number | null, fps: number | null, duration_ms: number | null }} */
     var body = {
       ascii: photo.ascii,
       color: typeof photo.color === 'string' ? photo.color : '#00ff41',
       created_at: createdIso,
-      owner_id: getOrCreateClientId()
+      owner_id: getOrCreateDeviceId(),
+      is_animated: isAnim,
+      frames: null,
+      frame_count: null,
+      fps: null,
+      duration_ms: null
     };
+    if (isAnim && Array.isArray(photo.frames) && photo.frames.length > 0) {
+      body.frames = photo.frames;
+      body.frame_count =
+        typeof photo.frameCount === 'number' && Number.isFinite(photo.frameCount)
+          ? photo.frameCount
+          : photo.frames.length;
+      body.fps =
+        typeof photo.fps === 'number' && Number.isFinite(photo.fps) ? photo.fps : 6;
+      body.duration_ms =
+        typeof photo.durationMs === 'number' && Number.isFinite(photo.durationMs)
+          ? photo.durationMs
+          : 2000;
+    }
     if (isUuidString(photo.id)) {
       body.id = photo.id;
     }
@@ -845,7 +956,7 @@
 
   /**
    * 新增一幅作品到 Supabase（单行 insert）；非 Supabase 或未启用时视为成功。
-   * @param {{ ascii: string, color?: string, time?: number, id?: string }} photo
+   * @param {{ ascii: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} photo
    * @returns {Promise<boolean>}
    */
   function insertPhotoRow(photo) {
@@ -1143,9 +1254,11 @@
     DEFAULT_POLL_MS: DEFAULT_POLL_MS,
     likesApiEnabled: likesApiEnabled,
     getOrCreateClientId: getOrCreateClientId,
+    getOrCreateDeviceId: getOrCreateDeviceId,
     fetchPhotoLikeState: fetchPhotoLikeState,
     addPhotoLike: addPhotoLike,
     removePhotoLike: removePhotoLike,
-    deleteAllLikesForPhotoId: deleteAllLikesForPhotoId
+    deleteAllLikesForPhotoId: deleteAllLikesForPhotoId,
+    fetchAsciiPhotoFramesById: fetchAsciiPhotoFramesById
   };
 })(typeof window !== 'undefined' ? window : globalThis);
