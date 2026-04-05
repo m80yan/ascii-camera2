@@ -202,7 +202,7 @@
     padding-top: 12px;
     border-top: 1px solid rgba(0,255,65,0.12);
   }
-  #lightbox-like, #lightbox-download-png {
+  #lightbox-like, #lightbox-download-png, #lightbox-open-to-download {
     background: transparent;
     border: 1px solid rgba(0,255,65,0.35);
     color: #00ff41;
@@ -225,15 +225,25 @@
     white-space: nowrap;
     flex-shrink: 0;
   }
+  #lightbox-open-to-download {
+    width: auto;
+    max-width: min(260px, 92vw);
+    min-width: 196px;
+    white-space: normal;
+    line-height: 1.25;
+    text-transform: none;
+    letter-spacing: 1px;
+  }
   #lightbox-like { text-transform: none; letter-spacing: 1px; }
   #lightbox-download-png { text-transform: none; letter-spacing: 1px; }
-  #lightbox-like:hover, #lightbox-download-png:hover { background: rgba(0,255,65,0.1); }
+  #lightbox-like:hover, #lightbox-download-png:hover, #lightbox-open-to-download:hover { background: rgba(0,255,65,0.1); }
   #lightbox-like.lightbox-like--liked {
     color: #F96B6D;
     border-color: rgba(249, 107, 109, 0.8);
   }
   #lightbox-like.lightbox-like--liked:hover { background: rgba(249, 107, 109, 0.12); }
   #lightbox-download-png:disabled { opacity: 0.55; cursor: wait; }
+  #lightbox-open-to-download[hidden] { display: none !important; }
   #confirm-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 200; align-items: center; justify-content: center; }
   #confirm-modal.open { display: flex; }
   #confirm-box { background: #111; border: 1px solid rgba(255,68,68,0.4); border-radius: 4px; padding: 28px 32px; text-align: center; }
@@ -392,6 +402,7 @@
     <div id="lightbox-footer">
       <button type="button" id="lightbox-like">Like</button>
       <button type="button" id="lightbox-download-png">Download PNG</button>
+      <button type="button" id="lightbox-open-to-download" hidden aria-hidden="true" title="Opens the full gallery page for this item so you can download">Open to download</button>
     </div>
   </div>
 </div>
@@ -795,7 +806,7 @@ function imageToAscii(img, cols, forcedAspect, chars) {
  * @returns {Promise<string[] | null>}
  */
 function resolveLightboxAsciiFrames(photo) {
-  if (!photo || photo.isAnimated !== true) return Promise.resolve(null);
+  if (!photo || !isLightboxPhotoAnimatedForDownload(photo)) return Promise.resolve(null);
   if (Array.isArray(photo.frames) && photo.frames.length > 0) {
     return Promise.resolve(photo.frames);
   }
@@ -865,8 +876,9 @@ function openLightbox(photo) {
 
   var dlBtn = document.getElementById('lightbox-download-png');
   if (dlBtn) {
-    dlBtn.textContent = photo && photo.isAnimated === true ? 'Download .gif' : 'Download PNG';
+    dlBtn.textContent = isLightboxPhotoAnimatedForDownload(photo) ? 'Download .gif' : 'Download PNG';
   }
+  syncLightboxDownloadButtonsVisibility();
 
   lightboxPre.textContent = photo.ascii;
   lightboxPre.style.color = photo.color || '#00ff41';
@@ -901,7 +913,7 @@ function openLightbox(photo) {
     lightboxPre.style.lineHeight = '1';
   });
 
-  if (photo && photo.isAnimated === true) {
+  if (photo && isLightboxPhotoAnimatedForDownload(photo)) {
     resolveLightboxAsciiFrames(photo).then(function (frames) {
       if (
         session !== lightboxLikeSessionGen ||
@@ -973,27 +985,104 @@ if (lightboxLikeBtn) {
   });
 }
 
+/** 设为 `false` 可关闭灯箱导出调试日志 */
+var GALLERY_EXPORT_DEBUG = true;
+
+/**
+ * @param {...unknown} args
+ * @returns {void}
+ */
+function logGalleryExport() {
+  if (!GALLERY_EXPORT_DEBUG || typeof console === 'undefined' || !console.log) return;
+  var a = ['[gallery-export]'];
+  for (var i = 0; i < arguments.length; i++) a.push(arguments[i]);
+  console.log.apply(console, a);
+}
+
+/**
+ * 与灯箱按钮文案、下载路由一致（兼容异常序列化后的 `"true"` 字符串）。
+ * @param {{ isAnimated?: boolean | string } | null | undefined} photo
+ * @returns {boolean}
+ */
+function isLightboxPhotoAnimatedForDownload(photo) {
+  if (!photo) return false;
+  return photo.isAnimated === true || photo.isAnimated === 'true';
+}
+
+/**
+ * @param {{ isAnimated?: boolean | string } | null | undefined} photo
+ * @returns {string}
+ */
+function getLightboxDownloadDefaultLabel(photo) {
+  return isLightboxPhotoAnimatedForDownload(photo) ? 'Download .gif' : 'Download PNG';
+}
+
+/**
+ * 恢复下载按钮可点状态与文案（依赖当前 `lightboxOpenPhoto`）。
+ * @param {HTMLButtonElement | null} btn
+ * @returns {void}
+ */
+function resetLightboxDownloadButton(btn) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.textContent = getLightboxDownloadDefaultLabel(lightboxOpenPhoto);
+}
+
+/**
+ * 动态加载 gifenc ESM（unpkg 失败时回退 jsDelivr）。
+ * @returns {Promise<Record<string, unknown>>}
+ */
+function importGifencEsm() {
+  return import('https://unpkg.com/gifenc@1.0.3/dist/gifenc.esm.js').catch(function (e1) {
+    logGalleryExport('gifenc unpkg import failed, trying jsdelivr', e1);
+    return import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js');
+  });
+}
+
 /**
  * Renders lightbox ASCII to PNG using the same computed font, line-height, and color as `#lightbox-pre`.
+ * 静态条目的 ASCII 以 `lightboxOpenPhoto.ascii` 为准，避免与 `#lightbox-pre` 瞬时内容不一致。
  * @returns {void}
  */
 function downloadLightboxPng() {
-  const btn = document.getElementById('lightbox-download-png');
-  if (!btn || btn.disabled) return;
-  const defaultLabel = 'Download PNG';
-  const ascii = lightboxPre.textContent || '';
-  const pad = 24;
-  const style = getComputedPreCanvasStyle(lightboxPre);
+  var btn = document.getElementById('lightbox-download-png');
+  if (!btn || btn.disabled) {
+    console.warn('[gallery-export] PNG skipped: missing button or already disabled');
+    return;
+  }
+  var defaultLabel = getLightboxDownloadDefaultLabel(lightboxOpenPhoto);
+  var ascii =
+    lightboxOpenPhoto && typeof lightboxOpenPhoto.ascii === 'string'
+      ? lightboxOpenPhoto.ascii
+      : lightboxPre.textContent || '';
+  logGalleryExport('PNG start', { asciiLen: ascii.length, defaultLabel: defaultLabel });
+  if (!String(ascii).trim()) {
+    console.error('[gallery-export] PNG aborted: empty ascii');
+    btn.textContent = 'Failed';
+    setTimeout(function () {
+      resetLightboxDownloadButton(btn);
+    }, 2000);
+    return;
+  }
+  var pad = 24;
+  var style = getComputedPreCanvasStyle(lightboxPre);
 
   btn.textContent = 'Downloading...';
   btn.disabled = true;
+  var unlockMs = 15000;
+  var unlockTimer = setTimeout(function () {
+    if (btn.disabled) {
+      console.warn('[gallery-export] PNG: forced unlock after ' + unlockMs + 'ms (toBlob hang?)');
+      resetLightboxDownloadButton(btn);
+    }
+  }, unlockMs);
 
   requestAnimationFrame(function () {
     try {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+      var canvas = document.createElement('canvas');
+      var ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('Canvas 2D unavailable');
-      const lines = splitAsciiLinesForExport(ascii);
+      var lines = splitAsciiLinesForExport(ascii);
       ctx.font = style.font;
       if ('letterSpacing' in ctx) {
         ctx.letterSpacing = style.letterSpacing;
@@ -1023,37 +1112,46 @@ function downloadLightboxPng() {
 
       canvas.toBlob(
         function (blob) {
+          clearTimeout(unlockTimer);
           if (!blob) {
+            console.error('[gallery-export] PNG toBlob returned null');
             btn.textContent = 'Failed';
             setTimeout(function () {
-              btn.textContent = defaultLabel;
-              btn.disabled = false;
+              resetLightboxDownloadButton(btn);
             }, 2000);
             return;
           }
-          var url = URL.createObjectURL(blob);
-          var a = document.createElement('a');
-          a.href = url;
-          a.download = 'ascii-camera-' + Date.now() + '.png';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          btn.textContent = 'Downloaded';
-          setTimeout(function () {
-            btn.textContent = defaultLabel;
-            btn.disabled = false;
-          }, 2000);
+          try {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'ascii-camera-' + Date.now() + '.png';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            logGalleryExport('PNG success', { bytes: blob.size });
+            btn.textContent = 'Downloaded';
+            setTimeout(function () {
+              resetLightboxDownloadButton(btn);
+            }, 2000);
+          } catch (e2) {
+            console.error('[gallery-export] PNG trigger download failed', e2);
+            btn.textContent = 'Failed';
+            setTimeout(function () {
+              resetLightboxDownloadButton(btn);
+            }, 2000);
+          }
         },
         'image/png',
         1
       );
     } catch (err) {
-      console.error(err);
+      clearTimeout(unlockTimer);
+      console.error('[gallery-export] PNG error', err);
       btn.textContent = 'Failed';
       setTimeout(function () {
-        btn.textContent = defaultLabel;
-        btn.disabled = false;
+        resetLightboxDownloadButton(btn);
       }, 2000);
     }
   });
@@ -1066,26 +1164,44 @@ function downloadLightboxPng() {
  */
 function downloadLightboxGif() {
   var btn = document.getElementById('lightbox-download-png');
-  if (!btn || btn.disabled) return;
-  var defaultLabel = 'Download .gif';
+  if (!btn || btn.disabled) {
+    console.warn('[gallery-export] GIF skipped: missing button or already disabled');
+    return;
+  }
+  var defaultLabel = getLightboxDownloadDefaultLabel(lightboxOpenPhoto);
   var photo = lightboxOpenPhoto;
+  logGalleryExport('GIF start', { photoId: photo && photo.id, defaultLabel: defaultLabel });
   btn.textContent = 'Preparing...';
   btn.disabled = true;
-  Promise.all([
-    resolveLightboxAsciiFrames(photo || {}),
-    import('https://unpkg.com/gifenc@1.0.3/dist/gifenc.esm.js')
-  ])
+  var unlockMs = 90000;
+  var unlockTimer = setTimeout(function () {
+    if (btn.disabled) {
+      console.warn('[gallery-export] GIF: forced unlock after ' + unlockMs + 'ms');
+      resetLightboxDownloadButton(btn);
+    }
+  }, unlockMs);
+
+  Promise.all([resolveLightboxAsciiFrames(photo || {}), importGifencEsm()])
     .then(function (tuple) {
       var frames = tuple[0];
-      var gifenc = tuple[1];
-      var GIFEncoder = gifenc.GIFEncoder;
+      var gifenc = /** @type {Record<string, unknown>} */ (tuple[1]);
+      logGalleryExport('GIF frames + module', {
+        frameCount: frames && frames.length,
+        hasQuantize: typeof gifenc.quantize === 'function',
+        hasApplyPalette: typeof gifenc.applyPalette === 'function'
+      });
+      var GIFEncoderFn = /** @type {unknown} */ (gifenc.GIFEncoder || gifenc.default);
       var quantize = gifenc.quantize;
       var applyPalette = gifenc.applyPalette;
+      if (typeof GIFEncoderFn !== 'function' || typeof quantize !== 'function' || typeof applyPalette !== 'function') {
+        throw new Error('gifenc module missing GIFEncoder / quantize / applyPalette');
+      }
       if (!frames || !frames.length) {
+        console.error('[gallery-export] GIF: no frames (local list may lack frames; need cloud fetch or hover preload)');
         btn.textContent = 'No frames';
+        clearTimeout(unlockTimer);
         setTimeout(function () {
-          btn.textContent = defaultLabel;
-          btn.disabled = false;
+          resetLightboxDownloadButton(btn);
         }, 2000);
         return;
       }
@@ -1101,10 +1217,10 @@ function downloadLightboxGif() {
       var probe = document.createElement('canvas');
       var pctx = probe.getContext('2d');
       if (!pctx) {
+        clearTimeout(unlockTimer);
         btn.textContent = 'Failed';
         setTimeout(function () {
-          btn.textContent = defaultLabel;
-          btn.disabled = false;
+          resetLightboxDownloadButton(btn);
         }, 2000);
         return;
       }
@@ -1121,9 +1237,10 @@ function downloadLightboxGif() {
       var lineStep = style.lineHeightPx;
       var cw = Math.max(1, Math.ceil(maxW + pad * 2));
       var ch = Math.max(1, Math.ceil(maxLines * lineStep + pad * 2));
-      var gif = GIFEncoder();
+      var gif = GIFEncoderFn();
       /** @type {number[][] | null} */
       var sharedPalette = null;
+      var framesWritten = 0;
       for (var k = 0; k < frames.length; k++) {
         var c = document.createElement('canvas');
         c.width = cw;
@@ -1147,11 +1264,12 @@ function downloadLightboxGif() {
         }
         if (!sharedPalette) continue;
         var index = applyPalette(imageData.data, sharedPalette);
-        if (k === 0) {
-          gif.writeFrame(index, cw, ch, { palette: sharedPalette, delay: delayMs });
-        } else {
-          gif.writeFrame(index, cw, ch, { delay: delayMs });
-        }
+        /** 每帧都传入 `palette`，避免部分运行时下无全局调色板导致写出损坏 */
+        gif.writeFrame(index, cw, ch, { palette: sharedPalette, delay: delayMs });
+        framesWritten++;
+      }
+      if (!sharedPalette || framesWritten === 0) {
+        throw new Error('GIF: no frames encoded (palette or canvas failure)');
       }
       gif.finish();
       var out = gif.bytes();
@@ -1164,30 +1282,79 @@ function downloadLightboxGif() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      clearTimeout(unlockTimer);
+      logGalleryExport('GIF success', { framesWritten: framesWritten, bytes: blob.size });
       btn.textContent = 'Downloaded';
       setTimeout(function () {
-        btn.textContent = defaultLabel;
-        btn.disabled = false;
+        resetLightboxDownloadButton(btn);
       }, 2000);
     })
     .catch(function (err) {
-      console.error(err);
+      clearTimeout(unlockTimer);
+      console.error('[gallery-export] GIF error', err);
       btn.textContent = 'Failed';
       setTimeout(function () {
-        btn.textContent = defaultLabel;
-        btn.disabled = false;
+        resetLightboxDownloadButton(btn);
       }, 2000);
     });
 }
 
-document.getElementById('lightbox-download-png').addEventListener('click', function (e) {
-  e.stopPropagation();
-  if (lightboxOpenPhoto && lightboxOpenPhoto.isAnimated === true) {
-    downloadLightboxGif();
-  } else {
-    downloadLightboxPng();
+(function setupLightboxDownloadClick() {
+  var dlBtn = document.getElementById('lightbox-download-png');
+  if (!dlBtn) {
+    console.error('[gallery-export] #lightbox-download-png not found');
+    return;
   }
-});
+  dlBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    var btn = /** @type {HTMLButtonElement} */ (e.currentTarget);
+    var animated = isLightboxPhotoAnimatedForDownload(lightboxOpenPhoto);
+    logGalleryExport('download click', {
+      lightboxOpen: lightbox && lightbox.classList.contains('open'),
+      animated: animated,
+      photoId: lightboxOpenPhoto && lightboxOpenPhoto.id,
+      buttonDisabled: btn.disabled
+    });
+    if (!lightbox || !lightbox.classList.contains('open')) {
+      console.warn('[gallery-export] download ignored: lightbox not open');
+      return;
+    }
+    if (btn.disabled) {
+      console.warn('[gallery-export] download ignored: button disabled');
+      return;
+    }
+    if (animated) {
+      downloadLightboxGif();
+    } else {
+      downloadLightboxPng();
+    }
+  });
+})();
+
+(function setupLightboxOpenToDownloadClick() {
+  var openBtn = document.getElementById('lightbox-open-to-download');
+  if (!openBtn) return;
+  openBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!lightbox || !lightbox.classList.contains('open')) return;
+    var pid = resolveLightboxPhotoId(lightboxOpenPhoto || {});
+    if (!pid) {
+      console.warn('[gallery] Open to download: no stable photo id for this item');
+      return;
+    }
+    var url = buildGalleryOpenToDownloadUrl(pid);
+    if (!url) {
+      console.warn('[gallery] Open to download: could not build URL');
+      return;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  });
+})();
+
+syncLightboxDownloadButtonsVisibility();
+
 function promptDelete(i) { pendingDeleteIndex = i; confirmModal.classList.add('open'); }
 document.getElementById('confirm-cancel').addEventListener('click', () => { confirmModal.classList.remove('open'); pendingDeleteIndex = null; });
 document.getElementById('confirm-yes').addEventListener('click', () => {
@@ -1231,6 +1398,99 @@ function isEmbeddedInThirdPartyFrame() {
     return window.self !== window.top;
   } catch (e) {
     return true;
+  }
+}
+
+/** 查询参数：在直接打开的画廊页自动展开指定作品的灯箱（嵌入内「Open to download」跳转目标） */
+var ASCII_GALLERY_OPEN_QUERY_KEY = 'open';
+
+/**
+ * Notion / 等 iframe 宿主常拦截 blob 下载：此类环境隐藏站内下载，改为外链至同源完整页。
+ * @returns {boolean}
+ */
+function isGalleryEmbedDownloadRestricted() {
+  return isEmbeddedInThirdPartyFrame();
+}
+
+/**
+ * 构建与当前站点路径一致的画廊 URL，并附带 `open` 以打开灯箱。
+ * @param {string} photoId `id` 或 {@link resolveLightboxPhotoId} 稳定 id
+ * @returns {string}
+ */
+function buildGalleryOpenToDownloadUrl(photoId) {
+  var id = String(photoId || '').trim();
+  if (!id) return '';
+  try {
+    var cur = new URL(window.location.href);
+    cur.hash = '';
+    var path = cur.pathname;
+    if (!/\/gallery\.html$/i.test(path) && path !== '/gallery' && !/\/gallery$/i.test(path)) {
+      cur.pathname = '/gallery';
+    }
+    cur.search = '';
+    cur.searchParams.set(ASCII_GALLERY_OPEN_QUERY_KEY, id);
+    return cur.toString();
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * @param {string} openId
+ * @returns {number}
+ */
+function findGalleryPhotoIndexByOpenId(openId) {
+  var needle = String(openId || '').trim();
+  if (!needle) return -1;
+  for (var i = 0; i < photosCache.length; i++) {
+    var p = photosCache[i];
+    if (!p) continue;
+    if (typeof p.id === 'string' && p.id === needle) return i;
+    try {
+      if (resolveLightboxPhotoId(p) === needle) return i;
+    } catch (e2) {}
+  }
+  return -1;
+}
+
+/**
+ * 若地址栏含 `?open=`，在列表已渲染后打开对应灯箱并去掉查询串。
+ * @returns {void}
+ */
+function tryConsumeGalleryOpenQuery() {
+  try {
+    if (!photosCache || !photosCache.length) return;
+    var u = new URL(window.location.href);
+    var raw = u.searchParams.get(ASCII_GALLERY_OPEN_QUERY_KEY);
+    if (raw == null || String(raw).trim() === '') return;
+    var id = String(raw).trim();
+    var idx = findGalleryPhotoIndexByOpenId(id);
+    if (idx < 0) return;
+    openLightbox(photosCache[idx]);
+    u.searchParams.delete(ASCII_GALLERY_OPEN_QUERY_KEY);
+    var qs = u.searchParams.toString();
+    var next = u.pathname + (qs ? '?' + qs : '') + u.hash;
+    window.history.replaceState({}, '', next);
+  } catch (e) {
+    console.warn('[gallery] tryConsumeGalleryOpenQuery failed', e);
+  }
+}
+
+/**
+ * 嵌入：仅显示「Open to download」；直接打开：仅显示 PNG/GIF 下载。
+ * @returns {void}
+ */
+function syncLightboxDownloadButtonsVisibility() {
+  var restrict = isGalleryEmbedDownloadRestricted();
+  var dl = document.getElementById('lightbox-download-png');
+  var op = document.getElementById('lightbox-open-to-download');
+  if (dl) {
+    dl.hidden = restrict;
+    dl.setAttribute('aria-hidden', restrict ? 'true' : 'false');
+  }
+  if (op) {
+    op.hidden = !restrict;
+    op.setAttribute('aria-hidden', restrict ? 'false' : 'true');
   }
 }
 
@@ -1518,7 +1778,7 @@ function clearGalleryThumbAnim() {
  */
 function startGalleryThumbAsciiAnim(card, photo, cacheIndex) {
   clearGalleryThumbAnim();
-  if (!photo || photo.isAnimated !== true) return;
+  if (!photo || !isLightboxPhotoAnimatedForDownload(photo)) return;
   var pre = card.querySelector('.photo-thumb pre');
   if (!pre) return;
   var fps = typeof photo.fps === 'number' && photo.fps > 0 ? photo.fps : 6;
@@ -1562,7 +1822,7 @@ function renderGallery(photos, userCountOverride) {
   gallery.innerHTML = photos.map((p, i) => {
     const isUser = i < userCount;
     const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
-    const isAnimUser = isUser && p.isAnimated === true;
+    const isAnimUser = isUser && isLightboxPhotoAnimatedForDownload(p);
     const canRemoveUser = isUser && (p.mine === true || curatorModeActive);
     const canShowBuiltinRemove = curatorModeActive && !isUser && p.isDefault;
     let metaHtml = '';
@@ -1629,7 +1889,7 @@ function renderGallery(photos, userCountOverride) {
     card.addEventListener('mouseenter', function () {
       var idx = parseInt(card.getAttribute('data-index') || '0', 10);
       var ph = photosCache[idx];
-      if (ph && ph.isAnimated === true) startGalleryThumbAsciiAnim(card, ph, idx);
+      if (ph && isLightboxPhotoAnimatedForDownload(ph)) startGalleryThumbAsciiAnim(card, ph, idx);
     });
     card.addEventListener('mouseleave', function () {
       clearGalleryThumbAnim();
@@ -1651,6 +1911,7 @@ function renderGallery(photos, userCountOverride) {
       promptDelete(ui);
     });
   });
+  tryConsumeGalleryOpenQuery();
 }
 
 /**
