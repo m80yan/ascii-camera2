@@ -10,14 +10,62 @@
   #camera-shell {
     --cam-action-btn-w: 12.5rem;
     --cam-action-gap: 12px;
+    /** 主内容列宽：顶栏双按钮行总宽，全页仅此一处定宽 */
+    --cam-actions-row-w: calc(var(--cam-action-btn-w) * 2 + var(--cam-action-gap));
+    /** 纯画幅区高度（3:4 竖幅基准）；不含其下进度条占位 */
+    --ascii-vf-slot-h: calc(var(--cam-actions-row-w) * 4 / 3);
+    /** 活动槽总高 = 画幅区 + 距画幅 10px + 条高 6px（进度条在槽内跟画幅走） */
+    --ascii-vf-active-slot-total-h: calc(var(--ascii-vf-slot-h) + var(--ascii-vf-progress-band));
+    /** 宽比例时活动列距外层取景器左右内边距 */
+    --ascii-vf-side-inset: 16px;
+    /** 与底栏 `select` 统一高度，供 Photo/Video 分段与下拉对齐 */
+    --cam-ctl-select-h: 32px;
+    /** 进度条区：距活动画幅 10px + 条高 6px */
+    --ascii-vf-progress-band: 16px;
+    /** `#ascii-wrap` 内垂直内边距（与下面 `padding: 12px` 一致） */
+    --ascii-vf-wrap-pad-y: 12px;
+    /**
+     * 活动画幅与 overlay 下沿的间距 = 画幅下沿至取景器内底（进度占位 + 底 padding），
+     * 使 3:4 等比例下上下留白对称。
+     */
+    --ascii-vf-active-balance-gap: calc(var(--ascii-vf-progress-band) + var(--ascii-vf-wrap-pad-y));
+    /** Overlay 顶距取景器内顶（略下移） */
+    --ascii-vf-overlay-top: 10px;
+    --ascii-vf-overlay-row-h: var(--cam-ctl-select-h);
+    /** Overlay 底距活动槽顶 = 与画幅下方至内底等长 */
+    --ascii-vf-overlay-bottom-gap: var(--ascii-vf-active-balance-gap);
     width: 100%;
-    max-width: 760px;
     display: flex;
     flex-direction: column;
-    align-items: stretch;
+    align-items: center;
     min-height: calc(100vh - 48px);
     position: relative;
     z-index: 0;
+  }
+  /**
+   * 主内容列：顶栏双钮 + 状态 + 底部四控件（与活动画幅同宽对齐）；不含外层取景器。
+   */
+  .camera-content {
+    width: 100%;
+    max-width: var(--cam-actions-row-w);
+    margin-left: auto;
+    margin-right: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    box-sizing: border-box;
+  }
+  /**
+   * 外层取景器（蓝框）：可宽于主列，承载 overlay；宽度不绑 `--cam-actions-row-w`。
+   */
+  .viewfinder-shell {
+    width: 100%;
+    max-width: min(560px, 100%);
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: 4px;
+    box-sizing: border-box;
+    position: relative;
   }
   h1 { font-size: 14px; letter-spacing: normal; text-transform: uppercase; margin-bottom: 20px; opacity: 0.6; text-align: center; align-self: center; width: 100%; }
   h1 .cam-title-prefix { letter-spacing: 0.06em; }
@@ -44,83 +92,15 @@
     justify-content: center;
     line-height: 1;
   }
-  /* 与取景器 #ascii-wrap 同宽，Flash 与取景框右缘对齐 */
-  .cam-status-row {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: center;
+  /** 状态行：占满 `.camera-content` 宽 */
+  .cam-status-below-actions {
     width: 100%;
-    max-width: min(520px, 100%);
-    margin-left: auto;
-    margin-right: auto;
-    margin-bottom: 10px;
-    min-height: 28px;
+    margin: 0 0 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
     box-sizing: border-box;
-  }
-  .cam-status-center {
-    grid-column: 2;
-    justify-self: center;
-    max-width: 100%;
-    box-sizing: border-box;
-  }
-  .cam-status-left {
-    grid-column: 1;
-    justify-self: start;
-    min-width: 0;
-  }
-  /** Photo / Video 标签：仅透明度过渡，无水平位移 */
-  .cam-mode-tabs-wrap {
-    transition: opacity 0.22s ease;
-  }
-  #camera-shell.cam-video-mode .cam-mode-tabs-wrap {
-    opacity: 0.92;
-  }
-  .cam-mode-tabs {
-    display: inline-flex;
-    border: 1px solid rgba(0, 255, 65, 0.45);
-    border-radius: 4px;
-    overflow: hidden;
-    background: #0a120a;
-  }
-  .cam-mode-tab {
-    font-family: monospace, ui-monospace, "Courier New", monospace;
-    font-size: 10px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    padding: 6px 12px;
-    margin: 0;
-    border: none;
-    background: transparent;
-    color: rgba(0, 255, 65, 0.45);
-    cursor: pointer;
-    transition: background 0.18s ease, color 0.18s ease, opacity 0.18s ease;
-    opacity: 0.75;
-  }
-  .cam-mode-tab:hover:not(:disabled) {
-    color: #00ff41;
-    opacity: 1;
-  }
-  .cam-mode-tab.active {
-    background: rgba(0, 255, 65, 0.2);
-    color: #00ff41;
-    opacity: 1;
-    box-shadow: inset 0 0 0 1px rgba(0, 255, 65, 0.35);
-  }
-  .cam-mode-tab:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  /** Video 锁定的分辨率/比例行：仅透明度过渡 */
-  .cam-mode-lock-strip {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: var(--cam-action-gap);
-    row-gap: 12px;
-    transition: opacity 0.22s ease;
-  }
-  #camera-shell.cam-video-mode .cam-mode-lock-strip {
-    opacity: 0.82;
   }
   /** Video 下禁用下拉：强不可交互样式（非仅半透明） */
   select.select-strong-disabled:disabled {
@@ -135,19 +115,18 @@
   .ctl-stack.select-locked .ctl-label {
     opacity: 0.35;
   }
-  /* 自定义 Flash：未选中细线空心方框（Frame 48091615）；选中实心绿块 */
+  /* 自定义 Flash：与 #2AFD4F 一致；Overlay 在活动列内时右缘对齐活动画幅 */
   .flash-switch {
-    grid-column: 3;
-    justify-self: end;
     position: relative;
     display: inline-flex;
     align-items: center;
     gap: 8px;
     font-size: 11px;
     letter-spacing: 1px;
-    color: #00ff41;
+    color: #2afd4f;
     cursor: pointer;
     user-select: none;
+    flex-shrink: 0;
   }
   .flash-switch input {
     position: absolute;
@@ -161,31 +140,21 @@
     width: 12px;
     height: 12px;
     flex-shrink: 0;
-    border: 1px solid rgba(0, 255, 65, 0.55);
+    border: 1px solid rgba(42, 253, 79, 0.55);
     border-radius: 1px;
     background: transparent;
     box-sizing: border-box;
   }
   .flash-switch input:checked + .flash-switch-box {
-    background: #00ff41;
-    border-color: #00ff41;
+    background: #2afd4f;
+    border-color: #2afd4f;
     box-shadow: inset 0 0 0 2px #0a0a0a;
   }
   .flash-switch input:focus-visible + .flash-switch-box {
-    outline: 1px solid #00ff41;
+    outline: 1px solid #2afd4f;
     outline-offset: 2px;
   }
   .flash-switch-label { line-height: 1; }
-  /* 取景与四控件同一列：控件紧跟取景框下方，不靠视口底对齐 */
-  .cam-growing {
-    flex: 0 1 auto;
-    min-height: 80px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    position: relative;
-  }
   .ctl-stack { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .ctl-stack .ctl-label { font-size: 11px; opacity: 0.5; letter-spacing: 1px; text-align: left; width: 100%; }
   .ctl-stack select { width: 100%; min-width: 0; }
@@ -195,9 +164,9 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: var(--cam-action-gap);
     row-gap: 12px;
-    width: min(100%, calc(var(--cam-action-btn-w) * 2 + var(--cam-action-gap)));
-    margin-left: auto;
-    margin-right: auto;
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
     margin-bottom: 0;
     margin-top: 12px;
     padding-top: 0;
@@ -221,7 +190,17 @@
   #snapBtn:hover:not(:disabled) { background: rgba(255,215,0,0.1); }
   /* 保存中：保持 disabled；与 SAVED 同色便于状态一致 */
   #snapBtn.snap-saving:disabled { opacity: 0.85; cursor: not-allowed; color: #ffd700; border-color: #ffd700; }
-  select { background: #111; border: 1px solid rgba(0,255,65,0.3); color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; padding: 6px 8px; cursor: pointer; }
+  select {
+    background: #111;
+    border: 1px solid rgba(0,255,65,0.3);
+    color: #00ff41;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 11px;
+    padding: 6px 8px;
+    cursor: pointer;
+    min-height: var(--cam-ctl-select-h);
+    box-sizing: border-box;
+  }
   /** 仅取景框外闪白；叠在壳内多数内容下、`#ascii-viewer-stack` 下 */
   #flash-outside-root {
     position: fixed;
@@ -241,85 +220,329 @@
     position: relative;
     z-index: 60;
     width: 100%;
-    max-width: min(520px, 100%);
-    margin-left: auto;
-    margin-right: auto;
     display: flex;
     flex-direction: column;
     align-items: stretch;
+  }
+  /** 与主列同宽，避免在加宽的外层取景器里显得过宽 */
+  #ascii-viewer-stack #saved-msg {
+    max-width: var(--cam-actions-row-w);
+    margin-left: auto;
+    margin-right: auto;
   }
   #status { font-size: 11px; letter-spacing: 2px; opacity: 0.5; min-height: 22px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; pointer-events: none; text-align: center; color: inherit; }
   #status.live { color: #00ff41; opacity: 1; }
   .status-live-suffix { display: none; align-items: center; flex-shrink: 0; }
   #status.live .status-live-suffix { display: inline-flex; }
   #status .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #00ff41; box-shadow: 0 0 8px rgba(0,255,65,0.85); flex-shrink: 0; }
-  /* 取景区：内容垂直居中；帧宽与 `#ascii-out` 一致，进度条同宽、距帧 10px */
+  /**
+   * 外层取景器：固定总高，OFF/ON 一致；内层仅缩放，不撑高外壳。
+   * 高度 = 上下 padding + overlay 带 + 活动槽总高（画幅 + 进度条带，同列内）。
+   */
   #ascii-wrap {
     width: 100%;
+    max-width: none;
+    margin-left: auto;
+    margin-right: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    background: #000;
+    border: 1px solid rgba(0,255,65,0.2);
+    border-radius: 4px;
+    padding: var(--ascii-vf-wrap-pad-y);
+    box-sizing: border-box;
+    height: calc(
+      (2 * var(--ascii-vf-wrap-pad-y))
+      + var(--ascii-vf-overlay-top)
+      + var(--ascii-vf-overlay-row-h)
+      + var(--ascii-vf-overlay-bottom-gap)
+      + var(--ascii-vf-active-slot-total-h)
+    );
+    min-height: 0;
+    margin-bottom: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+  /**
+   * Overlay：位于 `.ascii-active-column` 内，宽随活动列；Flash 与活动画幅右缘对齐。
+   */
+  .ascii-viewfinder-overlay {
+    flex: 0 0 auto;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    margin-top: var(--ascii-vf-overlay-top);
+    margin-bottom: var(--ascii-vf-overlay-bottom-gap);
+    pointer-events: none;
+  }
+  .ascii-viewfinder-overlay * {
+    pointer-events: auto;
+  }
+  .ascii-overlay-inner {
+    width: 100%;
+    min-height: var(--ascii-vf-overlay-row-h);
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    box-sizing: border-box;
+  }
+  .ascii-overlay-side {
+    min-width: 0;
+  }
+  .ascii-overlay-tabs {
+    grid-column: 2;
+    justify-self: center;
+    max-width: 100%;
+  }
+  .ascii-overlay-flash {
+    grid-column: 3;
+    justify-self: end;
+    min-width: 0;
+  }
+  /** Photo / Video：分段控件（共用外框、段间无空隙） */
+  .cam-mode-tabs-wrap {
+    display: inline-block;
+    max-width: 100%;
+  }
+  .cam-mode-tabs {
+    display: inline-flex;
+    align-items: stretch;
+    border: 1px solid rgba(42, 253, 79, 0.5);
+    border-radius: 0;
+    overflow: hidden;
+    background: transparent;
+    vertical-align: top;
+    height: var(--cam-ctl-select-h);
+    box-sizing: border-box;
+  }
+  .cam-mode-tab {
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 0 10px;
+    height: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-right: 1px solid rgba(42, 253, 79, 0.5);
+    border-radius: 0;
+    background: transparent;
+    color: rgba(42, 253, 79, 0.5);
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .cam-mode-tab:last-child {
+    border-right: none;
+  }
+  .cam-mode-tab:hover:not(:disabled) {
+    color: #2afd4f;
+  }
+  .cam-mode-tab.active {
+    background: rgba(42, 253, 79, 0.5);
+    color: #2afd4f;
+    border-right-color: rgba(42, 253, 79, 0.5);
+    box-shadow: none;
+  }
+  .cam-mode-tab.active:last-child {
+    border-right: none;
+  }
+  .cam-mode-tab:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  /**
+   * 取景器内容区：占满 `#ascii-wrap` 扣除 padding 后的高度。
+   */
+  .ascii-frame-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    overflow: hidden;
+  }
+  /**
+   * 活动列：默认与主按钮/底控件同宽；16:9、4:3 时加宽（仍留边距）。
+   */
+  .ascii-active-column {
+    width: min(100%, var(--cam-actions-row-w));
     max-width: 100%;
     margin-left: auto;
     margin-right: auto;
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+    flex: 1 1 auto;
+    min-height: 0;
+    box-sizing: border-box;
+  }
+  .ascii-active-column--wide {
+    width: calc(100% - 2 * var(--ascii-vf-side-inset));
+    max-width: 100%;
+  }
+  /**
+   * 活动槽：含画幅 + 其下 10px + 6px 进度条；外层取景器总高不变。
+   */
+  .ascii-active-slot {
+    width: 100%;
+    height: var(--ascii-vf-active-slot-total-h);
+    flex: 0 0 var(--ascii-vf-active-slot-total-h);
+    display: flex;
     align-items: center;
     justify-content: center;
-    background: #000;
-    border: 1px solid rgba(0,255,65,0.2);
-    border-radius: 4px;
-    padding: 12px;
     box-sizing: border-box;
     min-height: 0;
-    margin-bottom: 4px;
-    position: relative;
   }
-  /** 与当前 ASCII 画面等宽（1:1 视频帧在 60 列下的实际像素宽） */
-  .ascii-frame-stack {
+  .ascii-slot-inner {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    width: fit-content;
-    max-width: 100%;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+  /** Video 锁定的分辨率/比例行（底部网格内整行横跨） */
+  .cam-mode-lock-strip {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--cam-action-gap);
+    row-gap: 12px;
   }
   .ascii-inner {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     min-height: 0;
+    width: 100%;
+    height: 100%;
     display: flex;
     justify-content: center;
     align-items: center;
   }
-  .video-progress-root {
-    flex: 0 0 auto;
+  /** 画幅与进度条同宽、进度条距画幅底 10px，随画幅在槽内居中 */
+  .ascii-frame-progress-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    width: 100%;
+    max-width: 100%;
+    flex: 0 1 auto;
+    min-height: 0;
+  }
+  /**
+   * 活动画幅：宽 100% 贴齐 `.ascii-active-column`，高度随所选画面比例；分辨率只改密度。
+   */
+  .ascii-active-frame {
+    width: 100%;
+    max-width: 100%;
+    position: relative;
+    overflow: hidden;
+    display: block;
+    box-sizing: border-box;
+  }
+  /** 固定字格渲染后整体 `scale` 入画幅，不改变 `#ascii-out` 字号（保证采样与 `getAsciiCellMetrics` 一致） */
+  .ascii-out-scale-wrap {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    transform-origin: center center;
+  }
+  .ascii-frame-progress-stack .video-progress-root {
+    flex: 0 0 6px;
     width: 100%;
     margin-top: 10px;
-    height: 4px;
+    padding-top: 0;
+    height: 6px;
+    box-sizing: border-box;
   }
-  .video-progress-root[hidden] {
-    display: none !important;
+  /** 不占布局的隐藏会顶动底栏；用 visibility 保留占位 */
+  .video-progress-root.video-progress-root--inactive .video-progress-track {
+    visibility: hidden;
+    pointer-events: none;
   }
-  /** 全宽轨道；实心白条从左对齐、宽度 100%→0% 表示从右向左缩短 */
+  /** 全宽轨道；实心条从左对齐、宽度 100%→0% 表示从右向左缩短；颜色由 JS 绑 `colorPicker` */
   .video-progress-track {
     position: relative;
     width: 100%;
-    height: 4px;
+    height: 6px;
     background: transparent;
-    border-radius: 1px;
+    border-radius: 0;
   }
   .video-progress-bar {
     height: 100%;
     width: 100%;
-    background: #ffffff;
+    background: transparent;
     pointer-events: none;
   }
   /* 等宽字宽≠行高：行高与字号一致便于测量为「准方格」比例 */
   #ascii-out { font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 6px; line-height: 6px; letter-spacing: 0; white-space: pre; display: inline-block; }
-  /** Camera OFF：与 `.ctl-label` 同量级，在取景框内垂直居中由 `#ascii-wrap` 的 flex 承担 */
-  #ascii-wrap.ascii-wrap--offline #ascii-out {
+  /**
+   * Camera OFF：提示文案相对 `#ascii-wrap` 整框垂直水平居中（非活动槽 / 非画幅）。
+   * `pointer-events: none` 不挡 Photo/Video、Flash 点击。
+   */
+  .ascii-off-helper {
+    display: none;
+  }
+  #ascii-wrap.ascii-wrap--offline .ascii-off-helper {
+    display: flex;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding-left: 10px;
+    padding-right: 10px;
+    pointer-events: none;
+    z-index: 25;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
     font-size: 11px;
     line-height: 1.45;
     letter-spacing: 1px;
-    opacity: 0.85;
+    color: inherit;
+    opacity: 0.5;
     text-align: center;
-    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+  /** 文案仍写入 `#ascii-out` 供逻辑一致；可视由 `.ascii-off-helper` 承担，此处移出视口不占槽内居中 */
+  #ascii-wrap.ascii-wrap--offline .ascii-out-scale-wrap {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    transform: none;
+  }
+  #ascii-wrap.ascii-wrap--offline .ascii-active-frame {
+    position: relative;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
+    aspect-ratio: unset;
+  }
+  #ascii-wrap.ascii-wrap--offline #ascii-out {
+    font-size: 6px;
+    line-height: 6px;
+    letter-spacing: 0;
+    white-space: pre;
   }
   /** 与实时取景 `#ascii-out` 同字格比例，专供 `getAsciiCellMetrics`，避免 OFF 态大字号撑歪最小高度 */
   .ascii-cell-probe {
@@ -348,7 +571,7 @@
     justify-content: center;
     gap: 10px;
     width: 100%;
-    max-width: 520px;
+    max-width: var(--cam-actions-row-w);
     margin: -8px auto 14px;
     padding: 10px 12px;
     border: 1px solid rgba(255, 215, 0, 0.45);
@@ -380,34 +603,21 @@
   <span class="iframe-hint-text">Embedded preview blocks camera — use a full browser tab.</span>
   <a id="iframe-open-tab" class="iframe-hint-link" href="#">Open in new tab</a>
 </div>
+<div class="camera-content">
 <div class="cam-actions">
   <button id="startBtn" type="button">Start Camera</button>
   <button id="snapBtn" type="button" disabled>📷 Take Photo</button>
 </div>
-<div class="cam-status-row">
-  <div class="cam-status-left">
-    <div class="cam-mode-tabs-wrap" id="camModeTabsWrap">
-      <div class="cam-mode-tabs" role="tablist" aria-label="Capture mode">
-        <button type="button" class="cam-mode-tab active" role="tab" id="camTabPhoto" aria-selected="true">Photo</button>
-        <button type="button" class="cam-mode-tab" role="tab" id="camTabVideo" aria-selected="false">Video</button>
-      </div>
-    </div>
+<div class="cam-status-below-actions">
+  <div id="status">
+    <span class="status-text">CAMERA OFF</span>
+    <span class="status-live-suffix" aria-hidden="true">
+      <span class="status-dot"></span>
+    </span>
   </div>
-  <div class="cam-status-center">
-    <div id="status">
-      <span class="status-text">CAMERA OFF</span>
-      <span class="status-live-suffix" aria-hidden="true">
-        <span class="status-dot"></span>
-      </span>
-    </div>
-  </div>
-  <label class="flash-switch">
-    <input type="checkbox" id="flashToggle" />
-    <span class="flash-switch-box" aria-hidden="true"></span>
-    <span class="flash-switch-label">Flash</span>
-  </label>
 </div>
-<div class="cam-growing">
+</div>
+<div class="viewfinder-shell">
 <video id="video" autoplay playsinline></video>
 <canvas id="canvas"></canvas>
 <div id="flash-outside-root" aria-hidden="true">
@@ -419,17 +629,54 @@
 <div id="ascii-viewer-stack">
 <div id="ascii-wrap" class="ascii-wrap--offline">
   <pre id="ascii-cell-probe" class="ascii-cell-probe" aria-hidden="true">0</pre>
-  <div class="ascii-frame-stack">
-    <div class="ascii-inner"><pre id="ascii-out">Click &quot;Start Camera&quot; to begin</pre></div>
-    <div id="video-progress-root" class="video-progress-root" hidden aria-hidden="true">
-      <div class="video-progress-track">
-        <div id="video-progress-bar" class="video-progress-bar"></div>
+  <div class="ascii-frame-body">
+    <div class="ascii-active-column" id="asciiActiveColumn">
+      <div class="ascii-viewfinder-overlay" aria-hidden="false">
+        <div class="ascii-overlay-inner">
+          <div class="ascii-overlay-side" aria-hidden="true"></div>
+          <div class="ascii-overlay-tabs">
+            <div class="cam-mode-tabs-wrap" id="camModeTabsWrap">
+              <div class="cam-mode-tabs" role="tablist" aria-label="Capture mode">
+                <button type="button" class="cam-mode-tab active" role="tab" id="camTabPhoto" aria-selected="true">Photo</button>
+                <button type="button" class="cam-mode-tab" role="tab" id="camTabVideo" aria-selected="false">Video</button>
+              </div>
+            </div>
+          </div>
+          <div class="ascii-overlay-flash">
+            <label class="flash-switch">
+              <input type="checkbox" id="flashToggle" />
+              <span class="flash-switch-box" aria-hidden="true"></span>
+              <span class="flash-switch-label">Flash</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="ascii-active-slot">
+        <div class="ascii-slot-inner">
+          <div class="ascii-inner">
+            <div class="ascii-frame-progress-stack">
+              <div class="ascii-active-frame" id="asciiActiveFrame">
+                <div class="ascii-out-scale-wrap" id="asciiOutScaleWrap">
+                  <pre id="ascii-out" aria-hidden="true">Click &quot;Start Camera&quot; to begin</pre>
+                </div>
+              </div>
+              <div id="video-progress-root" class="video-progress-root video-progress-root--inactive" aria-hidden="true">
+                <div class="video-progress-track">
+                  <div id="video-progress-bar" class="video-progress-bar"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
+  <div id="asciiOffHelper" class="ascii-off-helper" role="note" aria-live="polite">Click &quot;Start Camera&quot; to begin</div>
 </div>
 <div id="saved-msg" aria-live="polite"></div>
 </div>
+</div>
+<div class="camera-content">
 <div class="cam-controls-grid">
   <label class="ctl-stack cc-left">
     <span class="ctl-label">Style</span>
@@ -493,7 +740,7 @@ var AsciiCameraGalleryStorage = window.AsciiCameraGalleryStorage;
 
 /** 测量失败时的字宽/行高比回退值 */
 const CELL_ASPECT_FALLBACK = 0.55;
-/** 分辨率列数上限；取景框高度按此固定，切换 Resolution 时 Style/Color/Resolution/Aspect 不随画布上下跳。 */
+/** 分辨率列数上限（仅影响采样密度，不改变 `.camera-content` 定宽画幅）。 */
 const MAX_RES_COLS = 120;
 /** @type {{ cellAspect: number, lineHeightPx: number } | null} */
 let asciiCellMetricsCache = null;
@@ -509,6 +756,7 @@ const video    = document.getElementById('video');
 const canvas   = document.getElementById('canvas');
 const ctx      = canvas.getContext('2d', { willReadFrequently: true });
 const out      = document.getElementById('ascii-out');
+const asciiOffHelper = document.getElementById('asciiOffHelper');
 const asciiCellProbe = document.getElementById('ascii-cell-probe');
 const asciiWrap = document.getElementById('ascii-wrap');
 const startBtn = document.getElementById('startBtn');
@@ -532,6 +780,9 @@ const videoProgressRoot = document.getElementById('video-progress-root');
 const videoProgressBar = document.getElementById('video-progress-bar');
 const resPickerStack = document.getElementById('resPickerStack');
 const aspectPickerStack = document.getElementById('aspectPickerStack');
+const asciiActiveFrame = document.getElementById('asciiActiveFrame');
+const asciiActiveColumn = document.getElementById('asciiActiveColumn');
+const asciiOutScaleWrap = document.getElementById('asciiOutScaleWrap');
 const iframeHint     = document.getElementById('iframe-hint');
 const iframeOpenTab  = document.getElementById('iframe-open-tab');
 
@@ -546,7 +797,7 @@ const VIDEO_COLS = 60;
 const VIDEO_FRAME_COUNT = 12;
 const VIDEO_FPS = 6;
 const VIDEO_DURATION_MS = 2000;
-/** Video 录制结束后冻结预览并保留 Saving 文案的最短时长（ms） */
+/** Video：冻结帧上展示黄色「SAVED」的最短时长（ms） */
 const VIDEO_POST_RECORD_FREEZE_MS = 1000;
 
 /** @type {boolean} */
@@ -625,25 +876,34 @@ function applyCaptureModeUi() {
   updateModeTabsUi();
   syncVideoProgressBarForMode();
   invalidateAsciiCellMetrics();
-  updateAsciiWrapMinHeight();
+  syncAsciiLayout();
   if (stream && animId == null) render();
 }
 
 /**
- * 仅当 Video 模式且摄像头已开启时显示与画面等宽的进度条；否则不占位。
+ * Video 且摄像头开时显示进度条；否则隐藏条但保留占位，避免顶动布局。
  * @returns {void}
  */
 function syncVideoProgressBarForMode() {
   if (!videoProgressRoot || !videoProgressBar) return;
   if (videoMode && stream) {
-    videoProgressRoot.hidden = false;
+    videoProgressRoot.classList.remove('video-progress-root--inactive');
     videoProgressRoot.setAttribute('aria-hidden', 'false');
     videoProgressBar.style.width = '100%';
   } else {
-    videoProgressRoot.hidden = true;
+    videoProgressRoot.classList.add('video-progress-root--inactive');
     videoProgressRoot.setAttribute('aria-hidden', 'true');
     videoProgressBar.style.width = '100%';
   }
+}
+
+/**
+ * 视频进度条填充色与当前「Color」下拉及 `#ascii-out` 一致。
+ * @returns {void}
+ */
+function syncVideoProgressBarColor() {
+  if (!videoProgressBar || !colorPicker) return;
+  videoProgressBar.style.backgroundColor = colorPicker.value;
 }
 
 /**
@@ -761,16 +1021,79 @@ function invalidateAsciiCellMetrics() {
   asciiCellMetricsCache = null;
 }
 
+/** @type {number} */
+let asciiScaleRaf = 0;
+
 /**
- * 取景框 `#ascii-wrap` 最小高度：恒按 **MAX_RES_COLS × 3:4** 所需行数（列数与竖屏比例下最高），
- * 与当前 Resolution 无关，使下方四控件视觉锚点不变。
+ * 按当前 Photo/Video 与 Aspect 设置活动画幅的 `aspect-ratio`（宽恒为内容列 100%，高随比例）。
+ * @returns {void}
  */
-function updateAsciiWrapMinHeight() {
-  const cols = MAX_RES_COLS;
-  const { cellAspect, lineHeightPx } = getAsciiCellMetrics();
-  const rows34 = Math.max(1, Math.round((cols * cellAspect) / (3 / 4)));
-  const innerPx = rows34 * lineHeightPx;
-  asciiWrap.style.minHeight = (innerPx + 24) + 'px';
+function syncAsciiActiveFrameAspect() {
+  if (!asciiActiveFrame || !asciiWrap) return;
+  if (asciiWrap.classList.contains('ascii-wrap--offline')) {
+    asciiActiveFrame.style.aspectRatio = '';
+    return;
+  }
+  var ar = videoMode ? 1 : getAspectRatio();
+  asciiActiveFrame.style.aspectRatio = ar + ' / 1';
+}
+
+/**
+ * 在固定字格下测量 `#ascii-out` 占位，整体 `scale` 以填入 `.ascii-active-frame`（contain，居中）。
+ * Camera OFF（`.ascii-wrap--offline`）时清除内联 `left` / `top` / `transform`；可视提示由 `#ascii-wrap` 上的 `.ascii-off-helper` 负责。
+ * @returns {void}
+ */
+function updateAsciiOutScale() {
+  if (!asciiOutScaleWrap || !out || !asciiActiveFrame || !asciiWrap) return;
+  if (asciiWrap.classList.contains('ascii-wrap--offline')) {
+    asciiOutScaleWrap.style.transform = '';
+    asciiOutScaleWrap.style.left = '';
+    asciiOutScaleWrap.style.top = '';
+    return;
+  }
+  var cw = asciiActiveFrame.clientWidth;
+  var ch = asciiActiveFrame.clientHeight;
+  if (cw < 2 || ch < 2) return;
+  asciiOutScaleWrap.style.transform = 'translate(-50%, -50%)';
+  void out.offsetWidth;
+  var wi = out.offsetWidth;
+  var hi = out.offsetHeight;
+  if (wi < 1 || hi < 1) return;
+  var s = Math.min(cw / wi, ch / hi);
+  asciiOutScaleWrap.style.transform = 'translate(-50%, -50%) scale(' + s + ')';
+}
+
+/**
+ * 合并宽高比与缩放更新，下一帧执行缩放以避免与刚写入的 DOM 不同步。
+ * @returns {void}
+ */
+function scheduleAsciiScale() {
+  if (asciiScaleRaf) cancelAnimationFrame(asciiScaleRaf);
+  asciiScaleRaf = requestAnimationFrame(function () {
+    asciiScaleRaf = 0;
+    updateAsciiOutScale();
+  });
+}
+
+/**
+ * 16:9 / 4:3 时加宽活动列；1:1、3:4、Video 保持与主按钮列同宽。
+ * @returns {void}
+ */
+function syncAsciiActiveColumnWidthClass() {
+  if (!asciiActiveColumn || !aspectPicker) return;
+  var ap = aspectPicker.value;
+  var wide = !videoMode && (ap === '16:9' || ap === '4:3');
+  asciiActiveColumn.classList.toggle('ascii-active-column--wide', wide);
+}
+
+/**
+ * 取景器内活动区布局同步：列宽、比例、缩放。
+ * @returns {void}
+ */
+function syncAsciiLayout() {
+  syncAsciiActiveColumnWidthClass();
+  syncAsciiActiveFrameAspect();
+  scheduleAsciiScale();
 }
 
 /**
@@ -783,18 +1106,41 @@ function getCols() {
   return Math.min(MAX_RES_COLS, Math.max(1, n));
 }
 
-colorPicker.addEventListener('change', () => { out.style.color = colorPicker.value; });
+colorPicker.addEventListener('change', function () {
+  out.style.color = colorPicker.value;
+  syncVideoProgressBarColor();
+});
+resPicker.addEventListener('change', function () {
+  invalidateAsciiCellMetrics();
+  syncAsciiLayout();
+});
+aspectPicker.addEventListener('change', function () {
+  invalidateAsciiCellMetrics();
+  syncAsciiLayout();
+});
+densityPicker.addEventListener('change', function () {
+  invalidateAsciiCellMetrics();
+  syncAsciiLayout();
+});
 window.addEventListener('resize', function () {
   invalidateAsciiCellMetrics();
-  updateAsciiWrapMinHeight();
+  syncAsciiLayout();
 });
 if (document.fonts && document.fonts.ready) {
   document.fonts.ready.then(function () {
     invalidateAsciiCellMetrics();
-    updateAsciiWrapMinHeight();
+    syncAsciiLayout();
   });
 }
-updateAsciiWrapMinHeight();
+if (typeof ResizeObserver !== 'undefined') {
+  var asciiFrameResizeObserver = new ResizeObserver(function () {
+    scheduleAsciiScale();
+  });
+  if (asciiActiveFrame) asciiFrameResizeObserver.observe(asciiActiveFrame);
+  if (asciiActiveColumn) asciiFrameResizeObserver.observe(asciiActiveColumn);
+}
+syncAsciiLayout();
+syncVideoProgressBarColor();
 
 /**
  * @param {number} ms
@@ -990,6 +1336,7 @@ function restartLiveAsciiPreview() {
   if (animId != null) cancelAnimationFrame(animId);
   animId = null;
   out.style.color = colorPicker.value;
+  syncVideoProgressBarColor();
   render();
 }
 
@@ -1016,8 +1363,10 @@ startBtn.addEventListener('click', async () => {
     setStatusOffline();
     if (asciiWrap) asciiWrap.classList.add('ascii-wrap--offline');
     out.textContent = 'Click "Start Camera" to begin';
+    if (asciiOffHelper) asciiOffHelper.textContent = 'Click "Start Camera" to begin';
+    out.setAttribute('aria-hidden', 'true');
     invalidateAsciiCellMetrics();
-    updateAsciiWrapMinHeight();
+    syncAsciiLayout();
     syncVideoProgressBarForMode();
     return;
   }
@@ -1038,15 +1387,25 @@ startBtn.addEventListener('click', async () => {
     snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
     setStatusLive();
     if (asciiWrap) asciiWrap.classList.remove('ascii-wrap--offline');
+    out.removeAttribute('aria-hidden');
     out.style.color = colorPicker.value;
+    syncVideoProgressBarColor();
     invalidateAsciiCellMetrics();
-    updateAsciiWrapMinHeight();
+    syncAsciiLayout();
     syncVideoProgressBarForMode();
     render();
+    requestAnimationFrame(function () {
+      requestAnimationFrame(syncAsciiLayout);
+    });
   } catch (e) {
     setStatusOffline();
     statusEl.querySelector('.status-text').textContent = 'Access denied';
-    out.textContent = '[ Camera access denied ]';
+    out.textContent = 'Camera access denied';
+    if (asciiOffHelper) asciiOffHelper.textContent = out.textContent;
+    if (asciiWrap) asciiWrap.classList.add('ascii-wrap--offline');
+    out.setAttribute('aria-hidden', 'true');
+    invalidateAsciiCellMetrics();
+    syncAsciiLayout();
   }
 });
 
@@ -1059,7 +1418,7 @@ snapBtn.addEventListener('click', async () => {
   if (!stream || snapCountdownActive) return;
   const cols = getCols();
   const ctl = [densityPicker, colorPicker, resPicker, aspectPicker, camTabPhoto, camTabVideo];
-  /** @type {number | null} Video 录制结束并冻结 `#ascii-out` 的时刻（用于最短 1s Saving 展示） */
+  /** @type {number | null} Video 录制结束并冻结 `#ascii-out` 的时刻（用于区分 Photo / Video 保存提示流程） */
   var videoFreezeStartMs = null;
   snapCountdownActive = true;
   snapBtn.disabled = true;
@@ -1132,30 +1491,37 @@ snapBtn.addEventListener('click', async () => {
     snapBtn.textContent = SNAP_LABEL_SAVING;
     snapBtn.classList.add('snap-saving');
     snapBtn.setAttribute('aria-busy', 'true');
-    savedMsg.textContent = SNAP_LABEL_SAVING;
-    savedMsg.style.color = '#ffd700';
-    savedMsg.classList.add('show');
+    var isVideoCapture = videoFreezeStartMs != null;
+    if (!isVideoCapture) {
+      savedMsg.textContent = SNAP_LABEL_SAVING;
+      savedMsg.style.color = '#ffd700';
+      savedMsg.classList.add('show');
+    }
 
     var ok = await persistPhotoToGallery(persistArg);
 
-    if (videoFreezeStartMs != null) {
-      var frozenElapsed = performance.now() - videoFreezeStartMs;
-      if (frozenElapsed < VIDEO_POST_RECORD_FREEZE_MS) {
-        await sleep(VIDEO_POST_RECORD_FREEZE_MS - frozenElapsed);
-      }
-    }
-
-    savedMsg.classList.remove('show');
-
     if (ok) {
-      savedMsg.textContent = 'SAVED';
-      savedMsg.style.color = '#ffd700';
-      savedMsg.classList.add('show');
-      await sleep(400);
-      focusOpenerGalleryAfterSave();
-      await sleep(1800);
-      savedMsg.classList.remove('show');
+      if (isVideoCapture) {
+        savedMsg.textContent = 'SAVED';
+        savedMsg.style.color = '#ffd700';
+        savedMsg.classList.add('show');
+        await sleep(VIDEO_POST_RECORD_FREEZE_MS);
+        savedMsg.classList.remove('show');
+        await sleep(400);
+        focusOpenerGalleryAfterSave();
+        await sleep(1800);
+      } else {
+        savedMsg.classList.remove('show');
+        savedMsg.textContent = 'SAVED';
+        savedMsg.style.color = '#ffd700';
+        savedMsg.classList.add('show');
+        await sleep(400);
+        focusOpenerGalleryAfterSave();
+        await sleep(1800);
+        savedMsg.classList.remove('show');
+      }
     } else {
+      savedMsg.classList.remove('show');
       savedMsg.textContent = 'Save failed: storage full, unavailable, or disabled.';
       savedMsg.style.color = '#ff4444';
       savedMsg.classList.add('show');
@@ -1184,6 +1550,7 @@ snapBtn.addEventListener('click', async () => {
     });
     restartLiveAsciiPreview();
     syncVideoProgressBarForMode();
+    syncAsciiLayout();
     snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
     snapBtn.disabled = !stream;
   }
