@@ -1775,6 +1775,9 @@ async function deletePhoto(userIndex) {
  * 重新渲染网格：Supabase 下仅使用 `ascii_photos` 缓存 + 内置示例；否则 localStorage 合并。
  */
 function refreshGallery() {
+  if (typeof console !== 'undefined' && console.info) {
+    console.info('[gallery] refreshGallery() called');
+  }
   var sync = window.AsciiCameraGalleryCloudSync;
   if (
     sync &&

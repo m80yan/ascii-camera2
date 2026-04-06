@@ -784,6 +784,18 @@
   }
 
   /**
+   * 临时轮询校验日志：列表首条 `id`（与网格顺序一致）。
+   * @param {unknown[] | null | undefined} rows
+   * @returns {string}
+   */
+  function firstRowIdForPollLog(rows) {
+    if (!rows || !rows.length) return '(none)';
+    var r = rows[0];
+    if (!r || typeof r !== 'object' || r.id == null || r.id === '') return '(no-id)';
+    return String(r.id);
+  }
+
+  /**
    * Supabase：仅以 `ascii_photos` 覆盖缓存与 `localStorage` 用户列表（不合并旧本地、不用 JSON blob）。
    * 拉取失败时保留上次成功缓存，不把画廊替换成「仅示例」。
    * @returns {Promise<boolean>}
@@ -813,15 +825,24 @@
         if (pushInFlight) {
           return false;
         }
+        var beforeCount = supabaseGalleryUserCache.length;
+        var beforeFirstId = firstRowIdForPollLog(supabaseGalleryUserCache);
         supabaseGalleryUserCache = remotePhotos.slice();
         save(remotePhotos);
         var afterSnap = JSON.stringify(supabaseGalleryUserCache);
+        var changed = beforeSnap !== afterSnap;
+        var afterCount = supabaseGalleryUserCache.length;
+        var afterFirstId = firstRowIdForPollLog(supabaseGalleryUserCache);
         if (typeof global.console !== 'undefined' && global.console.info) {
-          global.console.info(
-            '[gallery-sync] ascii_photos applied to gallery cache rows=' + supabaseGalleryUserCache.length
-          );
+          global.console.info('[gallery-sync poll] supabase pull', {
+            changed: changed,
+            beforeCount: beforeCount,
+            afterCount: afterCount,
+            beforeFirstId: beforeFirstId,
+            afterFirstId: afterFirstId
+          });
         }
-        return beforeSnap !== afterSnap;
+        return changed;
       })
       .then(function (changed) {
         syncStatus.lastPullAt = Date.now();
@@ -1056,9 +1077,23 @@
     if (!isEnabled() || typeof onRemoteChanged !== 'function') return;
     var ms = typeof intervalMs === 'number' && intervalMs >= 5000 ? intervalMs : DEFAULT_POLL_MS;
     function tick() {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (typeof global.console !== 'undefined' && global.console.info) {
+        global.console.info('[gallery-sync poll] tick');
+      }
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        if (typeof global.console !== 'undefined' && global.console.info) {
+          global.console.info('[gallery-sync poll] tick skipped (document hidden)');
+        }
+        return;
+      }
       pullOnce().then(function (changed) {
-        if (changed || getProvider() === 'supabase') {
+        if (typeof global.console !== 'undefined' && global.console.info) {
+          global.console.info('[gallery-sync poll] tick complete', {
+            changed: changed,
+            refreshUi: changed === true
+          });
+        }
+        if (changed) {
           onRemoteChanged();
         }
       });
