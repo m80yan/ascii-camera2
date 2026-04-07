@@ -102,7 +102,10 @@
     min-height: 24px;
     box-sizing: border-box;
   }
-  /** Video 下禁用下拉：强不可交互样式（非仅半透明） */
+  /**
+   * 禁用下拉：统一与 Resolution / Aspect 的 `select-strong-disabled` 色值（Style 等凡 `disabled` 之下拉同效）。
+   */
+  select:disabled,
   select.select-strong-disabled:disabled {
     opacity: 1;
     cursor: not-allowed;
@@ -212,9 +215,15 @@
   #submitGalleryBtn.cam-submit-gallery-btn:hover:not(:disabled) {
     background: rgba(0, 255, 65, 0.1);
   }
+  /** Submit：disabled 与 Resolution/Aspect 禁用下拉同一绿透明度体系（不用整钮 opacity 0.3） */
   #submitGalleryBtn.cam-submit-gallery-btn:disabled {
-    opacity: 0.3;
+    opacity: 1;
     cursor: not-allowed;
+    pointer-events: none;
+    background: #070707;
+    color: rgba(0, 255, 65, 0.28);
+    border-color: rgba(0, 255, 65, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
   }
   button { background: transparent; border: 1px solid #00ff41; color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; cursor: pointer; letter-spacing: 2px; text-transform: uppercase; transition: background 0.2s; }
   button:hover { background: rgba(0,255,65,0.1); }
