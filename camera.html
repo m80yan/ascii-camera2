@@ -158,6 +158,25 @@
     outline-offset: 2px;
   }
   .flash-switch-label { line-height: 1; }
+  /**
+   * 预览态：Flash 禁用外观对齐 `select:disabled`（低对比绿 + 暗底），保留 checked 视觉差异。
+   */
+  .flash-switch.flash-switch--disabled {
+    opacity: 1;
+    cursor: not-allowed;
+    pointer-events: none;
+    color: rgba(0, 255, 65, 0.28);
+  }
+  .flash-switch.flash-switch--disabled .flash-switch-box {
+    background: #070707;
+    border-color: rgba(0, 255, 65, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  }
+  .flash-switch.flash-switch--disabled input:checked + .flash-switch-box {
+    background: rgba(0, 255, 65, 0.22);
+    border-color: rgba(0, 255, 65, 0.18);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  }
   .ctl-stack { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .ctl-stack .ctl-label { font-size: 11px; opacity: 0.5; letter-spacing: 1px; text-align: left; width: 100%; }
   .ctl-stack select { width: 100%; min-width: 0; }
@@ -1080,9 +1099,18 @@ function applyCaptureModeUi() {
    * 预览态：仅确认画面，不可改比例/分辨率。
    * 实时取景：Video 下锁定 Aspect / Resolution。
    */
+  var flashSwitchLabel =
+    flashToggle && flashToggle.parentElement && flashToggle.parentElement.classList.contains('flash-switch')
+      ? flashToggle.parentElement
+      : null;
   if (!stream) {
     if (densityPicker) densityPicker.disabled = true;
     if (colorPicker) colorPicker.disabled = false;
+    if (flashToggle) flashToggle.disabled = false;
+    if (flashSwitchLabel) {
+      flashSwitchLabel.classList.remove('flash-switch--disabled');
+      flashSwitchLabel.removeAttribute('aria-disabled');
+    }
     if (videoMode) {
       if (resPicker) {
         resPicker.value = String(VIDEO_COLS);
@@ -1120,6 +1148,12 @@ function applyCaptureModeUi() {
   } else if (previewCaptureActive) {
     if (densityPicker) densityPicker.disabled = false;
     if (colorPicker) colorPicker.disabled = false;
+    /** 预览为非实时态：禁止 Flash（避免误触） */
+    if (flashToggle) flashToggle.disabled = true;
+    if (flashSwitchLabel) {
+      flashSwitchLabel.classList.add('flash-switch--disabled');
+      flashSwitchLabel.setAttribute('aria-disabled', 'true');
+    }
     aspectPicker.disabled = true;
     resPicker.disabled = true;
     aspectPicker.classList.add('select-strong-disabled');
@@ -1129,6 +1163,11 @@ function applyCaptureModeUi() {
   } else {
     if (densityPicker) densityPicker.disabled = false;
     if (colorPicker) colorPicker.disabled = false;
+    if (flashToggle) flashToggle.disabled = false;
+    if (flashSwitchLabel) {
+      flashSwitchLabel.classList.remove('flash-switch--disabled');
+      flashSwitchLabel.removeAttribute('aria-disabled');
+    }
     aspectPicker.disabled = videoMode;
     resPicker.disabled = videoMode;
     resPicker.classList.toggle('select-strong-disabled', videoMode);
@@ -1393,6 +1432,9 @@ function getCols() {
 
 colorPicker.addEventListener('change', function () {
   out.style.color = colorPicker.value;
+  if (!stream && asciiOffHelper) {
+    asciiOffHelper.style.color = colorPicker.value;
+  }
   syncVideoProgressBarColor();
   syncIntroRequestRain();
 });
@@ -1436,6 +1478,8 @@ if (typeof ResizeObserver !== 'undefined') {
 }
 syncAsciiLayout();
 syncVideoProgressBarColor();
+out.style.color = colorPicker.value;
+if (!stream && asciiOffHelper) asciiOffHelper.style.color = colorPicker.value;
 
 /**
  * @param {number} ms
@@ -2079,10 +2123,10 @@ function drawRequestRainFrame(w, h) {
     stepRequestRainColumn(requestRainColumns[c], h, lh, pool);
   }
   // 背景暗列：先画（更暗、更弱，且受 build-up 强度影响更大）
-  var bgI = Math.max(0, Math.min(1, requestRainIntensity * 0.7));
-  var bgR = Math.max(0, Math.min(255, Math.floor(rgb.r * 0.55)));
-  var bgG = Math.max(0, Math.min(255, Math.floor(rgb.g * 0.62)));
-  var bgB = Math.max(0, Math.min(255, Math.floor(rgb.b * 0.55)));
+  var bgI = Math.max(0, Math.min(1, requestRainIntensity * 0.85));
+  var bgR = Math.max(0, Math.min(255, Math.floor(rgb.r * 0.62)));
+  var bgG = Math.max(0, Math.min(255, Math.floor(rgb.g * 0.7)));
+  var bgB = Math.max(0, Math.min(255, Math.floor(rgb.b * 0.62)));
   for (c = 0; c < requestRainBgColumns.length; c++) {
     var bcol = requestRainBgColumns[c];
     if (bcol.actSeed != null && bcol.actSeed > bgI) continue;
@@ -2100,10 +2144,10 @@ function drawRequestRainFrame(w, h) {
       if (!bch) bch = pickMatrixIntroChar(pool);
       var bmul = bcol.alphaMul;
       var ba;
-      if (bd === 0) ba = 0.34 * bmul;
-      else if (bd <= 2) ba = 0.26 * bmul;
-      else if (bd <= Math.floor(btlen * 0.68)) ba = 0.18 * bmul;
-      else ba = 0.1 * bmul;
+      if (bd === 0) ba = 0.44 * bmul;
+      else if (bd <= 2) ba = 0.34 * bmul;
+      else if (bd <= Math.floor(btlen * 0.68)) ba = 0.24 * bmul;
+      else ba = 0.14 * bmul;
       requestRainCtx.fillStyle =
         'rgba(' + bgR + ',' + bgG + ',' + bgB + ',' + ba.toFixed(3) + ')';
       requestRainCtx.fillText(bch, bcol.x, byy);
@@ -2129,21 +2173,25 @@ function drawRequestRainFrame(w, h) {
       if (!ch) ch = pickMatrixIntroChar(pool);
       var mul = col.alphaMul;
       if (d === 0) {
-        // 头部：高亮白 + 轻微辉光（仅头部；立即复位，避免影响尾迹）
-        var blur = Math.max(6, Math.min(18, lh * 0.95));
+        // 头部：高亮白 + 更强辉光（仅头部；立即复位，避免影响尾迹）
+        var blur1 = Math.max(10, Math.min(28, lh * 1.35));
+        var blur2 = Math.max(6, Math.min(18, lh * 0.95));
         requestRainCtx.save();
-        requestRainCtx.shadowColor = 'rgba(255,255,255,0.55)';
-        requestRainCtx.shadowBlur = blur;
-        requestRainCtx.fillStyle = 'rgba(255,255,255,0.22)';
+        requestRainCtx.shadowColor = 'rgba(255,255,255,0.85)';
+        requestRainCtx.shadowBlur = blur1;
+        requestRainCtx.fillStyle = 'rgba(255,255,255,0.18)';
+        requestRainCtx.fillText(ch, col.x, yy);
+        requestRainCtx.shadowColor = 'rgba(255,255,255,0.7)';
+        requestRainCtx.shadowBlur = blur2;
+        requestRainCtx.fillStyle = 'rgba(255,255,255,0.28)';
         requestRainCtx.fillText(ch, col.x, yy);
         requestRainCtx.restore();
-        requestRainCtx.fillStyle = 'rgba(255,255,255,0.92)';
+        requestRainCtx.fillStyle = 'rgba(255,255,255,0.96)';
       } else {
-        // 离散磷光分档：避免“现代渐变”观感
-        var a;
-        if (d <= 2) a = 0.78 * mul; // 头后 1–2：亮绿
-        else if (d <= Math.floor(tlen * 0.68)) a = 0.42 * mul; // 中段：中绿
-        else a = 0.18 * mul; // 尾端：暗绿
+        // 前景主体：尽量统一强度（不做明显列内阶梯），仅在极尾端轻微淡出
+        var a = 0.52 * mul;
+        if (d >= tlen - 2) a = 0.34 * mul;
+        else if (d >= tlen - 4) a = 0.44 * mul;
         requestRainCtx.fillStyle =
           'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + a.toFixed(3) + ')';
       }
@@ -2577,6 +2625,7 @@ startBtn.addEventListener('click', async () => {
     }
     out.textContent = 'Click "START CAMERA" to begin';
     if (asciiOffHelper) asciiOffHelper.textContent = 'Click "START CAMERA" to begin';
+    if (asciiOffHelper) asciiOffHelper.style.color = colorPicker.value;
     out.setAttribute('aria-hidden', 'true');
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
@@ -2606,12 +2655,14 @@ startBtn.addEventListener('click', async () => {
     setStatusLive();
     if (asciiWrap) asciiWrap.classList.remove('ascii-wrap--offline', 'ascii-wrap--startup-hide-helper');
     out.removeAttribute('aria-hidden');
+    // 摄像头已开启：同步控件可用态（Photo 下 Style 应恢复可用）
+    applyCaptureModeUi();
     out.style.color = colorPicker.value;
     syncVideoProgressBarColor();
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
     syncVideoProgressBarForMode();
-    render();
+    if (animId == null && !previewCaptureActive) render();
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         syncAsciiLayout();
@@ -2623,6 +2674,7 @@ startBtn.addEventListener('click', async () => {
     statusEl.querySelector('.status-text').textContent = 'Access denied';
     out.textContent = 'Camera access denied';
     if (asciiOffHelper) asciiOffHelper.textContent = out.textContent;
+    if (asciiOffHelper) asciiOffHelper.style.color = colorPicker.value;
     if (asciiWrap) {
       asciiWrap.classList.add('ascii-wrap--offline');
       asciiWrap.classList.remove('ascii-wrap--startup-hide-helper');
