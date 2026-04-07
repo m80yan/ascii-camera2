@@ -183,6 +183,39 @@
     max-width: 100%;
     align-items: stretch;
   }
+  /**
+   * 与顶栏 Start/Stop 同高、全宽 = 双主按钮 + 间距（`--cam-actions-row-w`）。
+   * 与最后一行下拉间距 = 2×下拉高度（`--cam-ctl-select-h`）。
+   */
+  #submitGalleryBtn.cam-submit-gallery-btn {
+    width: 100%;
+    max-width: 100%;
+    min-height: 36px;
+    height: 36px;
+    margin-top: calc(2 * var(--cam-ctl-select-h));
+    padding: 0 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    line-height: 1;
+    background: transparent;
+    border: 1px solid #00ff41;
+    color: #00ff41;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 11px;
+    cursor: pointer;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    transition: background 0.2s;
+  }
+  #submitGalleryBtn.cam-submit-gallery-btn:hover:not(:disabled) {
+    background: rgba(0, 255, 65, 0.1);
+  }
+  #submitGalleryBtn.cam-submit-gallery-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
   button { background: transparent; border: 1px solid #00ff41; color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; cursor: pointer; letter-spacing: 2px; text-transform: uppercase; transition: background 0.2s; }
   button:hover { background: rgba(0,255,65,0.1); }
   button:disabled { opacity: 0.3; cursor: not-allowed; }
@@ -402,6 +435,28 @@
     box-sizing: border-box;
     min-height: 0;
   }
+  /**
+   * 开屏 code-rain：仅 `.ascii-active-frame` 内（`overflow:hidden` 裁剪）；Start Camera 后淡出。
+   * 与隐藏采样 canvas 区分：`video, canvas:not(.ascii-request-rain-canvas)`。
+   */
+  .ascii-request-rain-canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 4;
+    pointer-events: none;
+    display: none;
+    opacity: 0;
+    transition: opacity 0.65s ease-out;
+  }
+  .ascii-request-rain-canvas.ascii-request-rain-canvas--mounted {
+    display: block;
+  }
+  .ascii-request-rain-canvas.ascii-request-rain-canvas--visible {
+    opacity: 1;
+  }
   .ascii-slot-inner {
     display: flex;
     flex-direction: column;
@@ -457,6 +512,7 @@
     top: 50%;
     transform: translate(-50%, -50%);
     transform-origin: center center;
+    z-index: 1;
   }
   .ascii-frame-progress-stack .video-progress-root {
     flex: 0 0 6px;
@@ -518,6 +574,10 @@
     white-space: normal;
     overflow-wrap: break-word;
   }
+  /** 已点 Start Camera、等待权限/流就绪：立即隐藏 helper，雨效仍显示至摄像头就绪后再淡出 */
+  #ascii-wrap.ascii-wrap--offline.ascii-wrap--startup-hide-helper .ascii-off-helper {
+    display: none !important;
+  }
   /** 文案仍写入 `#ascii-out` 供逻辑一致；可视由 `.ascii-off-helper` 承担，此处移出视口不占槽内居中 */
   #ascii-wrap.ascii-wrap--offline .ascii-out-scale-wrap {
     position: absolute;
@@ -562,7 +622,7 @@
   }
   #saved-msg { margin: 4px 0 0; font-size: 12px; letter-spacing: 2px; opacity: 0; transition: opacity 0.3s; color: #ffd700; min-height: 20px; text-align: center; width: 100%; }
   #saved-msg.show { opacity: 1; }
-  video, canvas { display: none; }
+  video, canvas:not(.ascii-request-rain-canvas) { display: none; }
   /* Notion 等 iframe 嵌入时提示：摄像头需在独立标签页使用 */
   .iframe-hint {
     display: flex;
@@ -657,8 +717,9 @@
             <div class="ascii-frame-progress-stack">
               <div class="ascii-active-frame" id="asciiActiveFrame">
                 <div class="ascii-out-scale-wrap" id="asciiOutScaleWrap">
-                  <pre id="ascii-out" aria-hidden="true">Click &quot;Start Camera&quot; to begin</pre>
+                  <pre id="ascii-out" aria-hidden="true">Click &quot;START CAMERA&quot; to begin</pre>
                 </div>
+                <canvas id="requestRainCanvas" class="ascii-request-rain-canvas" width="1" height="1" aria-hidden="true"></canvas>
               </div>
               <div id="video-progress-root" class="video-progress-root video-progress-root--inactive" aria-hidden="true">
                 <div class="video-progress-track">
@@ -671,7 +732,7 @@
       </div>
     </div>
   </div>
-  <div id="asciiOffHelper" class="ascii-off-helper" role="note" aria-live="polite">Click &quot;Start Camera&quot; to begin</div>
+  <div id="asciiOffHelper" class="ascii-off-helper" role="note" aria-live="polite">Click &quot;START CAMERA&quot; to begin</div>
 </div>
 <div id="saved-msg" aria-live="polite"></div>
 </div>
@@ -720,6 +781,7 @@
   </label>
   </div>
 </div>
+<button type="button" id="submitGalleryBtn" class="cam-submit-gallery-btn" disabled aria-label="Submit to gallery">Submit to Gallery</button>
 </div>
 </div>
 
@@ -761,6 +823,7 @@ const asciiCellProbe = document.getElementById('ascii-cell-probe');
 const asciiWrap = document.getElementById('ascii-wrap');
 const startBtn = document.getElementById('startBtn');
 const snapBtn  = document.getElementById('snapBtn');
+const submitGalleryBtn = document.getElementById('submitGalleryBtn');
 const statusEl = document.getElementById('status');
 const savedMsg = document.getElementById('saved-msg');
 const colorPicker    = document.getElementById('colorPicker');
@@ -783,6 +846,9 @@ const aspectPickerStack = document.getElementById('aspectPickerStack');
 const asciiActiveFrame = document.getElementById('asciiActiveFrame');
 const asciiActiveColumn = document.getElementById('asciiActiveColumn');
 const asciiOutScaleWrap = document.getElementById('asciiOutScaleWrap');
+const requestRainCanvas = document.getElementById('requestRainCanvas');
+/** @type {CanvasRenderingContext2D | null} */
+const requestRainCtx = requestRainCanvas ? requestRainCanvas.getContext('2d') : null;
 const iframeHint     = document.getElementById('iframe-hint');
 const iframeOpenTab  = document.getElementById('iframe-open-tab');
 
@@ -792,6 +858,9 @@ const SNAP_LABEL_READY = '📷 Take Photo';
 const SNAP_LABEL_VIDEO = '🎥 Record';
 /** 写入存储过程中按钮文案 */
 const SNAP_LABEL_SAVING = 'Saving...';
+/** 预览态主按钮：重拍 */
+const SNAP_LABEL_RETAKE_PHOTO = '📷 Retake';
+const SNAP_LABEL_RETAKE_VIDEO = '🎥 Retake';
 /** 动画录制：列数、帧率、时长与 Supabase 约定一致 */
 const VIDEO_COLS = 60;
 const VIDEO_FRAME_COUNT = 12;
@@ -805,6 +874,117 @@ let videoMode = false;
 /** Photo 模式下切到 Video 前记住的分辨率 / 比例 */
 let savedPhotoResValue = '';
 let savedPhotoAspectValue = '';
+
+/** @type {boolean} 已拍未提交：预览态（本地循环 / 静帧，不上传） */
+let previewCaptureActive = false;
+/**
+ * @type {string | { isPhotoPreview: true, ascii: string, luma: Float32Array, cols: number, rows: number } | { isAnimated: true, ascii: string, frames: string[], frameLumas?: Float32Array[], previewCols?: number, previewRows?: number, frameCount?: number, fps?: number, durationMs?: number } | null}
+ */
+let pendingGalleryPayload = null;
+/** @type {ReturnType<typeof setInterval> | null} 预览态 GIF 本地循环 */
+let previewAnimTimer = null;
+
+/**
+ * 停止预览动画循环。
+ * @returns {void}
+ */
+function clearPreviewAnimLoop() {
+  if (previewAnimTimer != null) {
+    clearInterval(previewAnimTimer);
+    previewAnimTimer = null;
+  }
+}
+
+/**
+ * 预览态：本地循环播放已录制的 ASCII 帧。
+ * @param {string[]} frames
+ * @returns {void}
+ */
+function startPreviewAnimLoop(frames) {
+  clearPreviewAnimLoop();
+  if (!frames || !frames.length) return;
+  var idx = 0;
+  out.textContent = frames[0];
+  previewAnimTimer = setInterval(function () {
+    idx = (idx + 1) % frames.length;
+    out.textContent = frames[idx];
+  }, Math.round(1000 / VIDEO_FPS));
+}
+
+/**
+ * 进入预览：展示静帧或循环帧；不调用云端。
+ * @param {string | { isPhotoPreview?: true, ascii?: string, luma?: Float32Array, cols?: number, rows?: number } | { isAnimated: true, ascii: string, frames: string[], frameLumas?: Float32Array[], previewCols?: number, previewRows?: number, frameCount?: number, fps?: number, durationMs?: number }} payload
+ * @returns {void}
+ */
+function enterPreviewState(payload) {
+  previewCaptureActive = true;
+  pendingGalleryPayload = payload;
+  if (cameraShell) cameraShell.classList.add('cam-preview-capture');
+  clearPreviewAnimLoop();
+  if (animId != null) {
+    cancelAnimationFrame(animId);
+    animId = null;
+  }
+  out.removeAttribute('aria-hidden');
+  if (typeof payload === 'string') {
+    out.textContent = payload;
+  } else if (payload && payload.isPhotoPreview === true) {
+    out.textContent = payload.ascii || '';
+  } else if (payload && payload.isAnimated && payload.frames && payload.frames.length) {
+    out.textContent = payload.frames[0] || '';
+    startPreviewAnimLoop(payload.frames);
+  }
+  out.style.color = colorPicker.value;
+  if (asciiWrap && stream) asciiWrap.classList.remove('ascii-wrap--offline');
+  invalidateAsciiCellMetrics();
+  syncAsciiLayout();
+  if (submitGalleryBtn) submitGalleryBtn.disabled = false;
+  snapBtn.textContent = videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO;
+  snapBtn.disabled = false;
+  syncVideoProgressBarForMode();
+  applyCaptureModeUi();
+  requestAnimationFrame(function () {
+    requestAnimationFrame(syncAsciiLayout);
+  });
+}
+
+/**
+ * 重拍：丢弃预览，恢复实时取景。
+ * @returns {void}
+ */
+function retakeFromPreview() {
+  clearPreviewAnimLoop();
+  previewCaptureActive = false;
+  pendingGalleryPayload = null;
+  if (cameraShell) cameraShell.classList.remove('cam-preview-capture');
+  if (submitGalleryBtn) submitGalleryBtn.disabled = true;
+  if (camTabPhoto) camTabPhoto.disabled = false;
+  if (camTabVideo) camTabVideo.disabled = false;
+  invalidateAsciiCellMetrics();
+  restartLiveAsciiPreview();
+  snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
+  snapBtn.disabled = !stream;
+  applyCaptureModeUi();
+}
+
+/**
+ * 提交成功后退出预览并恢复实时取景。
+ * @returns {void}
+ */
+function exitPreviewAfterSuccessfulSubmit() {
+  clearPreviewAnimLoop();
+  previewCaptureActive = false;
+  pendingGalleryPayload = null;
+  if (cameraShell) cameraShell.classList.remove('cam-preview-capture');
+  if (submitGalleryBtn) submitGalleryBtn.disabled = true;
+  if (camTabPhoto) camTabPhoto.disabled = false;
+  if (camTabVideo) camTabVideo.disabled = false;
+  invalidateAsciiCellMetrics();
+  restartLiveAsciiPreview();
+  snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
+  snapBtn.disabled = !stream;
+  applyCaptureModeUi();
+}
 
 /**
  * 按 `#ascii-wrap` 在视口中的矩形，布置四块闪白条带（不覆盖取景内容）。
@@ -851,33 +1031,124 @@ function updateModeTabsUi() {
 }
 
 /**
+ * Photo：隐藏 `60 (Video)`；Video：仅显示 60。须在写入 `resPicker.value` 之后调用。
+ * @returns {void}
+ */
+function syncResPickerOptionsVisibility() {
+  if (!resPicker) return;
+  var opts = resPicker.querySelectorAll('option');
+  var i;
+  for (i = 0; i < opts.length; i++) {
+    var o = opts[i];
+    var v = o.value;
+    if (videoMode) {
+      o.hidden = v !== '60';
+    } else {
+      o.hidden = v === '60';
+    }
+  }
+  if (!videoMode && resPicker.value === '60') {
+    var fb = '100';
+    if (
+      savedPhotoResValue &&
+      savedPhotoResValue !== '60' &&
+      resPicker.querySelector('option[value="' + savedPhotoResValue + '"]')
+    ) {
+      fb = savedPhotoResValue;
+    }
+    resPicker.value = fb;
+  }
+}
+
+/**
  * 根据当前模式更新 Video 锁定的分辨率 / 比例与按钮文案。
  * @returns {void}
  */
 function applyCaptureModeUi() {
   if (cameraShell) cameraShell.classList.toggle('cam-video-mode', videoMode);
-  aspectPicker.disabled = videoMode;
-  resPicker.disabled = videoMode;
-  resPicker.classList.toggle('select-strong-disabled', videoMode);
-  aspectPicker.classList.toggle('select-strong-disabled', videoMode);
-  if (resPickerStack) resPickerStack.classList.toggle('select-locked', videoMode);
-  if (aspectPickerStack) aspectPickerStack.classList.toggle('select-locked', videoMode);
-  if (videoMode) {
-    resPicker.value = String(VIDEO_COLS);
-    aspectPicker.value = '1:1';
-    snapBtn.textContent = SNAP_LABEL_VIDEO;
-  } else {
-    if (savedPhotoResValue && resPicker.querySelector('option[value="' + savedPhotoResValue + '"]')) {
-      resPicker.value = savedPhotoResValue;
+  /**
+   * 未开摄像头：Style 禁用；Photo 下 Aspect/Resolution 可调；Video 下与已开摄像头时一致（60 + 1:1 且锁定）。
+   * 预览态：仅确认画面，不可改比例/分辨率。
+   * 实时取景：Video 下锁定 Aspect / Resolution。
+   */
+  if (!stream) {
+    if (densityPicker) densityPicker.disabled = true;
+    if (colorPicker) colorPicker.disabled = false;
+    if (videoMode) {
+      if (resPicker) {
+        resPicker.value = String(VIDEO_COLS);
+        resPicker.disabled = true;
+        resPicker.classList.add('select-strong-disabled');
+      }
+      if (aspectPicker) {
+        aspectPicker.value = '1:1';
+        aspectPicker.disabled = true;
+        aspectPicker.classList.add('select-strong-disabled');
+      }
+      if (resPickerStack) resPickerStack.classList.add('select-locked');
+      if (aspectPickerStack) aspectPickerStack.classList.add('select-locked');
+    } else {
+      if (aspectPicker) {
+        aspectPicker.disabled = false;
+        aspectPicker.classList.remove('select-strong-disabled');
+      }
+      if (resPicker) {
+        resPicker.disabled = false;
+        resPicker.classList.remove('select-strong-disabled');
+      }
+      if (resPickerStack) resPickerStack.classList.remove('select-locked');
+      if (aspectPickerStack) aspectPickerStack.classList.remove('select-locked');
+      if (
+        savedPhotoResValue &&
+        savedPhotoResValue !== '60' &&
+        resPicker.querySelector('option[value="' + savedPhotoResValue + '"]')
+      ) {
+        resPicker.value = savedPhotoResValue;
+      }
+      if (savedPhotoAspectValue) aspectPicker.value = savedPhotoAspectValue;
     }
-    if (savedPhotoAspectValue) aspectPicker.value = savedPhotoAspectValue;
-    snapBtn.textContent = SNAP_LABEL_READY;
+    snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
+  } else if (previewCaptureActive) {
+    if (densityPicker) densityPicker.disabled = false;
+    if (colorPicker) colorPicker.disabled = false;
+    aspectPicker.disabled = true;
+    resPicker.disabled = true;
+    aspectPicker.classList.add('select-strong-disabled');
+    resPicker.classList.add('select-strong-disabled');
+    if (resPickerStack) resPickerStack.classList.add('select-locked');
+    if (aspectPickerStack) aspectPickerStack.classList.add('select-locked');
+  } else {
+    if (densityPicker) densityPicker.disabled = false;
+    if (colorPicker) colorPicker.disabled = false;
+    aspectPicker.disabled = videoMode;
+    resPicker.disabled = videoMode;
+    resPicker.classList.toggle('select-strong-disabled', videoMode);
+    aspectPicker.classList.toggle('select-strong-disabled', videoMode);
+    if (resPickerStack) resPickerStack.classList.toggle('select-locked', videoMode);
+    if (aspectPickerStack) aspectPickerStack.classList.toggle('select-locked', videoMode);
+    if (videoMode) {
+      resPicker.value = String(VIDEO_COLS);
+      aspectPicker.value = '1:1';
+      snapBtn.textContent = SNAP_LABEL_VIDEO;
+    } else {
+      if (
+        savedPhotoResValue &&
+        savedPhotoResValue !== '60' &&
+        resPicker.querySelector('option[value="' + savedPhotoResValue + '"]')
+      ) {
+        resPicker.value = savedPhotoResValue;
+      }
+      if (savedPhotoAspectValue) aspectPicker.value = savedPhotoAspectValue;
+      snapBtn.textContent = SNAP_LABEL_READY;
+    }
   }
+  syncResPickerOptionsVisibility();
   updateModeTabsUi();
   syncVideoProgressBarForMode();
   invalidateAsciiCellMetrics();
   syncAsciiLayout();
-  if (stream && animId == null) render();
+  if (!stream) syncIntroRequestRain();
+  if (stream && animId == null && !previewCaptureActive) render();
 }
 
 /**
@@ -886,6 +1157,13 @@ function applyCaptureModeUi() {
  */
 function syncVideoProgressBarForMode() {
   if (!videoProgressRoot || !videoProgressBar) return;
+  /** 预览态不显示录制/倒计时进度条（含 Video 动图循环预览） */
+  if (previewCaptureActive) {
+    videoProgressRoot.classList.add('video-progress-root--inactive');
+    videoProgressRoot.setAttribute('aria-hidden', 'true');
+    videoProgressBar.style.width = '100%';
+    return;
+  }
   if (videoMode && stream) {
     videoProgressRoot.classList.remove('video-progress-root--inactive');
     videoProgressRoot.setAttribute('aria-hidden', 'false');
@@ -911,6 +1189,7 @@ function syncVideoProgressBarColor() {
  * @returns {void}
  */
 function setCaptureVideoMode(nextVideo) {
+  if (previewCaptureActive) return;
   if (nextVideo && !videoMode) {
     savedPhotoResValue = resPicker.value;
     savedPhotoAspectValue = aspectPicker.value;
@@ -959,13 +1238,13 @@ let snapCountdownActive = false;
 
 if (camTabPhoto) {
   camTabPhoto.addEventListener('click', function () {
-    if (snapCountdownActive) return;
+    if (snapCountdownActive || previewCaptureActive) return;
     setCaptureVideoMode(false);
   });
 }
 if (camTabVideo) {
   camTabVideo.addEventListener('click', function () {
-    if (snapCountdownActive) return;
+    if (snapCountdownActive || previewCaptureActive) return;
     setCaptureVideoMode(true);
   });
 }
@@ -1030,10 +1309,7 @@ let asciiScaleRaf = 0;
  */
 function syncAsciiActiveFrameAspect() {
   if (!asciiActiveFrame || !asciiWrap) return;
-  if (asciiWrap.classList.contains('ascii-wrap--offline')) {
-    asciiActiveFrame.style.aspectRatio = '';
-    return;
-  }
+  /** 含 Camera OFF：开屏雨与 live 共用同一活动画幅比例 */
   var ar = videoMode ? 1 : getAspectRatio();
   asciiActiveFrame.style.aspectRatio = ar + ' / 1';
 }
@@ -1109,32 +1385,42 @@ function getCols() {
 colorPicker.addEventListener('change', function () {
   out.style.color = colorPicker.value;
   syncVideoProgressBarColor();
+  syncIntroRequestRain();
 });
 resPicker.addEventListener('change', function () {
   invalidateAsciiCellMetrics();
   syncAsciiLayout();
+  syncIntroRequestRain();
 });
 aspectPicker.addEventListener('change', function () {
   invalidateAsciiCellMetrics();
   syncAsciiLayout();
+  syncIntroRequestRain();
 });
 densityPicker.addEventListener('change', function () {
   invalidateAsciiCellMetrics();
-  syncAsciiLayout();
+  if (previewCaptureActive) {
+    applyPreviewStyleFromDensity();
+  } else {
+    syncAsciiLayout();
+  }
 });
 window.addEventListener('resize', function () {
   invalidateAsciiCellMetrics();
   syncAsciiLayout();
+  syncIntroRequestRain();
 });
 if (document.fonts && document.fonts.ready) {
   document.fonts.ready.then(function () {
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
+    syncIntroRequestRain();
   });
 }
 if (typeof ResizeObserver !== 'undefined') {
   var asciiFrameResizeObserver = new ResizeObserver(function () {
     scheduleAsciiScale();
+    syncIntroRequestRain();
   });
   if (asciiActiveFrame) asciiFrameResizeObserver.observe(asciiActiveFrame);
   if (asciiActiveColumn) asciiFrameResizeObserver.observe(asciiActiveColumn);
@@ -1154,6 +1440,604 @@ function getChars() {
   return CHAR_SETS[densityPicker.value] || CHAR_SETS.detailed;
 }
 
+/** @type {number | null} */
+let requestRainRaf = null;
+/** 与 `stopRequestRainEffectFade` 的 transition 回调代数对齐，避免 abort 后误卸画布 */
+let requestRainFadeGen = 0;
+/**
+ * @typedef {{ x: number, headY: number, speed: number, trailLen: number, glyphs: string[], alphaMul: number }} RequestRainColumn
+ */
+/** @type {RequestRainColumn[]} */
+let requestRainColumns = [];
+/** @type {number} */
+let requestRainCssW = 0;
+/** @type {number} */
+let requestRainCssH = 0;
+/** @type {number} */
+let requestRainLineHeight = 11;
+/** @type {string} */
+let requestRainFontSpec = '';
+/** 尾迹长度随机区间（随 intro 分辨率档更新，强化颗粒感差异） */
+let requestRainTrailMin = 18;
+/** @type {number} */
+let requestRainTrailSpan = 15;
+
+/** 离散档 intro 雨基准字号（px，再乘画幅系数） */
+const INTRO_RAIN_FONT_BASE = {
+  32: 20.5,
+  60: 15.8,
+  80: 12.8,
+  100: 10.2,
+  120: 8.4
+};
+/** 列距乘子：低分辨率更疏、高分辨率更密 */
+const INTRO_RAIN_SPACING_MUL = {
+  32: 1.52,
+  60: 1.26,
+  80: 1.12,
+  100: 1.0,
+  120: 0.88
+};
+/** 行高 = fontPx × mul，低分辨率略松、高分辨率略紧 */
+const INTRO_RAIN_LH_MUL = {
+  32: 1.36,
+  60: 1.3,
+  80: 1.25,
+  100: 1.2,
+  120: 1.15
+};
+
+/**
+ * 字母（仅 ASCIICAMERA）+ 数字 + 符号 + 全项目 `CHAR_SETS` 块符并集。
+ * @returns {string}
+ */
+function buildMatrixIntroCharPool() {
+  var letterSet = new Set('ASCIICAMERA'.split(''));
+  var letters = Array.from(letterSet).join('');
+  var digits = '0123456789';
+  var syms = '+-/:._\\';
+  var blockSeen = new Set();
+  var block = '';
+  Object.keys(CHAR_SETS).forEach(function (key) {
+    var str = CHAR_SETS[key];
+    for (var i = 0; i < str.length; i++) {
+      var ch = str[i];
+      if (ch === '\n' || ch === '\r') continue;
+      if (!blockSeen.has(ch)) {
+        blockSeen.add(ch);
+        block += ch;
+      }
+    }
+  });
+  return letters + digits + syms + block;
+}
+
+/** @type {string | null} */
+let matrixIntroPoolCache = null;
+
+/**
+ * Matrix 开屏雨字符池（缓存；`CHAR_SETS` 为常量）。
+ * @returns {string}
+ */
+function getMatrixIntroCharPool() {
+  if (matrixIntroPoolCache == null) {
+    matrixIntroPoolCache = buildMatrixIntroCharPool();
+  }
+  return matrixIntroPoolCache;
+}
+
+/**
+ * @param {string} pool
+ * @returns {string}
+ */
+function pickMatrixIntroChar(pool) {
+  if (!pool || pool.length < 1) return '\u00B7';
+  return pool.charAt(Math.floor(Math.random() * pool.length));
+}
+
+/**
+ * @param {number} x
+ * @param {number} h
+ * @param {number} lh
+ * @param {string} pool
+ * @param {number} alphaMul
+ * @returns {RequestRainColumn}
+ */
+function createRequestRainColumn(x, h, lh, pool, alphaMul) {
+  var trailLen =
+    requestRainTrailMin + Math.floor(Math.random() * (requestRainTrailSpan + 1));
+  var glyphs = [];
+  for (var i = 0; i < trailLen; i++) {
+    glyphs.push(pickMatrixIntroChar(pool));
+  }
+  return {
+    x: x,
+    headY: Math.random() * (h + trailLen * lh) - trailLen * lh,
+    speed: 2.2 + Math.random() * 4.2,
+    trailLen: trailLen,
+    glyphs: glyphs,
+    alphaMul: alphaMul
+  };
+}
+
+/**
+ * @param {RequestRainColumn} col
+ * @param {number} h
+ * @param {number} lh
+ * @param {string} pool
+ * @returns {void}
+ */
+function stepRequestRainColumn(col, h, lh, pool) {
+  col.headY += col.speed;
+  var resetAt = h + col.trailLen * lh + 30;
+  if (col.headY > resetAt) {
+    col.headY = -Math.random() * h * 0.9 - col.trailLen * lh;
+    col.speed = 2.2 + Math.random() * 4.2;
+    col.trailLen =
+      requestRainTrailMin + Math.floor(Math.random() * (requestRainTrailSpan + 1));
+    col.glyphs.length = col.trailLen;
+    for (var r = 0; r < col.trailLen; r++) {
+      col.glyphs[r] = pickMatrixIntroChar(pool);
+    }
+    return;
+  }
+  col.glyphs.unshift(pickMatrixIntroChar(pool));
+  if (col.glyphs.length > col.trailLen) {
+    col.glyphs.length = col.trailLen;
+  }
+  var n = col.glyphs.length;
+  for (var j = 1; j < n; j++) {
+    if (Math.random() < 0.052) {
+      col.glyphs[j] = pickMatrixIntroChar(pool);
+    }
+  }
+}
+
+/**
+ * 开屏雨用分辨率列数（与 Resolution 下拉一致）。
+ * @returns {number}
+ */
+function getRainResolutionCols() {
+  var n = parseInt(resPicker.value, 10);
+  if (!Number.isFinite(n)) return 100;
+  return Math.min(MAX_RES_COLS, Math.max(1, n));
+}
+
+/**
+ * 将任意列数映射到五档表（32/60/80/100/120）的最近档，用于查表。
+ * @param {number} resCols
+ * @returns {number}
+ */
+function snapIntroRainResTier(resCols) {
+  var tiers = [32, 60, 80, 100, 120];
+  var r = Math.min(MAX_RES_COLS, Math.max(1, resCols));
+  var best = tiers[0];
+  var d;
+  var i;
+  for (i = 0; i < tiers.length; i++) {
+    d = Math.abs(r - tiers[i]);
+    if (d < Math.abs(r - best)) best = tiers[i];
+  }
+  return best;
+}
+
+/**
+ * Intro code-rain：按离散分辨率档查表 + 画幅缩放，档与档之间明显可分。
+ * @param {number} resCols
+ * @param {number} frameW
+ * @returns {number}
+ */
+function getIntroRainFontPx(resCols, frameW) {
+  var tier = snapIntroRainResTier(resCols);
+  var base = INTRO_RAIN_FONT_BASE[tier];
+  if (base == null) {
+    base = 10;
+  }
+  var frameScale = Math.max(0.76, Math.min(1.12, frameW / 380));
+  var fontPx = base * frameScale;
+  return Math.max(6.5, Math.min(23, fontPx));
+}
+
+/**
+ * @param {number} resCols
+ * @returns {number}
+ */
+function getIntroRainColumnSpacingMul(resCols) {
+  var tier = snapIntroRainResTier(resCols);
+  var m = INTRO_RAIN_SPACING_MUL[tier];
+  return m != null ? m : 1;
+}
+
+/**
+ * @param {number} resCols
+ * @returns {number}
+ */
+function getIntroRainLineHeightMul(resCols) {
+  var tier = snapIntroRainResTier(resCols);
+  var m = INTRO_RAIN_LH_MUL[tier];
+  return m != null ? m : 1.2;
+}
+
+/**
+ * 尾迹长度区间：低分辨率更长尾（更「松」），高分辨率更短（更「密」）。
+ * @param {number} resCols
+ * @returns {{ min: number, max: number }}
+ */
+function getIntroRainTrailBounds(resCols) {
+  var tier = snapIntroRainResTier(resCols);
+  switch (tier) {
+    case 32:
+      return { min: 24, max: 42 };
+    case 60:
+      return { min: 20, max: 38 };
+    case 80:
+      return { min: 17, max: 33 };
+    case 100:
+      return { min: 14, max: 28 };
+    case 120:
+      return { min: 12, max: 24 };
+    default:
+      return { min: 16, max: 30 };
+  }
+}
+
+/**
+ * @param {string} hex
+ * @returns {{ r: number, g: number, b: number }}
+ */
+function hexToRgbForRain(hex) {
+  var v = String(hex || '').trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+    return {
+      r: parseInt(v.slice(1, 3), 16),
+      g: parseInt(v.slice(3, 5), 16),
+      b: parseInt(v.slice(5, 7), 16)
+    };
+  }
+  return { r: 0, g: 255, b: 65 };
+}
+
+/**
+ * 摄像头未开时：分辨率/比例/颜色变更后重算雨效。
+ * @returns {void}
+ */
+function syncIntroRequestRain() {
+  if (stream) return;
+  if (!requestRainCanvas || !requestRainCanvas.classList.contains('ascii-request-rain-canvas--visible')) return;
+  resizeRequestRainCanvas();
+  if (requestRainRaf == null) {
+    requestRainRaf = requestAnimationFrame(requestRainTick);
+  }
+}
+
+/**
+ * 按 `#asciiActiveFrame` 与当前 Resolution 设置雨效画布（字号/列距由 `getIntroRainFontPx` 等映射，避免 60/100 被压成同档）。
+ * @returns {void}
+ */
+function resizeRequestRainCanvas() {
+  if (!requestRainCanvas || !requestRainCtx || !asciiActiveFrame) return;
+  var rect = asciiActiveFrame.getBoundingClientRect();
+  var w = Math.max(1, Math.floor(rect.width));
+  var h = Math.max(1, Math.floor(rect.height));
+  if (w < 2 || h < 2) return;
+  requestRainCssW = w;
+  requestRainCssH = h;
+  var dpr = window.devicePixelRatio || 1;
+  requestRainCanvas.width = Math.max(1, Math.floor(w * dpr));
+  requestRainCanvas.height = Math.max(1, Math.floor(h * dpr));
+  requestRainCanvas.style.width = w + 'px';
+  requestRainCanvas.style.height = h + 'px';
+  requestRainCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  var resCols = getRainResolutionCols();
+  var fontPx = getIntroRainFontPx(resCols, w);
+  requestRainLineHeight = fontPx * getIntroRainLineHeightMul(resCols);
+  requestRainFontSpec =
+    fontPx +
+    'px monospace, ui-monospace, "Cascadia Code", "Courier New", monospace';
+  requestRainCtx.font = requestRainFontSpec;
+  var rawCell = Math.max(
+    7,
+    Math.ceil(requestRainCtx.measureText('M').width || fontPx * 0.62)
+  );
+  var cellW = Math.ceil(rawCell * getIntroRainColumnSpacingMul(resCols));
+  var trailB = getIntroRainTrailBounds(resCols);
+  requestRainTrailMin = trailB.min;
+  requestRainTrailSpan = Math.max(1, trailB.max - trailB.min);
+  initRequestRainColumns(w, h, cellW, requestRainLineHeight);
+}
+
+/**
+ * 高密度：等宽列栅格 + 三层错开叠化。
+ * @param {number} w
+ * @param {number} h
+ * @param {number} cellW
+ * @param {number} lh
+ * @returns {void}
+ */
+function initRequestRainColumns(w, h, cellW, lh) {
+  var pool = getMatrixIntroCharPool();
+  var colCount = Math.ceil(w / cellW) + 2;
+  requestRainColumns = [];
+  var layerConfigs = [
+    { xOff: cellW * 0.5, alpha: 1 },
+    { xOff: cellW * 1.0, alpha: 0.52 },
+    { xOff: cellW * 1.5, alpha: 0.3 }
+  ];
+  for (var L = 0; L < layerConfigs.length; L++) {
+    var cfg = layerConfigs[L];
+    for (var i = 0; i < colCount + 4; i++) {
+      var x = i * cellW + cfg.xOff;
+      requestRainColumns.push(
+        createRequestRainColumn(x, h, lh, pool, cfg.alpha)
+      );
+    }
+  }
+}
+
+/**
+ * 等宽列绘制：绿分层透明度 + 白头；字符每帧流变 + 随机突变。
+ * @param {number} w
+ * @param {number} h
+ * @returns {void}
+ */
+function drawRequestRainFrame(w, h) {
+  if (!requestRainCtx) return;
+  requestRainCtx.clearRect(0, 0, w, h);
+  requestRainCtx.font = requestRainFontSpec;
+  requestRainCtx.textAlign = 'center';
+  requestRainCtx.textBaseline = 'top';
+  var pool = getMatrixIntroCharPool();
+  var lh = requestRainLineHeight;
+  var rgb = hexToRgbForRain(colorPicker.value);
+  var c;
+  for (c = 0; c < requestRainColumns.length; c++) {
+    stepRequestRainColumn(requestRainColumns[c], h, lh, pool);
+  }
+  for (c = 0; c < requestRainColumns.length; c++) {
+    var col = requestRainColumns[c];
+    var tlen = col.trailLen;
+    for (var t = 0; t < col.glyphs.length; t++) {
+      var yy = col.headY - t * lh;
+      if (yy < -lh * 2 || yy > h + lh) continue;
+      var ch = col.glyphs[t];
+      if (!ch) ch = pickMatrixIntroChar(pool);
+      var mul = col.alphaMul;
+      var jitter = 0.78 + (((c * 17 + t * 13) % 7) / 28);
+      if (t === 0) {
+        if (Math.random() < 0.14) {
+          requestRainCtx.fillStyle = 'rgba(255,255,255,0.92)';
+        } else {
+          requestRainCtx.fillStyle =
+            'rgba(' +
+            rgb.r +
+            ',' +
+            rgb.g +
+            ',' +
+            rgb.b +
+            ',' +
+            (0.78 * mul).toFixed(3) +
+            ')';
+        }
+      } else {
+        var fade = 1 - t / Math.max(1, tlen - 1);
+        var base = 0.05 + fade * 0.4;
+        var a = Math.min(0.9, base * jitter * mul);
+        requestRainCtx.fillStyle =
+          'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + a.toFixed(3) + ')';
+      }
+      requestRainCtx.fillText(ch, col.x, yy);
+    }
+  }
+}
+
+/**
+ * rAF：仅 `--visible` 时继续。
+ * @returns {void}
+ */
+function requestRainTick() {
+  if (!requestRainCanvas || !requestRainCanvas.classList.contains('ascii-request-rain-canvas--visible')) {
+    requestRainRaf = null;
+    return;
+  }
+  if (!asciiActiveFrame) {
+    requestRainRaf = null;
+    return;
+  }
+  var rect = asciiActiveFrame.getBoundingClientRect();
+  var w = Math.max(1, Math.floor(rect.width));
+  var h = Math.max(1, Math.floor(rect.height));
+  if (w < 2 || h < 2) {
+    requestRainRaf = requestAnimationFrame(requestRainTick);
+    return;
+  }
+  if (Math.abs(w - requestRainCssW) > 2 || Math.abs(h - requestRainCssH) > 2) {
+    resizeRequestRainCanvas();
+    w = requestRainCssW;
+    h = requestRainCssH;
+  }
+  drawRequestRainFrame(w, h);
+  requestRainRaf = requestAnimationFrame(requestRainTick);
+}
+
+/**
+ * 页面开屏 / Stop Camera 后：无 `stream` 时在 `#asciiActiveFrame` 内启动 code-rain。
+ * @returns {void}
+ */
+function startRequestRainEffect() {
+  if (!requestRainCanvas || !requestRainCtx) return;
+  if (stream) return;
+  resizeRequestRainCanvas();
+  requestRainCanvas.classList.add('ascii-request-rain-canvas--mounted');
+  requestRainCanvas.classList.add('ascii-request-rain-canvas--visible');
+  if (requestRainRaf != null) cancelAnimationFrame(requestRainRaf);
+  requestRainRaf = requestAnimationFrame(requestRainTick);
+}
+
+/**
+ * Start Camera 点击：淡出开屏层（可与 getUserMedia 并行）。
+ * @returns {void}
+ */
+function stopRequestRainEffectFade() {
+  if (!requestRainCanvas) return;
+  var gen = ++requestRainFadeGen;
+  if (requestRainRaf != null) {
+    cancelAnimationFrame(requestRainRaf);
+    requestRainRaf = null;
+  }
+  requestRainCanvas.classList.remove('ascii-request-rain-canvas--visible');
+  if (!requestRainCanvas.classList.contains('ascii-request-rain-canvas--mounted')) return;
+  var settled = false;
+  /**
+   * @param {{ propertyName?: string } | TransitionEvent} ev
+   * @returns {void}
+   */
+  function onFadeEnd(ev) {
+    if (gen !== requestRainFadeGen) return;
+    if (settled) return;
+    if (ev && 'propertyName' in ev && ev.propertyName && ev.propertyName !== 'opacity') return;
+    settled = true;
+    requestRainCanvas.removeEventListener('transitionend', onFadeEnd);
+    requestRainCanvas.classList.remove('ascii-request-rain-canvas--mounted');
+    if (requestRainCtx && requestRainCanvas.width > 0) {
+      requestRainCtx.save();
+      requestRainCtx.setTransform(1, 0, 0, 1, 0, 0);
+      requestRainCtx.clearRect(0, 0, requestRainCanvas.width, requestRainCanvas.height);
+      requestRainCtx.restore();
+    }
+  }
+  requestRainCanvas.addEventListener('transitionend', onFadeEnd);
+  setTimeout(function () {
+    onFadeEnd({ propertyName: 'opacity' });
+  }, 800);
+}
+
+/**
+ * 立即关闭雨效（无 transition 等待）。
+ * @returns {void}
+ */
+function abortRequestRainEffect() {
+  requestRainFadeGen++;
+  if (!requestRainCanvas) return;
+  if (requestRainRaf != null) {
+    cancelAnimationFrame(requestRainRaf);
+    requestRainRaf = null;
+  }
+  requestRainCanvas.classList.remove(
+    'ascii-request-rain-canvas--visible',
+    'ascii-request-rain-canvas--mounted'
+  );
+  if (requestRainCtx && requestRainCanvas.width > 0) {
+    requestRainCtx.save();
+    requestRainCtx.setTransform(1, 0, 0, 1, 0, 0);
+    requestRainCtx.clearRect(0, 0, requestRainCanvas.width, requestRainCanvas.height);
+    requestRainCtx.restore();
+  }
+}
+
+/**
+ * 由每格亮度（0…1，与 `toAscii` 采样一致）与当前字符集生成 ASCII。
+ * @param {Float32Array} luma 行优先，长度 `cols * rows`
+ * @param {number} cols
+ * @param {number} rows
+ * @param {string} chars
+ * @returns {string}
+ */
+function luminanceToAscii(luma, cols, rows, chars) {
+  const n = Math.max(1, chars.length - 1);
+  let result = '';
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const b = luma[y * cols + x];
+      result += chars[Math.max(0, Math.min(Math.floor((1 - b) * n), n))];
+    }
+    result += '\n';
+  }
+  return result;
+}
+
+/**
+ * 采样当前视频帧为亮度格 + ASCII（用于预览态按 Style 重算，不重新访问摄像头像素逻辑外路径）。
+ * @param {number} cols
+ * @param {number | null | undefined} aspectOverride
+ * @returns {{ ascii: string, luma: Float32Array, cols: number, rows: number }}
+ */
+function toAsciiWithLuminance(cols, aspectOverride) {
+  if (!video.videoWidth || !video.videoHeight) {
+    return { ascii: '', luma: new Float32Array(0), cols: 0, rows: 0 };
+  }
+  const chars = getChars();
+  const { cellAspect } = getAsciiCellMetrics();
+  const forcedAspect =
+    aspectOverride != null && Number.isFinite(aspectOverride) ? aspectOverride : getAspectRatio();
+  const nativeAspect = video.videoWidth / video.videoHeight;
+  const aspect = forcedAspect || nativeAspect;
+  const rows = Math.max(1, Math.round((cols * cellAspect) / aspect));
+  canvas.width = cols;
+  canvas.height = rows;
+  ctx.save();
+  ctx.translate(cols, 0);
+  ctx.scale(-1, 1);
+  if (forcedAspect) {
+    let sx = 0,
+      sy = 0,
+      sw = video.videoWidth,
+      sh = video.videoHeight;
+    if (nativeAspect > forcedAspect) {
+      sw = Math.round(video.videoHeight * forcedAspect);
+      sx = Math.round((video.videoWidth - sw) / 2);
+    } else {
+      sh = Math.round(video.videoWidth / forcedAspect);
+      sy = Math.round((video.videoHeight - sh) / 2);
+    }
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, cols, rows);
+  } else {
+    ctx.drawImage(video, 0, 0, cols, rows);
+  }
+  ctx.restore();
+  const pixels = ctx.getImageData(0, 0, cols, rows).data;
+  const luma = new Float32Array(cols * rows);
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = (y * cols + x) * 4;
+      const b = (0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2]) / 255;
+      luma[y * cols + x] = b;
+    }
+  }
+  const ascii = luminanceToAscii(luma, cols, rows, chars);
+  return { ascii, luma, cols, rows };
+}
+
+/**
+ * 预览态下切换 Style：按已保存的亮度格重算 ASCII/GIF，并写回 `pendingGalleryPayload`（提交时即最新样式）。
+ * @returns {void}
+ */
+function applyPreviewStyleFromDensity() {
+  if (!previewCaptureActive || !pendingGalleryPayload) return;
+  var chars = getChars();
+  var p = pendingGalleryPayload;
+  if (p && typeof p === 'object' && p.isPhotoPreview === true && p.luma && p.cols && p.rows) {
+    var ascii = luminanceToAscii(p.luma, p.cols, p.rows, chars);
+    p.ascii = ascii;
+    out.textContent = ascii;
+    invalidateAsciiCellMetrics();
+    syncAsciiLayout();
+    return;
+  }
+  if (p && p.isAnimated === true && Array.isArray(p.frameLumas) && p.previewCols && p.previewRows) {
+    var framesOut = [];
+    for (var i = 0; i < p.frameLumas.length; i++) {
+      framesOut.push(luminanceToAscii(p.frameLumas[i], p.previewCols, p.previewRows, chars));
+    }
+    p.frames = framesOut;
+    p.ascii = framesOut[0] || '';
+    out.textContent = framesOut[0] || '';
+    clearPreviewAnimLoop();
+    startPreviewAnimLoop(framesOut);
+    invalidateAsciiCellMetrics();
+    syncAsciiLayout();
+  }
+}
+
 function getAspectRatio() {
   const v = aspectPicker.value;
   if (v === '16:9') return 16 / 9;
@@ -1170,42 +2054,7 @@ function getAspectRatio() {
  * @returns {string} ASCII 文本
  */
 function toAscii(cols, aspectOverride) {
-  if (!video.videoWidth || !video.videoHeight) return '';
-  const chars = getChars();
-  const { cellAspect } = getAsciiCellMetrics();
-  const forcedAspect =
-    aspectOverride != null && Number.isFinite(aspectOverride) ? aspectOverride : getAspectRatio();
-  const nativeAspect = video.videoWidth / video.videoHeight;
-  const aspect = forcedAspect || nativeAspect;
-  const rows = Math.max(1, Math.round((cols * cellAspect) / aspect));
-  canvas.width = cols; canvas.height = rows;
-  ctx.save();
-  ctx.translate(cols, 0); ctx.scale(-1, 1);
-  if (forcedAspect) {
-    let sx = 0, sy = 0, sw = video.videoWidth, sh = video.videoHeight;
-    if (nativeAspect > forcedAspect) {
-      sw = Math.round(video.videoHeight * forcedAspect);
-      sx = Math.round((video.videoWidth - sw) / 2);
-    } else {
-      sh = Math.round(video.videoWidth / forcedAspect);
-      sy = Math.round((video.videoHeight - sh) / 2);
-    }
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, cols, rows);
-  } else {
-    ctx.drawImage(video, 0, 0, cols, rows);
-  }
-  ctx.restore();
-  const pixels = ctx.getImageData(0, 0, cols, rows).data;
-  let result = '';
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const i = (y * cols + x) * 4;
-      const b = (0.299*pixels[i] + 0.587*pixels[i+1] + 0.114*pixels[i+2]) / 255;
-      result += chars[Math.max(0, Math.min(Math.floor((1-b)*(chars.length-1)), chars.length-1))];
-    }
-    result += '\n';
-  }
-  return result;
+  return toAsciiWithLuminance(cols, aspectOverride).ascii;
 }
 
 function render() {
@@ -1231,11 +2080,14 @@ function focusOpenerGalleryAfterSave() {
 }
 
 /**
- * 录制多帧 ASCII（6 FPS × 2s = 12 帧）；不停止实时取景 RAF。进度条由外部 rAF 按墙钟驱动。
- * @returns {Promise<string[]>}
+ * 录制多帧 ASCII（6 FPS × 2s = 12 帧）及每帧亮度格，供预览态换 Style 重算；不停止实时取景 RAF。
+ * @returns {Promise<{ frames: string[], frameLumas: Float32Array[], cols: number, rows: number }>}
  */
 async function captureVideoAsciiFrames() {
   var frames = [];
+  var frameLumas = [];
+  var cols = 0;
+  var rows = 0;
   var t0 = performance.now();
   for (var i = 0; i < VIDEO_FRAME_COUNT; i++) {
     var targetMs = (i / VIDEO_FPS) * 1000;
@@ -1246,14 +2098,18 @@ async function captureVideoAsciiFrames() {
       var wait = Math.min(32, targetMs - now);
       if (wait > 1) await sleep(wait);
     }
-    frames.push(toAscii(VIDEO_COLS, 1));
+    var pack = toAsciiWithLuminance(VIDEO_COLS, 1);
+    frames.push(pack.ascii);
+    frameLumas.push(pack.luma);
+    cols = pack.cols;
+    rows = pack.rows;
   }
-  return frames;
+  return { frames: frames, frameLumas: frameLumas, cols: cols, rows: rows };
 }
 
 /**
  * 将静态一帧或动画作品写入本机存储并同步 opener / 云端。
- * @param {string | { isAnimated: true, ascii: string, frames: string[], frameCount?: number, fps?: number, durationMs?: number }} payload 静态时为 ascii 字符串
+ * @param {string | { isPhotoPreview?: true, ascii?: string, isAnimated?: true, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} payload 静态时为 ascii 字符串或带 `isPhotoPreview` 的对象
  * @returns {Promise<boolean>} 持久化成功时为 true
  */
 async function persistPhotoToGallery(payload) {
@@ -1264,7 +2120,14 @@ async function persistPhotoToGallery(payload) {
       payload.isAnimated === true &&
       Array.isArray(payload.frames) &&
       payload.frames.length > 0;
-    var asciiStr = isAnim ? String(payload.ascii || payload.frames[0] || '') : String(payload || '');
+    var asciiStr = '';
+    if (isAnim) {
+      asciiStr = String(payload.ascii || payload.frames[0] || '');
+    } else if (payload && typeof payload === 'object' && payload.isPhotoPreview === true) {
+      asciiStr = String(payload.ascii || '');
+    } else {
+      asciiStr = String(payload || '');
+    }
     /** @type {{ ascii: string, color: string, time: number, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }} */
     var photoPayload = {
       ascii: asciiStr,
@@ -1352,6 +2215,14 @@ function setStatusLive() {
 
 startBtn.addEventListener('click', async () => {
   if (stream) {
+    abortRequestRainEffect();
+    clearPreviewAnimLoop();
+    previewCaptureActive = false;
+    pendingGalleryPayload = null;
+    if (cameraShell) cameraShell.classList.remove('cam-preview-capture');
+    if (submitGalleryBtn) submitGalleryBtn.disabled = true;
+    if (camTabPhoto) camTabPhoto.disabled = false;
+    if (camTabVideo) camTabVideo.disabled = false;
     stream.getTracks().forEach(t => t.stop());
     stream = null;
     if (animId != null) cancelAnimationFrame(animId);
@@ -1361,13 +2232,18 @@ startBtn.addEventListener('click', async () => {
     snapCountdownActive = false;
     snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
     setStatusOffline();
-    if (asciiWrap) asciiWrap.classList.add('ascii-wrap--offline');
-    out.textContent = 'Click "Start Camera" to begin';
-    if (asciiOffHelper) asciiOffHelper.textContent = 'Click "Start Camera" to begin';
+    if (asciiWrap) {
+      asciiWrap.classList.add('ascii-wrap--offline');
+      asciiWrap.classList.remove('ascii-wrap--startup-hide-helper');
+    }
+    out.textContent = 'Click "START CAMERA" to begin';
+    if (asciiOffHelper) asciiOffHelper.textContent = 'Click "START CAMERA" to begin';
     out.setAttribute('aria-hidden', 'true');
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
     syncVideoProgressBarForMode();
+    applyCaptureModeUi();
+    startRequestRainEffect();
     return;
   }
   if (isEmbeddedInFrame()) {
@@ -1378,6 +2254,8 @@ startBtn.addEventListener('click', async () => {
     return;
   }
   try {
+    startBtn.disabled = true;
+    if (asciiWrap) asciiWrap.classList.add('ascii-wrap--startup-hide-helper');
     statusEl.querySelector('.status-text').textContent = 'Requesting…';
     statusEl.classList.remove('live');
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } });
@@ -1385,8 +2263,9 @@ startBtn.addEventListener('click', async () => {
     startBtn.textContent = 'Stop Camera';
     snapBtn.disabled = false;
     snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
+    if (submitGalleryBtn) submitGalleryBtn.disabled = true;
     setStatusLive();
-    if (asciiWrap) asciiWrap.classList.remove('ascii-wrap--offline');
+    if (asciiWrap) asciiWrap.classList.remove('ascii-wrap--offline', 'ascii-wrap--startup-hide-helper');
     out.removeAttribute('aria-hidden');
     out.style.color = colorPicker.value;
     syncVideoProgressBarColor();
@@ -1395,34 +2274,47 @@ startBtn.addEventListener('click', async () => {
     syncVideoProgressBarForMode();
     render();
     requestAnimationFrame(function () {
-      requestAnimationFrame(syncAsciiLayout);
+      requestAnimationFrame(function () {
+        syncAsciiLayout();
+        stopRequestRainEffectFade();
+      });
     });
   } catch (e) {
     setStatusOffline();
     statusEl.querySelector('.status-text').textContent = 'Access denied';
     out.textContent = 'Camera access denied';
     if (asciiOffHelper) asciiOffHelper.textContent = out.textContent;
-    if (asciiWrap) asciiWrap.classList.add('ascii-wrap--offline');
+    if (asciiWrap) {
+      asciiWrap.classList.add('ascii-wrap--offline');
+      asciiWrap.classList.remove('ascii-wrap--startup-hide-helper');
+    }
     out.setAttribute('aria-hidden', 'true');
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
+    abortRequestRainEffect();
+    startRequestRainEffect();
+  } finally {
+    startBtn.disabled = false;
   }
 });
 
 /**
- * 3s 倒计时（按钮 3→2→1）。
+ * 3s 倒计时（按钮 3→2→1）；完成后进入本地预览，不自动上传。
  * Photo：最后一秒开闪，该秒结束后关闪再抓拍（行为不变）。
  * Video：最后一秒开始时开闪（比录制早 1s，作同步缓冲），常亮共 3s（1s 倒计时末 + 2s 录制），录制结束关闪。
  */
 snapBtn.addEventListener('click', async () => {
   if (!stream || snapCountdownActive) return;
+  if (previewCaptureActive) {
+    retakeFromPreview();
+    return;
+  }
   const cols = getCols();
   const ctl = [densityPicker, colorPicker, resPicker, aspectPicker, camTabPhoto, camTabVideo];
-  /** @type {number | null} Video 录制结束并冻结 `#ascii-out` 的时刻（用于区分 Photo / Video 保存提示流程） */
-  var videoFreezeStartMs = null;
   snapCountdownActive = true;
   snapBtn.disabled = true;
   startBtn.disabled = true;
+  if (submitGalleryBtn) submitGalleryBtn.disabled = true;
   ctl.forEach(function (el) {
     if (el) el.disabled = true;
   });
@@ -1446,9 +2338,14 @@ snapBtn.addEventListener('click', async () => {
         cancelAnimationFrame(animId);
         animId = null;
       }
-      var capturedAscii = toAscii(cols);
-      out.textContent = capturedAscii;
-      persistArg = capturedAscii;
+      var photoPack = toAsciiWithLuminance(cols);
+      persistArg = {
+        isPhotoPreview: true,
+        ascii: photoPack.ascii,
+        luma: photoPack.luma,
+        cols: photoPack.cols,
+        rows: photoPack.rows
+      };
     } else {
       if (videoProgressBar) videoProgressBar.style.width = '100%';
       var recRaf = 0;
@@ -1475,31 +2372,80 @@ snapBtn.addEventListener('click', async () => {
         cancelAnimationFrame(animId);
         animId = null;
       }
-      var lastV = vf && vf.length ? vf[vf.length - 1] : '';
-      out.textContent = lastV;
-      videoFreezeStartMs = performance.now();
       persistArg = {
         isAnimated: true,
-        ascii: vf[0] || '',
-        frames: vf,
+        ascii: vf && vf.frames && vf.frames.length ? vf.frames[0] || '' : '',
+        frames: vf && vf.frames ? vf.frames : [],
+        frameLumas: vf && vf.frameLumas ? vf.frameLumas : [],
+        previewCols: vf.cols,
+        previewRows: vf.rows,
         frameCount: VIDEO_FRAME_COUNT,
         fps: VIDEO_FPS,
         durationMs: VIDEO_DURATION_MS
       };
     }
 
-    snapBtn.textContent = SNAP_LABEL_SAVING;
-    snapBtn.classList.add('snap-saving');
-    snapBtn.setAttribute('aria-busy', 'true');
-    var isVideoCapture = videoFreezeStartMs != null;
-    if (!isVideoCapture) {
-      savedMsg.textContent = SNAP_LABEL_SAVING;
-      savedMsg.style.color = '#ffd700';
-      savedMsg.classList.add('show');
+    enterPreviewState(persistArg);
+  } catch (err) {
+    console.error(err);
+    savedMsg.textContent = 'Capture failed: something went wrong.';
+    savedMsg.style.color = '#ff4444';
+    savedMsg.classList.add('show');
+    await sleep(2500);
+    savedMsg.classList.remove('show');
+  } finally {
+    if (flashOutsideRoot) flashOutsideRoot.classList.remove('on');
+    snapCountdownActive = false;
+    startBtn.disabled = false;
+    ctl.forEach(function (el) {
+      if (!el) return;
+      if (previewCaptureActive) {
+        if (el === camTabPhoto || el === camTabVideo) el.disabled = true;
+        else if (el === resPicker || el === aspectPicker) el.disabled = true;
+        else el.disabled = false;
+      } else {
+        if (el === camTabPhoto || el === camTabVideo) el.disabled = false;
+        else if (el === resPicker || el === aspectPicker) {
+          el.disabled = videoMode;
+        } else el.disabled = false;
+      }
+    });
+    if (previewCaptureActive) {
+      syncVideoProgressBarForMode();
+      syncAsciiLayout();
+      snapBtn.textContent = videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO;
+      snapBtn.disabled = false;
+    } else {
+      restartLiveAsciiPreview();
+      syncVideoProgressBarForMode();
+      syncAsciiLayout();
+      snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
+      snapBtn.disabled = !stream;
     }
+  }
+});
 
-    var ok = await persistPhotoToGallery(persistArg);
-
+/**
+ * 将当前预览作品提交至本机画廊 / 云端（与原先 `persistPhotoToGallery` 流程一致）。
+ * @returns {Promise<void>}
+ */
+async function submitPreviewToGallery() {
+  if (!previewCaptureActive || pendingGalleryPayload == null || !stream) return;
+  var payload = pendingGalleryPayload;
+  if (submitGalleryBtn) submitGalleryBtn.disabled = true;
+  snapBtn.disabled = true;
+  snapBtn.textContent = SNAP_LABEL_SAVING;
+  snapBtn.classList.add('snap-saving');
+  snapBtn.setAttribute('aria-busy', 'true');
+  var isVideoCapture =
+    payload && typeof payload === 'object' && payload.isAnimated === true;
+  if (!isVideoCapture) {
+    savedMsg.textContent = SNAP_LABEL_SAVING;
+    savedMsg.style.color = '#ffd700';
+    savedMsg.classList.add('show');
+  }
+  try {
+    var ok = await persistPhotoToGallery(payload);
     if (ok) {
       if (isVideoCapture) {
         savedMsg.textContent = 'SAVED';
@@ -1520,6 +2466,7 @@ snapBtn.addEventListener('click', async () => {
         await sleep(1800);
         savedMsg.classList.remove('show');
       }
+      exitPreviewAfterSuccessfulSubmit();
     } else {
       savedMsg.classList.remove('show');
       savedMsg.textContent = 'Save failed: storage full, unavailable, or disabled.';
@@ -1527,33 +2474,36 @@ snapBtn.addEventListener('click', async () => {
       savedMsg.classList.add('show');
       await sleep(2500);
       savedMsg.classList.remove('show');
+      if (submitGalleryBtn) submitGalleryBtn.disabled = false;
+      snapBtn.disabled = false;
     }
-  } catch (err) {
-    console.error(err);
+  } catch (e) {
+    console.error(e);
     savedMsg.textContent = 'Save failed: something went wrong.';
     savedMsg.style.color = '#ff4444';
     savedMsg.classList.add('show');
     await sleep(2500);
     savedMsg.classList.remove('show');
+    if (submitGalleryBtn) submitGalleryBtn.disabled = false;
+    snapBtn.disabled = false;
   } finally {
-    if (flashOutsideRoot) flashOutsideRoot.classList.remove('on');
     snapBtn.classList.remove('snap-saving');
     snapBtn.removeAttribute('aria-busy');
-    snapCountdownActive = false;
-    startBtn.disabled = false;
-    ctl.forEach(function (el) {
-      if (!el) return;
-      if (el === camTabPhoto || el === camTabVideo) el.disabled = false;
-      else if (el === resPicker || el === aspectPicker) {
-        el.disabled = videoMode;
-      } else el.disabled = false;
-    });
-    restartLiveAsciiPreview();
-    syncVideoProgressBarForMode();
-    syncAsciiLayout();
-    snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
-    snapBtn.disabled = !stream;
+    if (previewCaptureActive) {
+      snapBtn.textContent = videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO;
+    }
   }
+}
+
+if (submitGalleryBtn) {
+  submitGalleryBtn.addEventListener('click', function () {
+    void submitPreviewToGallery();
+  });
+}
+
+requestAnimationFrame(function () {
+  applyCaptureModeUi();
+  if (!stream) startRequestRainEffect();
 });
 </script>
 </body>

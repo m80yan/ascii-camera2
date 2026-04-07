@@ -257,7 +257,9 @@
     color: #00ff41;
     font-family: monospace, ui-monospace, "Courier New", monospace;
     font-size: 11px;
-    padding: 6px 16px;
+    padding: 0 16px;
+    min-height: 36px;
+    height: 36px;
     cursor: pointer;
     letter-spacing: 2px;
     text-transform: uppercase;
@@ -278,6 +280,8 @@
     width: auto;
     max-width: min(260px, 92vw);
     min-width: 196px;
+    min-height: 36px;
+    height: auto;
     white-space: normal;
     line-height: 1.25;
     text-transform: none;
@@ -326,6 +330,7 @@
     width: auto !important;
     max-width: min(260px, 92vw) !important;
     min-width: 196px !important;
+    min-height: 36px !important;
     height: auto !important;
     margin: 0 !important;
     padding: 6px 16px !important;
@@ -342,8 +347,23 @@
   #confirm-modal.open { display: flex; }
   #confirm-box { background: #111; border: 1px solid rgba(255,68,68,0.4); border-radius: 4px; padding: 28px 32px; text-align: center; }
   #confirm-box p { font-size: 12px; letter-spacing: 2px; opacity: 0.7; margin-bottom: 20px; line-height: 2; }
-  #confirm-actions { display: flex; gap: 12px; justify-content: center; }
-  .modal-btn { background: transparent; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; padding: 6px 20px; cursor: pointer; letter-spacing: 2px; text-transform: uppercase; }
+  #confirm-actions { display: flex; gap: 12px; justify-content: center; align-items: center; }
+  /** 与 camera.html Stop Camera 主按钮同高 36px */
+  .modal-btn {
+    background: transparent;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 11px;
+    padding: 0 20px;
+    min-height: 36px;
+    height: 36px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
   #confirm-cancel { border: 1px solid rgba(0,255,65,0.4); color: #00ff41; }
   #confirm-cancel:hover { background: rgba(0,255,65,0.1); }
   #confirm-yes { border: 1px solid #ff4444; color: #ff4444; }
@@ -388,9 +408,48 @@
   .upload-actions-placeholder { min-height: 0; pointer-events: none; }
   .upload-action-col-res { display: flex; justify-content: flex-end; align-items: stretch; min-width: 0; }
   .upload-action-col-aspect { min-width: 0; }
-  #upload-save-btn { border: 1px solid #ffd700; color: #ffd700; background: transparent; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; line-height: 1.25; padding: 6px 8px; cursor: pointer; letter-spacing: 1px; text-transform: uppercase; display: block; width: 100%; max-width: 100%; box-sizing: border-box; }
+  #upload-save-btn {
+    border: 1px solid #ffd700;
+    color: #ffd700;
+    background: transparent;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 11px;
+    line-height: 1;
+    padding: 0 8px;
+    min-height: 36px;
+    height: 36px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    width: 100%;
+    max-width: 100%;
+  }
   #upload-save-btn:hover { background: rgba(255,215,0,0.08); }
-  #upload-cancel-btn { border: 1px solid rgba(0,255,65,0.4); color: #00ff41; background: transparent; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; line-height: 1.25; padding: 6px 10px; cursor: pointer; letter-spacing: 2px; text-transform: uppercase; width: auto; max-width: 100%; flex: 0 0 auto; box-sizing: border-box; }
+  #upload-cancel-btn {
+    border: 1px solid rgba(0,255,65,0.4);
+    color: #00ff41;
+    background: transparent;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 11px;
+    line-height: 1;
+    padding: 0 10px;
+    min-height: 36px;
+    height: 36px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    width: auto;
+    max-width: 100%;
+    flex: 0 0 auto;
+  }
   #upload-cancel-btn:hover { background: rgba(0,255,65,0.08); }
   @media (max-width: 640px) {
     #upload-modal-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
