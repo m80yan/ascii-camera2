@@ -1454,7 +1454,17 @@ let requestRainRaf = null;
 /** 与 `stopRequestRainEffectFade` 的 transition 回调代数对齐，避免 abort 后误卸画布 */
 let requestRainFadeGen = 0;
 /**
- * @typedef {{ x: number, headY: number, speed: number, trailLen: number, glyphs: string[], alphaMul: number }} RequestRainColumn
+ * @typedef {{
+ *   x: number,
+ *   headY: number,
+ *   speed: number,
+ *   trailLen: number,
+ *   glyphs: string[],
+ *   gaps: boolean[],
+ *   glyphRows: number,
+ *   pauseFrames: number,
+ *   alphaMul: number
+ * }} RequestRainColumn
  */
 /** @type {RequestRainColumn[]} */
 let requestRainColumns = [];
@@ -1501,12 +1511,25 @@ const INTRO_RAIN_LH_MUL = {
  * @returns {string}
  */
 function buildMatrixIntroCharPool() {
-  var letterSet = new Set('ASCIICAMERA'.split(''));
-  var letters = Array.from(letterSet).join('');
-  var digits = '0123456789';
-  var syms = '+-/:._\\';
+  var katakana =
+    'ｱｲｳｴｵ' +
+    'ｶｷｸｹｺ' +
+    'ｻｼｽｾｿ' +
+    'ﾀﾁﾂﾃﾄ' +
+    'ﾅﾆﾇﾈﾉ' +
+    'ﾊﾋﾌﾍﾎ' +
+    'ﾏﾐﾑﾒﾓ' +
+    'ﾔﾕﾖ' +
+    'ﾗﾘﾙﾚﾛ' +
+    'ﾜｦﾝ';
+  var numbers = '0123456789';
+  var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  var symbols = '+-*/\\|=<>:;._~!@#$%^&()';
+
+  /** 既有密度/块字符：至少包含 ·░▒▓；并继续并入 CHAR_SETS 的块字符 */
   var blockSeen = new Set();
-  var block = '';
+  var blocks = '·░▒▓';
+  for (var b = 0; b < blocks.length; b++) blockSeen.add(blocks[b]);
   Object.keys(CHAR_SETS).forEach(function (key) {
     var str = CHAR_SETS[key];
     for (var i = 0; i < str.length; i++) {
@@ -1514,19 +1537,25 @@ function buildMatrixIntroCharPool() {
       if (ch === '\n' || ch === '\r') continue;
       if (!blockSeen.has(ch)) {
         blockSeen.add(ch);
-        block += ch;
+        blocks += ch;
       }
     }
   });
-  return letters + digits + syms + block;
+
+  return {
+    katakana: katakana.split(''),
+    numbers: numbers.split(''),
+    letters: letters.split(''),
+    symbols: (symbols + blocks).split('')
+  };
 }
 
-/** @type {string | null} */
+/** @type {{ katakana: string[], numbers: string[], letters: string[], symbols: string[] } | null} */
 let matrixIntroPoolCache = null;
 
 /**
  * Matrix 开屏雨字符池（缓存；`CHAR_SETS` 为常量）。
- * @returns {string}
+ * @returns {{ katakana: string[], numbers: string[], letters: string[], symbols: string[] }}
  */
 function getMatrixIntroCharPool() {
   if (matrixIntroPoolCache == null) {
@@ -1536,12 +1565,21 @@ function getMatrixIntroCharPool() {
 }
 
 /**
- * @param {string} pool
+ * 60% Katakana / 20% Numbers / 10% Letters / 10% Symbols+Blocks（非均匀随机）。
+ * @param {{ katakana: string[], numbers: string[], letters: string[], symbols: string[] }} pool
  * @returns {string}
  */
 function pickMatrixIntroChar(pool) {
-  if (!pool || pool.length < 1) return '\u00B7';
-  return pool.charAt(Math.floor(Math.random() * pool.length));
+  if (!pool) return '·';
+  var r = Math.random();
+  /** @type {string[]} */
+  var arr;
+  if (r < 0.6) arr = pool.katakana;
+  else if (r < 0.8) arr = pool.numbers;
+  else if (r < 0.9) arr = pool.letters;
+  else arr = pool.symbols;
+  if (!arr || arr.length < 1) return '·';
+  return arr[Math.floor(Math.random() * arr.length)] || '·';
 }
 
 /**
@@ -1553,20 +1591,71 @@ function pickMatrixIntroChar(pool) {
  * @returns {RequestRainColumn}
  */
 function createRequestRainColumn(x, h, lh, pool, alphaMul) {
-  var trailLen =
-    requestRainTrailMin + Math.floor(Math.random() * (requestRainTrailSpan + 1));
-  var glyphs = [];
+  // Phase 1（安全）：每列长度随机化到稳定可控区间（约 6–20 个可见字符）。
+  var trailLen = 6 + Math.floor(Math.random() * 15);
+  var rows = Math.max(6, Math.ceil(h / Math.max(1, lh)) + 4);
+  var glyphs = new Array(rows);
+  /** @type {boolean[]} */
+  var gaps = new Array(trailLen);
+  var pauseFrames = 0;
+  for (var gi = 0; gi < rows; gi++) {
+    glyphs[gi] = pickMatrixIntroChar(pool);
+  }
   for (var i = 0; i < trailLen; i++) {
-    glyphs.push(pickMatrixIntroChar(pool));
+    // 10–20% 稀疏留白：固定在尾迹位置（不是每帧重新随机）。
+    gaps[i] = Math.random() < 0.14;
   }
   return {
     x: x,
-    headY: Math.random() * (h + trailLen * lh) - trailLen * lh,
+    headY:
+      Math.random() < 0.35
+        ? Math.random() * h
+        : Math.random() * (h + trailLen * lh) - trailLen * lh,
     speed: 2.2 + Math.random() * 4.2,
     trailLen: trailLen,
     glyphs: glyphs,
+    gaps: gaps,
+    glyphRows: rows,
+    pauseFrames: pauseFrames,
     alphaMul: alphaMul
   };
+}
+
+/**
+ * Phase 2：列内 glyph buffer 持久化 + 受控突变（减少 TV noise）。
+ * - 基础突变：约 10–15%
+ * - 尾迹近头：约 40–60%
+ * - 尾迹外：约 5–10%
+ * - 突变时 30–40% 复制上一行，形成纵向纹理
+ * @param {RequestRainColumn} col
+ * @param {number} h
+ * @param {number} lh
+ * @param {{ katakana: string[], numbers: string[], letters: string[], symbols: string[] }} pool
+ * @returns {void}
+ */
+function evolveRequestRainColumnGlyphs(col, h, lh, pool) {
+  if (!col || !col.glyphs || col.glyphs.length < 1) return;
+  var rows = col.glyphs.length;
+  var headRow = Math.floor(col.headY / Math.max(1, lh));
+  var tlen = Math.max(1, col.trailLen);
+  for (var r = 0; r < rows; r++) {
+    var d = headRow - r; // 0=head, 正数在尾迹内，负数在头下方
+    var rate;
+    if (d >= 0 && d < tlen) {
+      if (d <= 2) rate = 0.52; // near head
+      else if (d <= Math.floor(tlen * 0.68)) rate = 0.13; // mid trail
+      else rate = 0.085; // tail end
+    } else {
+      rate = 0.07; // outside trail
+    }
+    if (Math.random() < rate) {
+      if (Math.random() < 0.36 && r > 0) {
+        col.glyphs[r] = col.glyphs[r - 1] || pickMatrixIntroChar(pool);
+      } else {
+        col.glyphs[r] = pickMatrixIntroChar(pool);
+      }
+    }
+  }
 }
 
 /**
@@ -1577,29 +1666,37 @@ function createRequestRainColumn(x, h, lh, pool, alphaMul) {
  * @returns {void}
  */
 function stepRequestRainColumn(col, h, lh, pool) {
-  col.headY += col.speed;
-  var resetAt = h + col.trailLen * lh + 30;
-  if (col.headY > resetAt) {
-    col.headY = -Math.random() * h * 0.9 - col.trailLen * lh;
-    col.speed = 2.2 + Math.random() * 4.2;
-    col.trailLen =
-      requestRainTrailMin + Math.floor(Math.random() * (requestRainTrailSpan + 1));
-    col.glyphs.length = col.trailLen;
-    for (var r = 0; r < col.trailLen; r++) {
-      col.glyphs[r] = pickMatrixIntroChar(pool);
-    }
+  if (col.pauseFrames == null) col.pauseFrames = 0;
+  var pauseChance = 0.0035;
+  if (col.pauseFrames < 1 && Math.random() < pauseChance) {
+    col.pauseFrames = 10 + Math.floor(Math.random() * 31); // 10–40 帧
+  }
+  if (col.pauseFrames > 0) {
+    col.pauseFrames--;
+    evolveRequestRainColumnGlyphs(col, h, lh, pool);
     return;
   }
-  col.glyphs.unshift(pickMatrixIntroChar(pool));
-  if (col.glyphs.length > col.trailLen) {
-    col.glyphs.length = col.trailLen;
+
+  col.headY += col.speed;
+  var resetAt = h + col.trailLen * lh + 30;
+  var forceReset = Math.random() < 0.00025;
+  if (forceReset || col.headY > resetAt) {
+    col.headY =
+      Math.random() < 0.35
+        ? Math.random() * h
+        : -Math.random() * h * 0.9 - col.trailLen * lh;
+    col.speed = 2.2 + Math.random() * 4.2;
+    col.trailLen = 6 + Math.floor(Math.random() * 15);
+    var rows = Math.max(6, Math.ceil(h / Math.max(1, lh)) + 4);
+    col.glyphs = new Array(rows);
+    col.glyphRows = rows;
+    col.gaps = new Array(col.trailLen);
+    col.pauseFrames = 0;
+    for (var gi = 0; gi < rows; gi++) col.glyphs[gi] = pickMatrixIntroChar(pool);
+    for (var r = 0; r < col.trailLen; r++) col.gaps[r] = Math.random() < 0.14;
+    return;
   }
-  var n = col.glyphs.length;
-  for (var j = 1; j < n; j++) {
-    if (Math.random() < 0.052) {
-      col.glyphs[j] = pickMatrixIntroChar(pool);
-    }
-  }
+  evolveRequestRainColumnGlyphs(col, h, lh, pool);
 }
 
 /**
@@ -1767,19 +1864,15 @@ function initRequestRainColumns(w, h, cellW, lh) {
   var pool = getMatrixIntroCharPool();
   var colCount = Math.ceil(w / cellW) + 2;
   requestRainColumns = [];
-  var layerConfigs = [
-    { xOff: cellW * 0.5, alpha: 1 },
-    { xOff: cellW * 1.0, alpha: 0.52 },
-    { xOff: cellW * 1.5, alpha: 0.3 }
-  ];
-  for (var L = 0; L < layerConfigs.length; L++) {
-    var cfg = layerConfigs[L];
-    for (var i = 0; i < colCount + 4; i++) {
-      var x = i * cellW + cfg.xOff;
-      requestRainColumns.push(
-        createRequestRainColumn(x, h, lh, pool, cfg.alpha)
-      );
-    }
+  var xInset = cellW * 0.5;
+  for (var i = 0; i < colCount + 4; i++) {
+    if (((i + 0) % 4) === 0) continue;
+    var x = i * cellW + xInset;
+    var a = 1;
+    var band = i % 3;
+    if (band === 1) a = 0.52;
+    else if (band === 2) a = 0.3;
+    requestRainColumns.push(createRequestRainColumn(x, h, lh, pool, a));
   }
 }
 
@@ -1805,32 +1898,26 @@ function drawRequestRainFrame(w, h) {
   for (c = 0; c < requestRainColumns.length; c++) {
     var col = requestRainColumns[c];
     var tlen = col.trailLen;
-    for (var t = 0; t < col.glyphs.length; t++) {
-      var yy = col.headY - t * lh;
+    var headRow = Math.floor(col.headY / Math.max(1, lh));
+    for (var d = 0; d < tlen; d++) {
+      var row = headRow - d;
+      var yy = row * lh;
       if (yy < -lh * 2 || yy > h + lh) continue;
-      var ch = col.glyphs[t];
+      if (col.gaps && col.gaps[d]) continue;
+      if (!col.glyphs || col.glyphs.length < 1) continue;
+      var idx = ((row % col.glyphs.length) + col.glyphs.length) % col.glyphs.length;
+      var ch = col.glyphs[idx];
       if (!ch) ch = pickMatrixIntroChar(pool);
       var mul = col.alphaMul;
-      var jitter = 0.78 + (((c * 17 + t * 13) % 7) / 28);
-      if (t === 0) {
-        if (Math.random() < 0.14) {
-          requestRainCtx.fillStyle = 'rgba(255,255,255,0.92)';
-        } else {
-          requestRainCtx.fillStyle =
-            'rgba(' +
-            rgb.r +
-            ',' +
-            rgb.g +
-            ',' +
-            rgb.b +
-            ',' +
-            (0.78 * mul).toFixed(3) +
-            ')';
-        }
+      if (d === 0) {
+        // 头部：高亮白
+        requestRainCtx.fillStyle = 'rgba(255,255,255,0.92)';
       } else {
-        var fade = 1 - t / Math.max(1, tlen - 1);
-        var base = 0.05 + fade * 0.4;
-        var a = Math.min(0.9, base * jitter * mul);
+        // 离散磷光分档：避免“现代渐变”观感
+        var a;
+        if (d <= 2) a = 0.78 * mul; // 头后 1–2：亮绿
+        else if (d <= Math.floor(tlen * 0.68)) a = 0.42 * mul; // 中段：中绿
+        else a = 0.18 * mul; // 尾端：暗绿
         requestRainCtx.fillStyle =
           'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + a.toFixed(3) + ')';
       }
