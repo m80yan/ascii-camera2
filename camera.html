@@ -1453,6 +1453,14 @@ function getChars() {
 let requestRainRaf = null;
 /** 与 `stopRequestRainEffectFade` 的 transition 回调代数对齐，避免 abort 后误卸画布 */
 let requestRainFadeGen = 0;
+/** Phase 3.1：开屏雨由稀到密的 build-up 强度（0..1） */
+let requestRainIntensity = 1;
+/** @type {number} */
+let requestRainBuildStartMs = 0;
+/** @type {number} */
+const REQUEST_RAIN_BUILD_MS = 2300;
+/** @type {number} */
+const REQUEST_RAIN_BUILD_START_INTENSITY = 0.32;
 /**
  * @typedef {{
  *   x: number,
@@ -1463,11 +1471,24 @@ let requestRainFadeGen = 0;
  *   gaps: boolean[],
  *   glyphRows: number,
  *   pauseFrames: number,
+ *   mutJ: number,
+ *   actSeed: number,
+ *   microHoldFrames: number[],
+ *   microHoldRows: number[],
+ *   recentGlyphs: string[],
+ *   motif: string[],
+ *   motifIdx: number,
+ *   actBias: number,
+ *   actBiasTarget: number,
+ *   actBiasTtl: number,
  *   alphaMul: number
  * }} RequestRainColumn
  */
 /** @type {RequestRainColumn[]} */
 let requestRainColumns = [];
+/** Phase 3.1：背景暗列（深度层，仅渲染用途，独立于前景列） */
+/** @type {RequestRainColumn[]} */
+let requestRainBgColumns = [];
 /** @type {number} */
 let requestRainCssW = 0;
 /** @type {number} */
@@ -1617,6 +1638,58 @@ function createRequestRainColumn(x, h, lh, pool, alphaMul) {
     gaps: gaps,
     glyphRows: rows,
     pauseFrames: pauseFrames,
+    mutJ: 0.85 + Math.random() * 0.3,
+    actSeed: Math.random(),
+    microHoldFrames: [0, 0, 0, 0, 0],
+    microHoldRows: [0, 0, 0, 0, 0],
+    recentGlyphs: [],
+    motif: [],
+    motifIdx: 0,
+    actBias: 0,
+    actBiasTarget: 0,
+    actBiasTtl: 0,
+    alphaMul: alphaMul
+  };
+}
+
+/**
+ * 背景暗列：更短尾迹、更低活性、更慢一些；不含白头辉光。
+ * @param {number} x
+ * @param {number} h
+ * @param {number} lh
+ * @param {{ katakana: string[], numbers: string[], letters: string[], symbols: string[] }} pool
+ * @param {number} alphaMul
+ * @returns {RequestRainColumn}
+ */
+function createRequestRainBgColumn(x, h, lh, pool, alphaMul) {
+  var trailLen = 4 + Math.floor(Math.random() * 9); // 4–12
+  var rows = Math.max(6, Math.ceil(h / Math.max(1, lh)) + 4);
+  var glyphs = new Array(rows);
+  var gaps = new Array(trailLen);
+  for (var gi = 0; gi < rows; gi++) glyphs[gi] = pickMatrixIntroChar(pool);
+  for (var i = 0; i < trailLen; i++) gaps[i] = Math.random() < 0.16;
+  return {
+    x: x,
+    headY:
+      Math.random() < 0.55
+        ? Math.random() * h
+        : Math.random() * (h + trailLen * lh) - trailLen * lh,
+    speed: (2.2 + Math.random() * 4.2) * 0.82,
+    trailLen: trailLen,
+    glyphs: glyphs,
+    gaps: gaps,
+    glyphRows: rows,
+    pauseFrames: 0,
+    mutJ: 0.55 + Math.random() * 0.25,
+    actSeed: Math.random(),
+    microHoldFrames: [0, 0, 0, 0, 0],
+    microHoldRows: [0, 0, 0, 0, 0],
+    recentGlyphs: [],
+    motif: [],
+    motifIdx: 0,
+    actBias: 0,
+    actBiasTarget: 0,
+    actBiasTtl: 0,
     alphaMul: alphaMul
   };
 }
@@ -1631,28 +1704,99 @@ function createRequestRainColumn(x, h, lh, pool, alphaMul) {
  * @param {number} h
  * @param {number} lh
  * @param {{ katakana: string[], numbers: string[], letters: string[], symbols: string[] }} pool
+ * @param {boolean} paused
  * @returns {void}
  */
-function evolveRequestRainColumnGlyphs(col, h, lh, pool) {
+function evolveRequestRainColumnGlyphs(col, h, lh, pool, paused) {
   if (!col || !col.glyphs || col.glyphs.length < 1) return;
   var rows = col.glyphs.length;
   var headRow = Math.floor(col.headY / Math.max(1, lh));
   var tlen = Math.max(1, col.trailLen);
+  var mj = col.mutJ != null ? col.mutJ : 1;
+  var mhF = col.microHoldFrames;
+  var mhR = col.microHoldRows;
+  // burtsy activity：列级活跃偏置缓慢变化（让突变呈现“段落感”而非均匀噪声）
+  if (col.actBiasTtl == null) col.actBiasTtl = 0;
+  if (col.actBias == null) col.actBias = 0;
+  if (col.actBiasTarget == null) col.actBiasTarget = 0;
+  if (col.actBiasTtl <= 0) {
+    col.actBiasTtl = 30 + Math.floor(Math.random() * 120); // ~0.5–2.5s@60fps
+    var r0 = Math.random();
+    // 多数时间偏稳定，少数时间短暂更“健谈”
+    col.actBiasTarget = r0 < 0.75 ? (-0.22 + Math.random() * 0.18) : (0.05 + Math.random() * 0.55);
+  } else {
+    col.actBiasTtl--;
+  }
+  col.actBias += (col.actBiasTarget - col.actBias) * 0.06;
+  var biasMul = Math.max(0.55, Math.min(1.65, 1 + col.actBias));
+
+  if (!col.recentGlyphs) col.recentGlyphs = [];
+  if (!col.motif) col.motif = [];
+  if (col.motifIdx == null) col.motifIdx = 0;
+
+  /**
+   * @param {number} row
+   * @returns {string}
+   */
+  function pickMutatedGlyph(row) {
+    // 35–45%：复制上方
+    if (Math.random() < 0.4 && row > 0) {
+      return col.glyphs[row - 1] || pickMatrixIntroChar(pool);
+    }
+    // 20–30%：复用本列近期 glyph（局部惯性/碎片感）
+    if (col.recentGlyphs.length && Math.random() < 0.25) {
+      return col.recentGlyphs[Math.floor(Math.random() * col.recentGlyphs.length)];
+    }
+    // 可选 motif：极轻量（2–4 字）短暂回声；避免可读词
+    if (col.motif.length && Math.random() < 0.18) {
+      var m = col.motif[col.motifIdx % col.motif.length];
+      col.motifIdx = (col.motifIdx + 1) % col.motif.length;
+      return m || pickMatrixIntroChar(pool);
+    }
+    // 剩余：新随机
+    return pickMatrixIntroChar(pool);
+  }
+
+  // 偶尔生成短 motif（更偏向符号/数字/片假名混合）
+  if (col.motif.length < 1 && Math.random() < 0.008) {
+    var ml = 2 + Math.floor(Math.random() * 3);
+    col.motif = new Array(ml);
+    col.motifIdx = 0;
+    for (var mi = 0; mi < ml; mi++) col.motif[mi] = pickMatrixIntroChar(pool);
+  } else if (col.motif.length && Math.random() < 0.0035) {
+    // motif 自然消退，避免全屏过度模式化
+    col.motif = [];
+    col.motifIdx = 0;
+  }
+
   for (var r = 0; r < rows; r++) {
     var d = headRow - r; // 0=head, 正数在尾迹内，负数在头下方
     var rate;
     if (d >= 0 && d < tlen) {
-      if (d <= 2) rate = 0.52; // near head
-      else if (d <= Math.floor(tlen * 0.68)) rate = 0.13; // mid trail
-      else rate = 0.085; // tail end
+      if (d === 0) rate = paused ? 0.62 : 0.56; // head
+      else if (d <= 2) rate = paused ? 0.48 : 0.44; // immediate trail
+      else if (d <= Math.floor(tlen * 0.68)) rate = 0.12; // mid trail
+      else rate = 0.07; // tail end
     } else {
-      rate = 0.07; // outside trail
+      rate = 0.03; // outside illuminated zone：很低，保持“定格网格”感
     }
+    // micro-hold：被挂住的局部 glyph 在原地更“活”（略增突变率）
+    if (mhF && mhR) {
+      for (var k = 0; k < 5; k++) {
+        if (mhF[k] > 0 && mhR[k] === r) {
+          rate *= 1.35;
+          break;
+        }
+      }
+    }
+    rate *= mj;
+    rate *= biasMul;
     if (Math.random() < rate) {
-      if (Math.random() < 0.36 && r > 0) {
-        col.glyphs[r] = col.glyphs[r - 1] || pickMatrixIntroChar(pool);
-      } else {
-        col.glyphs[r] = pickMatrixIntroChar(pool);
+      col.glyphs[r] = pickMutatedGlyph(r);
+      // 记录近期片段（限制长度，避免内存增长）
+      if (col.glyphs[r]) {
+        col.recentGlyphs.push(col.glyphs[r]);
+        if (col.recentGlyphs.length > 7) col.recentGlyphs.shift();
       }
     }
   }
@@ -1667,17 +1811,35 @@ function evolveRequestRainColumnGlyphs(col, h, lh, pool) {
  */
 function stepRequestRainColumn(col, h, lh, pool) {
   if (col.pauseFrames == null) col.pauseFrames = 0;
+  if (!col.microHoldFrames) col.microHoldFrames = [0, 0, 0, 0, 0];
+  if (!col.microHoldRows) col.microHoldRows = [0, 0, 0, 0, 0];
   var pauseChance = 0.0035;
   if (col.pauseFrames < 1 && Math.random() < pauseChance) {
     col.pauseFrames = 10 + Math.floor(Math.random() * 31); // 10–40 帧
   }
   if (col.pauseFrames > 0) {
     col.pauseFrames--;
-    evolveRequestRainColumnGlyphs(col, h, lh, pool);
+    evolveRequestRainColumnGlyphs(col, h, lh, pool, true);
     return;
   }
 
   col.headY += col.speed;
+  // micro-hold：仅 head 附近 0..4 槽位，短暂挂住；head 继续前进不受阻。
+  var headRow = Math.floor(col.headY / Math.max(1, lh));
+  var activeHolds = 0;
+  for (var kk = 0; kk < 5; kk++) if (col.microHoldFrames[kk] > 0) activeHolds++;
+  for (var k = 0; k < 5; k++) {
+    if (col.microHoldFrames[k] > 0) {
+      col.microHoldFrames[k]--;
+      continue;
+    }
+    if (activeHolds >= 2) continue;
+    if (Math.random() < 0.14) {
+      col.microHoldFrames[k] = 4 + Math.floor(Math.random() * 9); // 4–12 帧
+      col.microHoldRows[k] = headRow - k;
+      activeHolds++;
+    }
+  }
   var resetAt = h + col.trailLen * lh + 30;
   var forceReset = Math.random() < 0.00025;
   if (forceReset || col.headY > resetAt) {
@@ -1692,11 +1854,20 @@ function stepRequestRainColumn(col, h, lh, pool) {
     col.glyphRows = rows;
     col.gaps = new Array(col.trailLen);
     col.pauseFrames = 0;
+    col.mutJ = 0.85 + Math.random() * 0.3;
+    col.microHoldFrames = [0, 0, 0, 0, 0];
+    col.microHoldRows = [0, 0, 0, 0, 0];
+    col.recentGlyphs = [];
+    col.motif = [];
+    col.motifIdx = 0;
+    col.actBias = 0;
+    col.actBiasTarget = 0;
+    col.actBiasTtl = 0;
     for (var gi = 0; gi < rows; gi++) col.glyphs[gi] = pickMatrixIntroChar(pool);
     for (var r = 0; r < col.trailLen; r++) col.gaps[r] = Math.random() < 0.14;
     return;
   }
-  evolveRequestRainColumnGlyphs(col, h, lh, pool);
+  evolveRequestRainColumnGlyphs(col, h, lh, pool, false);
 }
 
 /**
@@ -1864,6 +2035,7 @@ function initRequestRainColumns(w, h, cellW, lh) {
   var pool = getMatrixIntroCharPool();
   var colCount = Math.ceil(w / cellW) + 2;
   requestRainColumns = [];
+  requestRainBgColumns = [];
   var xInset = cellW * 0.5;
   for (var i = 0; i < colCount + 4; i++) {
     if (((i + 0) % 4) === 0) continue;
@@ -1873,6 +2045,13 @@ function initRequestRainColumns(w, h, cellW, lh) {
     if (band === 1) a = 0.52;
     else if (band === 2) a = 0.3;
     requestRainColumns.push(createRequestRainColumn(x, h, lh, pool, a));
+  }
+  // 背景暗列：使用同一列网格，但选择与前景不重叠的槽位（被前景跳过的 1/4），并再稀疏化到约 30–50%。
+  for (var bi = 0; bi < colCount + 4; bi++) {
+    if (((bi + 0) % 4) !== 0) continue; // 与前景列槽位互斥
+    if ((bi % 2) !== 0) continue; // 再稀疏到约一半
+    var bx = bi * cellW + xInset;
+    requestRainBgColumns.push(createRequestRainBgColumn(bx, h, lh, pool, 0.55));
   }
 }
 
@@ -1892,15 +2071,55 @@ function drawRequestRainFrame(w, h) {
   var lh = requestRainLineHeight;
   var rgb = hexToRgbForRain(colorPicker.value);
   var c;
+  // 背景暗列：先更新
+  for (c = 0; c < requestRainBgColumns.length; c++) {
+    stepRequestRainColumn(requestRainBgColumns[c], h, lh, pool);
+  }
   for (c = 0; c < requestRainColumns.length; c++) {
     stepRequestRainColumn(requestRainColumns[c], h, lh, pool);
   }
+  // 背景暗列：先画（更暗、更弱，且受 build-up 强度影响更大）
+  var bgI = Math.max(0, Math.min(1, requestRainIntensity * 0.7));
+  var bgR = Math.max(0, Math.min(255, Math.floor(rgb.r * 0.55)));
+  var bgG = Math.max(0, Math.min(255, Math.floor(rgb.g * 0.62)));
+  var bgB = Math.max(0, Math.min(255, Math.floor(rgb.b * 0.55)));
+  for (c = 0; c < requestRainBgColumns.length; c++) {
+    var bcol = requestRainBgColumns[c];
+    if (bcol.actSeed != null && bcol.actSeed > bgI) continue;
+    var btlen = bcol.trailLen;
+    var bHeadRow = Math.floor(bcol.headY / Math.max(1, lh));
+    for (var bd = 0; bd < btlen; bd++) {
+      var brow = bHeadRow - bd;
+      var byy = brow * lh;
+      if (byy < -lh * 2 || byy > h + lh) continue;
+      if (bcol.gaps && bcol.gaps[bd]) continue;
+      if (!bcol.glyphs || bcol.glyphs.length < 1) continue;
+      var bidx =
+        ((brow % bcol.glyphs.length) + bcol.glyphs.length) % bcol.glyphs.length;
+      var bch = bcol.glyphs[bidx];
+      if (!bch) bch = pickMatrixIntroChar(pool);
+      var bmul = bcol.alphaMul;
+      var ba;
+      if (bd === 0) ba = 0.34 * bmul;
+      else if (bd <= 2) ba = 0.26 * bmul;
+      else if (bd <= Math.floor(btlen * 0.68)) ba = 0.18 * bmul;
+      else ba = 0.1 * bmul;
+      requestRainCtx.fillStyle =
+        'rgba(' + bgR + ',' + bgG + ',' + bgB + ',' + ba.toFixed(3) + ')';
+      requestRainCtx.fillText(bch, bcol.x, byy);
+    }
+  }
   for (c = 0; c < requestRainColumns.length; c++) {
     var col = requestRainColumns[c];
+    if (col.actSeed != null && col.actSeed > requestRainIntensity) continue;
     var tlen = col.trailLen;
     var headRow = Math.floor(col.headY / Math.max(1, lh));
     for (var d = 0; d < tlen; d++) {
       var row = headRow - d;
+      // micro-hold：仅 head 附近小段挂住（保持 y 不变），不影响 head 前进
+      if (d < 5 && col.microHoldFrames && col.microHoldRows && col.microHoldFrames[d] > 0) {
+        row = col.microHoldRows[d];
+      }
       var yy = row * lh;
       if (yy < -lh * 2 || yy > h + lh) continue;
       if (col.gaps && col.gaps[d]) continue;
@@ -1910,7 +2129,14 @@ function drawRequestRainFrame(w, h) {
       if (!ch) ch = pickMatrixIntroChar(pool);
       var mul = col.alphaMul;
       if (d === 0) {
-        // 头部：高亮白
+        // 头部：高亮白 + 轻微辉光（仅头部；立即复位，避免影响尾迹）
+        var blur = Math.max(6, Math.min(18, lh * 0.95));
+        requestRainCtx.save();
+        requestRainCtx.shadowColor = 'rgba(255,255,255,0.55)';
+        requestRainCtx.shadowBlur = blur;
+        requestRainCtx.fillStyle = 'rgba(255,255,255,0.22)';
+        requestRainCtx.fillText(ch, col.x, yy);
+        requestRainCtx.restore();
         requestRainCtx.fillStyle = 'rgba(255,255,255,0.92)';
       } else {
         // 离散磷光分档：避免“现代渐变”观感
@@ -1939,6 +2165,20 @@ function requestRainTick() {
     requestRainRaf = null;
     return;
   }
+  if (requestRainBuildStartMs > 0 && requestRainIntensity < 1) {
+    var now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    var t = (now - requestRainBuildStartMs) / REQUEST_RAIN_BUILD_MS;
+    if (t >= 1) {
+      requestRainIntensity = 1;
+    } else if (t <= 0) {
+      requestRainIntensity = REQUEST_RAIN_BUILD_START_INTENSITY;
+    } else {
+      var ease = 1 - Math.pow(1 - t, 2);
+      requestRainIntensity =
+        REQUEST_RAIN_BUILD_START_INTENSITY +
+        (1 - REQUEST_RAIN_BUILD_START_INTENSITY) * ease;
+    }
+  }
   var rect = asciiActiveFrame.getBoundingClientRect();
   var w = Math.max(1, Math.floor(rect.width));
   var h = Math.max(1, Math.floor(rect.height));
@@ -1962,6 +2202,9 @@ function requestRainTick() {
 function startRequestRainEffect() {
   if (!requestRainCanvas || !requestRainCtx) return;
   if (stream) return;
+  requestRainIntensity = REQUEST_RAIN_BUILD_START_INTENSITY;
+  requestRainBuildStartMs =
+    (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   resizeRequestRainCanvas();
   requestRainCanvas.classList.add('ascii-request-rain-canvas--mounted');
   requestRainCanvas.classList.add('ascii-request-rain-canvas--visible');
