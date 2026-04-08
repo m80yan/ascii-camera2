@@ -1747,16 +1747,23 @@ async function deletePhoto(userIndex) {
     var userList = AsciiCameraGalleryStorage.loadUserPhotos();
     if (userIndex < 0 || userIndex >= userList.length) return;
     var row = userList[userIndex];
-    // 云端合并写入的条目为 mine:false；本人或策展模式可删
-    if (row.mine === false && !curatorModeActive) return;
+    var photoIdForLikes = '';
+    if (row && typeof row.id === 'string' && row.id) {
+      photoIdForLikes = row.id;
+    } else if (AsciiCameraGalleryStorage.stableLegacyPhotoId) {
+      photoIdForLikes = AsciiCameraGalleryStorage.stableLegacyPhotoId(row);
+    }
+    var syncRef = window.AsciiCameraGalleryCloudSync;
+    var allowSupabaseDeleteAttempt =
+      syncRef &&
+      syncRef.isEnabled() &&
+      syncRef.getProvider() === 'supabase' &&
+      typeof syncRef.isUuidPhotoId === 'function' &&
+      syncRef.isUuidPhotoId(photoIdForLikes);
+    /** 云端条目可能 mine:false（仅 owner_id 对齐）但 RLS 仍允许 auth.uid()=user_id 删除；此类仍走 Supabase DELETE */
+    if (row.mine === false && !curatorModeActive && !allowSupabaseDeleteAttempt) return;
     var backup = JSON.parse(JSON.stringify(userList));
     var removed = row;
-    var photoIdForLikes = '';
-    if (removed && typeof removed.id === 'string' && removed.id) {
-      photoIdForLikes = removed.id;
-    } else if (AsciiCameraGalleryStorage.stableLegacyPhotoId) {
-      photoIdForLikes = AsciiCameraGalleryStorage.stableLegacyPhotoId(removed);
-    }
     var sync = window.AsciiCameraGalleryCloudSync;
     var useSupabaseRow =
       sync &&
@@ -2267,6 +2274,49 @@ window.addEventListener('message', function (ev) {
       });
   } else {
     refreshGallery();
+  }
+})();
+
+/**
+ * 在已配置 Supabase URL/anon key 时，用官方 JS client 建立或复用匿名 JWT（无 UI；失败静默）。
+ * 与 `gallery-cloud-sync.js` 的 fetch 路径独立，仅负责 `auth` 会话持久化。
+ * @returns {Promise<void>}
+ */
+async function ensureAnonymousSession() {
+  try {
+    var w = window;
+    var url = (w.ASCII_CAMERA_SUPABASE_URL && String(w.ASCII_CAMERA_SUPABASE_URL).trim()) || '';
+    var key = (w.ASCII_CAMERA_SUPABASE_ANON_KEY && String(w.ASCII_CAMERA_SUPABASE_ANON_KEY).trim()) || '';
+    if (!url || !key) return;
+    var mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.102.1/+esm');
+    var createClient = mod && mod.createClient;
+    if (typeof createClient !== 'function') return;
+    var supabase = createClient(url, key);
+    w.__ASCII_GALLERY_SUPABASE__ = supabase;
+    var got = await supabase.auth.getSession();
+    if (got && got.data && got.data.session) return;
+    if (typeof supabase.auth.signInAnonymously === 'function') {
+      await supabase.auth.signInAnonymously();
+    }
+  } catch (e) {
+    /* 静默：离线、CSP、或未启用匿名登录等 */
+  }
+}
+
+/**
+ * 页面加载后异步触发一次 {@link ensureAnonymousSession}，不阻塞首屏渲染。
+ * @returns {void}
+ */
+(function scheduleEnsureAnonymousSession() {
+  function run() {
+    setTimeout(function () {
+      void ensureAnonymousSession();
+    }, 0);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
   }
 })();
 </script>

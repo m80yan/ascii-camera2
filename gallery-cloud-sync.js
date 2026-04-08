@@ -392,6 +392,30 @@
   }
 
   /**
+   * 复用 `gallery.html` 里 `ensureAnonymousSession` 挂载的 `window.__ASCII_GALLERY_SUPABASE__`，供 REST 写入携带 JWT 与 `user_id`（满足 `user_id = auth.uid()`）。
+   * @returns {Promise<{ accessToken: string, userId: string } | null>}
+   */
+  function getGallerySupabaseAuthForRest() {
+    var sb = global.__ASCII_GALLERY_SUPABASE__;
+    if (!sb || !sb.auth || typeof sb.auth.getSession !== 'function') {
+      return Promise.resolve(null);
+    }
+    return sb.auth
+      .getSession()
+      .then(function (result) {
+        var sess = result && result.data && result.data.session;
+        var uid = sess && sess.user && sess.user.id;
+        if (!sess || !sess.access_token || uid == null || uid === '') {
+          return null;
+        }
+        return { accessToken: sess.access_token, userId: String(uid) };
+      })
+      .catch(function () {
+        return null;
+      });
+  }
+
+  /**
    * 将 `ascii_photos` 行转为画廊 UI 用条目：`time` 来自 `created_at`；列表拉取不含 `frames`（悬停时再取）。
    * `owner_id` 缺失或空时 `mine` 为 false（不猜测历史行归属）。
    * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown, is_animated?: unknown, frame_count?: unknown, fps?: unknown, duration_ms?: unknown }} row
@@ -548,6 +572,7 @@
 
   /**
    * 向 `ascii_photos` 插入一行（不整包覆盖）；`id` 为 UUID 时与本地 `prependUserPhoto` 对齐。
+   * 写入前从 `window.__ASCII_GALLERY_SUPABASE__` 取 session，设置 `Authorization: Bearer <access_token>` 与 body `user_id`；无会话则返回 false（静默）。
    * @param {{ ascii: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} photo
    * @returns {Promise<boolean>}
    */
@@ -556,98 +581,105 @@
     var c = getSupabaseConfig();
     var table = getSupabasePhotosTable();
     var url = c.url + '/rest/v1/' + encodeURIComponent(table);
-    var createdIso =
-      typeof photo.time === 'number' && Number.isFinite(photo.time)
-        ? new Date(photo.time).toISOString()
-        : new Date().toISOString();
-    var isAnim = photo.isAnimated === true;
-    /** @type {{ ascii: string, color: string, created_at: string, owner_id: string, id?: string, is_animated: boolean, frames: string[] | null, frame_count: number | null, fps: number | null, duration_ms: number | null }} */
-    var body = {
-      ascii: photo.ascii,
-      color: typeof photo.color === 'string' ? photo.color : '#00ff41',
-      created_at: createdIso,
-      owner_id: getOrCreateDeviceId(),
-      is_animated: isAnim,
-      frames: null,
-      frame_count: null,
-      fps: null,
-      duration_ms: null
-    };
-    if (isAnim && Array.isArray(photo.frames) && photo.frames.length > 0) {
-      body.frames = photo.frames;
-      body.frame_count =
-        typeof photo.frameCount === 'number' && Number.isFinite(photo.frameCount)
-          ? photo.frameCount
-          : photo.frames.length;
-      body.fps =
-        typeof photo.fps === 'number' && Number.isFinite(photo.fps) ? photo.fps : 6;
-      body.duration_ms =
-        typeof photo.durationMs === 'number' && Number.isFinite(photo.durationMs)
-          ? photo.durationMs
-          : 2000;
-    }
-    if (isUuidString(photo.id)) {
-      body.id = photo.id;
-    }
     var prefer = isUuidString(photo.id) ? 'return=minimal' : 'return=representation';
     pushInFlight = true;
-    return fetch(url, {
-      method: 'POST',
-      cache: 'no-store',
-      headers: {
-        apikey: c.anonKey,
-        Authorization: 'Bearer ' + c.anonKey,
-        'Content-Type': 'application/json',
-        Prefer: prefer
-      },
-      body: JSON.stringify(body)
-    })
-      .then(function (res) {
-        if (res.ok || res.status === 409) {
-          if (res.status === 409) return true;
-          if (prefer === 'return=representation') {
-            return res.json().then(function (rows) {
-              var row = Array.isArray(rows) && rows[0] ? rows[0] : null;
-              var newId = row && row.id != null ? String(row.id) : '';
-              if (
-                newId &&
-                global.AsciiCameraGalleryStorage &&
-                typeof global.AsciiCameraGalleryStorage.setUserPhotoIdAt === 'function'
-              ) {
-                global.AsciiCameraGalleryStorage.setUserPhotoIdAt(0, newId);
+    return getGallerySupabaseAuthForRest()
+      .then(function (auth) {
+        if (!auth) {
+          return false;
+        }
+        var createdIso =
+          typeof photo.time === 'number' && Number.isFinite(photo.time)
+            ? new Date(photo.time).toISOString()
+            : new Date().toISOString();
+        var isAnim = photo.isAnimated === true;
+        /** @type {{ ascii: string, color: string, created_at: string, owner_id: string, user_id: string, id?: string, is_animated: boolean, frames: string[] | null, frame_count: number | null, fps: number | null, duration_ms: number | null }} */
+        var body = {
+          ascii: photo.ascii,
+          color: typeof photo.color === 'string' ? photo.color : '#00ff41',
+          created_at: createdIso,
+          owner_id: getOrCreateDeviceId(),
+          user_id: auth.userId,
+          is_animated: isAnim,
+          frames: null,
+          frame_count: null,
+          fps: null,
+          duration_ms: null
+        };
+        if (isAnim && Array.isArray(photo.frames) && photo.frames.length > 0) {
+          body.frames = photo.frames;
+          body.frame_count =
+            typeof photo.frameCount === 'number' && Number.isFinite(photo.frameCount)
+              ? photo.frameCount
+              : photo.frames.length;
+          body.fps =
+            typeof photo.fps === 'number' && Number.isFinite(photo.fps) ? photo.fps : 6;
+          body.duration_ms =
+            typeof photo.durationMs === 'number' && Number.isFinite(photo.durationMs)
+              ? photo.durationMs
+              : 2000;
+        }
+        if (isUuidString(photo.id)) {
+          body.id = photo.id;
+        }
+        return fetch(url, {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            apikey: c.anonKey,
+            Authorization: 'Bearer ' + auth.accessToken,
+            'Content-Type': 'application/json',
+            Prefer: prefer
+          },
+          body: JSON.stringify(body)
+        })
+          .then(function (res) {
+            if (res.ok || res.status === 409) {
+              if (res.status === 409) return true;
+              if (prefer === 'return=representation') {
+                return res.json().then(function (rows) {
+                  var row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+                  var newId = row && row.id != null ? String(row.id) : '';
+                  if (
+                    newId &&
+                    global.AsciiCameraGalleryStorage &&
+                    typeof global.AsciiCameraGalleryStorage.setUserPhotoIdAt === 'function'
+                  ) {
+                    global.AsciiCameraGalleryStorage.setUserPhotoIdAt(0, newId);
+                  }
+                  return true;
+                });
               }
               return true;
+            }
+            return readFetchErrorText(res).then(function (detail) {
+              return Promise.reject(
+                new Error('ascii_photos insert ' + res.status + (detail ? ': ' + detail : ''))
+              );
             });
-          }
-          return true;
-        }
-        return readFetchErrorText(res).then(function (detail) {
-          return Promise.reject(
-            new Error('ascii_photos insert ' + res.status + (detail ? ': ' + detail : ''))
-          );
-        });
-      })
-      .catch(function (err) {
-        if (typeof global.console !== 'undefined' && global.console.warn) {
-          global.console.warn('[gallery-sync] ascii_photos INSERT failed', err);
-        }
-        syncStatus.lastPushAt = Date.now();
-        syncStatus.lastPushOk = false;
-        syncStatus.lastPushError = err && err.message ? String(err.message) : String(err);
-        emitStatus();
-        return false;
-      })
-      .then(function (ok) {
-        if (ok) {
-          if (typeof global.console !== 'undefined' && global.console.info) {
-            global.console.info('[gallery-sync] ascii_photos INSERT success');
-          }
-          syncStatus.lastPushAt = Date.now();
-          syncStatus.lastPushOk = true;
-          syncStatus.lastPushError = '';
-          emitStatus();
-        }
-        return ok;
+          })
+          .catch(function (err) {
+            if (typeof global.console !== 'undefined' && global.console.warn) {
+              global.console.warn('[gallery-sync] ascii_photos INSERT failed', err);
+            }
+            syncStatus.lastPushAt = Date.now();
+            syncStatus.lastPushOk = false;
+            syncStatus.lastPushError = err && err.message ? String(err.message) : String(err);
+            emitStatus();
+            return false;
+          })
+          .then(function (ok) {
+            if (ok) {
+              if (typeof global.console !== 'undefined' && global.console.info) {
+                global.console.info('[gallery-sync] ascii_photos INSERT success');
+              }
+              syncStatus.lastPushAt = Date.now();
+              syncStatus.lastPushOk = true;
+              syncStatus.lastPushError = '';
+              emitStatus();
+            }
+            return ok;
+          });
       })
       .finally(function () {
         pushInFlight = false;
@@ -657,9 +689,10 @@
   /**
    * 按主键删除 `ascii_photos` 一行；非 UUID 的遗留 id 仅跳过远端（本地已删）。
    * @param {string} photoId
+   * @param {{ accessToken: string, userId: string } | null} [authOpt] 来自 {@link getGallerySupabaseAuthForRest}；缺省则回退 anon JWT
    * @returns {Promise<boolean>}
    */
-  function deletePhotoRowSupabase(photoId) {
+  function deletePhotoRowSupabase(photoId, authOpt) {
     if (!photoId || typeof photoId !== 'string') return Promise.resolve(true);
     if (!isUuidString(photoId)) return Promise.resolve(true);
     var c = getSupabaseConfig();
@@ -670,16 +703,54 @@
       encodeURIComponent(table) +
       '?id=eq.' +
       encodeURIComponent(photoId);
+    var useJwt = !!(authOpt && authOpt.accessToken);
+    var bearer = useJwt ? authOpt.accessToken : c.anonKey;
+    // #region agent log
+    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '12e1b7' },
+      body: JSON.stringify({
+        sessionId: '12e1b7',
+        location: 'gallery-cloud-sync.js:deletePhotoRowSupabase',
+        message: 'DELETE request about to send',
+        data: {
+          hypothesisId: 'A',
+          table: table,
+          photoId8: photoId.slice(0, 8),
+          authHeaderKind: useJwt ? 'user_jwt' : 'anon_key',
+          hasWindowGallerySupabase: !!global.__ASCII_GALLERY_SUPABASE__
+        },
+        timestamp: Date.now()
+      })
+    }).catch(function () {});
+    // #endregion
     pushInFlight = true;
     return fetch(url, {
       method: 'DELETE',
       cache: 'no-store',
       headers: {
         apikey: c.anonKey,
-        Authorization: 'Bearer ' + c.anonKey
+        Authorization: 'Bearer ' + bearer
       }
     })
       .then(function (res) {
+        // #region agent log
+        fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '12e1b7' },
+          body: JSON.stringify({
+            sessionId: '12e1b7',
+            location: 'gallery-cloud-sync.js:deletePhotoRowSupabase',
+            message: 'DELETE response',
+            data: {
+              hypothesisId: 'A',
+              httpStatus: res.status,
+              ok: res.ok
+            },
+            timestamp: Date.now()
+          })
+        }).catch(function () {});
+        // #endregion
         if (res.ok || res.status === 404) {
           if (typeof global.console !== 'undefined' && global.console.info) {
             global.console.info(
@@ -1037,22 +1108,60 @@
       return Promise.resolve(true);
     }
     var bypass = opts && opts.bypassOwnershipCheck === true;
-    if (isUuidString(photoId) && !bypass) {
-      if (!isSupabasePhotoMineById(photoId)) {
-        if (typeof global.console !== 'undefined' && global.console.warn) {
-          global.console.warn(
-            '[gallery-sync] ascii_photos DELETE skipped (not owner) id=' + photoId
-          );
+    return getGallerySupabaseAuthForRest()
+      .then(function (auth) {
+        // #region agent log
+        fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '12e1b7' },
+          body: JSON.stringify({
+            sessionId: '12e1b7',
+            location: 'gallery-cloud-sync.js:deletePhotoRow',
+            message: 'deletePhotoRow after getSession',
+            data: {
+              hypothesisId: 'B',
+              photoId8: photoId ? String(photoId).slice(0, 8) : '',
+              isUuid: isUuidString(photoId),
+              bypass: bypass,
+              hasAuth: !!auth,
+              mineIfChecked:
+                isUuidString(photoId) && !bypass && !auth ? isSupabasePhotoMineById(photoId) : null
+            },
+            timestamp: Date.now()
+          })
+        }).catch(function () {});
+        // #endregion
+        if (isUuidString(photoId) && !bypass && !auth) {
+          if (!isSupabasePhotoMineById(photoId)) {
+            if (typeof global.console !== 'undefined' && global.console.warn) {
+              global.console.warn(
+                '[gallery-sync] ascii_photos DELETE skipped (not owner) id=' + photoId
+              );
+            }
+            // #region agent log
+            fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '12e1b7' },
+              body: JSON.stringify({
+                sessionId: '12e1b7',
+                location: 'gallery-cloud-sync.js:deletePhotoRow',
+                message: 'DELETE blocked by ownership gate',
+                data: { hypothesisId: 'B', photoId8: photoId ? String(photoId).slice(0, 8) : '' },
+                timestamp: Date.now()
+              })
+            }).catch(function () {});
+            // #endregion
+            return Promise.resolve(false);
+          }
         }
-        return Promise.resolve(false);
-      }
-    }
-    return deletePhotoRowSupabase(photoId).then(function (ok) {
-      if (!ok) return false;
-      return pullOnce().then(function () {
-        return true;
+        return deletePhotoRowSupabase(photoId, auth);
+      })
+      .then(function (ok) {
+        if (!ok) return false;
+        return pullOnce().then(function () {
+          return true;
+        });
       });
-    });
   }
 
   /**
@@ -1184,20 +1293,27 @@
     var c = getSupabaseConfig();
     var table = getLikesTable();
     var url = c.url + '/rest/v1/' + encodeURIComponent(table);
-    return fetch(url, {
-      method: 'POST',
-      cache: 'no-store',
-      headers: {
-        apikey: c.anonKey,
-        Authorization: 'Bearer ' + c.anonKey,
-        'Content-Type': 'application/json',
-        Prefer: 'return=minimal'
-      },
-      body: JSON.stringify({ photo_id: photoId, client_id: getOrCreateClientId() })
-    }).then(function (res) {
-      if (res.ok || res.status === 409) return;
-      return readFetchErrorText(res).then(function (detail) {
-        return Promise.reject(new Error('like POST ' + res.status + (detail ? ': ' + detail : '')));
+    return getGallerySupabaseAuthForRest().then(function (auth) {
+      if (!auth) return;
+      return fetch(url, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          apikey: c.anonKey,
+          Authorization: 'Bearer ' + auth.accessToken,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify({
+          photo_id: photoId,
+          client_id: getOrCreateClientId(),
+          user_id: auth.userId
+        })
+      }).then(function (res) {
+        if (res.ok || res.status === 409) return;
+        return readFetchErrorText(res).then(function (detail) {
+          return Promise.reject(new Error('like POST ' + res.status + (detail ? ': ' + detail : '')));
+        });
       });
     });
   }

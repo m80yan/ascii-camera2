@@ -3051,6 +3051,7 @@ async function persistPhotoToGallery(payload) {
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
       var syncCam = AsciiCameraGalleryCloudSync;
       if (syncCam.getProvider() === 'supabase' && typeof syncCam.insertPhotoRow === 'function') {
+        await ensureAnonymousSession();
         /** @type {{ ascii: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} */
         var insertPayload = Object.assign({}, savedRow || photoPayload);
         if (isAnim && payload.frames) insertPayload.frames = payload.frames;
@@ -3425,6 +3426,58 @@ requestAnimationFrame(function () {
   applyCaptureModeUi();
   if (!stream) startRequestRainEffect();
 });
+
+/**
+ * 在已配置 Supabase URL/anon key 时，用官方 JS client 建立或复用匿名 JWT（无 UI；失败静默）。
+ * 将 client 挂到 `window.__ASCII_GALLERY_SUPABASE__`，与 gallery 页一致，供 `gallery-cloud-sync.js` 的 `insertPhotoRow` REST 写入使用 session JWT 与 `user_id`。
+ * @returns {Promise<void>}
+ */
+async function ensureAnonymousSession() {
+  try {
+    var w = window;
+    var url = (w.ASCII_CAMERA_SUPABASE_URL && String(w.ASCII_CAMERA_SUPABASE_URL).trim()) || '';
+    var key = (w.ASCII_CAMERA_SUPABASE_ANON_KEY && String(w.ASCII_CAMERA_SUPABASE_ANON_KEY).trim()) || '';
+    if (!url || !key) return;
+    var existing = w.__ASCII_GALLERY_SUPABASE__;
+    if (existing && existing.auth && typeof existing.auth.getSession === 'function') {
+      var gotExisting = await existing.auth.getSession();
+      if (gotExisting && gotExisting.data && gotExisting.data.session) return;
+      if (typeof existing.auth.signInAnonymously === 'function') {
+        await existing.auth.signInAnonymously();
+      }
+      return;
+    }
+    var mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.102.1/+esm');
+    var createClient = mod && mod.createClient;
+    if (typeof createClient !== 'function') return;
+    var supabase = createClient(url, key);
+    w.__ASCII_GALLERY_SUPABASE__ = supabase;
+    var got = await supabase.auth.getSession();
+    if (got && got.data && got.data.session) return;
+    if (typeof supabase.auth.signInAnonymously === 'function') {
+      await supabase.auth.signInAnonymously();
+    }
+  } catch (e) {
+    /* 静默：离线、CSP、或未启用匿名登录等 */
+  }
+}
+
+/**
+ * 页面加载后异步触发一次 {@link ensureAnonymousSession}，不阻塞首屏渲染。
+ * @returns {void}
+ */
+(function scheduleEnsureAnonymousSession() {
+  function run() {
+    setTimeout(function () {
+      void ensureAnonymousSession();
+    }, 0);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
+})();
 </script>
 </body>
 </html>
