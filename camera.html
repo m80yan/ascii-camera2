@@ -214,7 +214,7 @@
     max-width: 100%;
     min-height: 36px;
     height: 36px;
-    margin-top: calc(2 * var(--cam-ctl-select-h));
+    margin-top: 0;
     padding: 0 16px;
     display: inline-flex;
     align-items: center;
@@ -285,11 +285,29 @@
     flex-direction: column;
     align-items: stretch;
   }
-  /** 与主列同宽，避免在加宽的外层取景器里显得过宽 */
-  #ascii-viewer-stack #saved-msg {
+  /**
+   * Submit 区域：不改变控件/按钮间距，只把原本按钮的 `margin-top` 间隔“容器化”，
+   * 让 SAVING/SAVED 文案显示在该间隔中间。
+   */
+  .cam-submit-wrap {
+    width: 100%;
     max-width: var(--cam-actions-row-w);
     margin-left: auto;
     margin-right: auto;
+    padding-top: calc(2 * var(--cam-ctl-select-h)); /* 与旧 Submit margin-top 等效 */
+    position: relative;
+    box-sizing: border-box;
+  }
+  .cam-submit-status-slot {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: calc(2 * var(--cam-ctl-select-h));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
   }
   #status { font-size: 11px; letter-spacing: 2px; opacity: 0.5; min-height: 22px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; pointer-events: none; text-align: center; color: inherit; }
   #status.live { color: #00ff41; opacity: 1; }
@@ -344,22 +362,21 @@
   .ascii-overlay-inner {
     width: 100%;
     min-height: var(--ascii-vf-overlay-row-h);
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    max-width: var(--cam-actions-row-w);
+    margin-left: auto;
+    margin-right: auto;
+    display: flex;
     align-items: center;
+    justify-content: space-between;
     box-sizing: border-box;
   }
   .ascii-overlay-side {
-    min-width: 0;
+    display: none;
   }
   .ascii-overlay-tabs {
-    grid-column: 2;
-    justify-self: center;
     max-width: 100%;
   }
   .ascii-overlay-flash {
-    grid-column: 3;
-    justify-self: end;
     min-width: 0;
   }
   /** Photo / Video：分段控件（共用外框、段间无空隙） */
@@ -384,6 +401,7 @@
     letter-spacing: 1px;
     text-transform: uppercase;
     padding: 0 10px;
+    min-width: calc(5ch + 20px);
     height: 100%;
     min-height: 0;
     box-sizing: border-box;
@@ -597,7 +615,7 @@
     line-height: 1.45;
     letter-spacing: 1px;
     color: inherit;
-    opacity: 0.5;
+    opacity: 1;
     text-align: center;
     white-space: normal;
     overflow-wrap: break-word;
@@ -648,7 +666,7 @@
     pointer-events: none;
     visibility: hidden;
   }
-  #saved-msg { margin: 4px 0 0; font-size: 12px; letter-spacing: 2px; opacity: 0; transition: opacity 0.3s; color: #ffd700; min-height: 20px; text-align: center; width: 100%; }
+  #saved-msg { margin: 0; font-size: 12px; letter-spacing: 2px; opacity: 0; transition: opacity 0.3s; color: #ffd700; min-height: 20px; text-align: center; width: 100%; }
   #saved-msg.show { opacity: 1; }
   video, canvas:not(.ascii-request-rain-canvas) { display: none; }
   /* Notion 等 iframe 嵌入时提示：摄像头需在独立标签页使用 */
@@ -726,7 +744,7 @@
             <div class="cam-mode-tabs-wrap" id="camModeTabsWrap">
               <div class="cam-mode-tabs" role="tablist" aria-label="Capture mode">
                 <button type="button" class="cam-mode-tab active" role="tab" id="camTabPhoto" aria-selected="true">Photo</button>
-                <button type="button" class="cam-mode-tab" role="tab" id="camTabVideo" aria-selected="false">Video</button>
+                <button type="button" class="cam-mode-tab" role="tab" id="camTabVideo" aria-selected="false">Loop</button>
               </div>
             </div>
           </div>
@@ -762,7 +780,6 @@
   </div>
   <div id="asciiOffHelper" class="ascii-off-helper" role="note" aria-live="polite">Click &quot;START CAMERA&quot; to begin</div>
 </div>
-<div id="saved-msg" aria-live="polite"></div>
 </div>
 </div>
 <div class="camera-content">
@@ -793,8 +810,8 @@
     <select id="resPicker">
       <option value="32">32 (Mini)</option>
       <option value="60">60 (Video)</option>
-      <option value="80">80 (Low)</option>
-      <option value="100" selected>100 (Medium)</option>
+      <option value="80" selected>80 (Low)</option>
+      <option value="100">100 (Medium)</option>
       <option value="120">120 (High)</option>
     </select>
   </label>
@@ -809,7 +826,12 @@
   </label>
   </div>
 </div>
-<button type="button" id="submitGalleryBtn" class="cam-submit-gallery-btn" disabled aria-label="Submit to gallery">Submit to Gallery</button>
+<div class="cam-submit-wrap">
+  <div class="cam-submit-status-slot">
+    <div id="saved-msg" aria-live="polite"></div>
+  </div>
+  <button type="button" id="submitGalleryBtn" class="cam-submit-gallery-btn" disabled aria-label="Submit to gallery">Submit to Gallery</button>
+</div>
 </div>
 </div>
 
@@ -883,7 +905,7 @@ const iframeOpenTab  = document.getElementById('iframe-open-tab');
 /** 拍照按钮就绪文案（与 HTML 初始一致） */
 const SNAP_LABEL_READY = '📷 Take Photo';
 /** Video 模式就绪文案 */
-const SNAP_LABEL_VIDEO = '🎥 Record';
+const SNAP_LABEL_VIDEO = '🎥 Make Loop';
 /** 写入存储过程中按钮文案 */
 const SNAP_LABEL_SAVING = 'Saving...';
 /** 预览态主按钮：重拍 */
@@ -891,17 +913,171 @@ const SNAP_LABEL_RETAKE_PHOTO = '📷 Retake';
 const SNAP_LABEL_RETAKE_VIDEO = '🎥 Retake';
 /** 动画录制：列数、帧率、时长与 Supabase 约定一致 */
 const VIDEO_COLS = 60;
+/** Video 模式默认列数（Video 下允许 60/80，默认 80） */
+const VIDEO_DEFAULT_COLS = 80;
 const VIDEO_FRAME_COUNT = 12;
 const VIDEO_FPS = 6;
 const VIDEO_DURATION_MS = 2000;
 /** Video：冻结帧上展示黄色「SAVED」的最短时长（ms） */
 const VIDEO_POST_RECORD_FREEZE_MS = 1000;
 
+/** Photo 快门音效（站点根路径，如 `/public/sounds/shutter.mp3`） */
+const PHOTO_SHUTTER_SOUND_URL = '/public/sounds/shutter.mp3';
+/** Video 录制同期音效（单文件，与约 `VIDEO_DURATION_MS` 同期自然播放） */
+const VIDEO_RECORD_SOUND_URL = '/public/sounds/record.mp3';
+
+const PHOTO_SHUTTER_VOLUME = 0.5;
+const VIDEO_RECORD_VOLUME = 0.5;
+
+/** @type {HTMLAudioElement | null} */
+let photoShutterAudio = null;
+/** @type {HTMLAudioElement | null} */
+let videoRecordAudio = null;
+
+/**
+ * 懒创建并复用快门 `Audio`，`preload` 预加载。
+ * @returns {HTMLAudioElement | null}
+ */
+function getPhotoShutterAudio() {
+  if (!photoShutterAudio) {
+    try {
+      photoShutterAudio = new Audio(PHOTO_SHUTTER_SOUND_URL);
+      photoShutterAudio.preload = 'auto';
+      photoShutterAudio.volume = PHOTO_SHUTTER_VOLUME;
+    } catch (e) {
+      return null;
+    }
+  }
+  return photoShutterAudio;
+}
+
+/**
+ * 懒创建并复用 Video 录制音效 `Audio`。
+ * @returns {HTMLAudioElement | null}
+ */
+function getVideoRecordAudio() {
+  if (!videoRecordAudio) {
+    try {
+      videoRecordAudio = new Audio(VIDEO_RECORD_SOUND_URL);
+      videoRecordAudio.preload = 'auto';
+      videoRecordAudio.volume = VIDEO_RECORD_VOLUME;
+    } catch (e) {
+      return null;
+    }
+  }
+  return videoRecordAudio;
+}
+
+/**
+ * 在「拍照」按钮点击的同步栈内短暂静音 play 再 pause，避免约 3s 倒计时后 `play()` 因用户激活过期被浏览器拒绝。
+ * @returns {void}
+ */
+function primePhotoShutterAudioInUserGesture() {
+  var a = getPhotoShutterAudio();
+  if (!a) return;
+  try {
+    var v = a.volume;
+    a.volume = 0;
+    a.currentTime = 0;
+    var p = a.play();
+    if (p && typeof p.then === 'function') {
+      p.then(function () {
+        try {
+          a.pause();
+          a.currentTime = 0;
+          a.volume = v;
+        } catch (e2) {}
+      }).catch(function () {
+        try {
+          a.volume = v;
+        } catch (e3) {}
+      });
+    } else {
+      try {
+        a.volume = v;
+      } catch (e4) {}
+    }
+  } catch (e) {
+    try {
+      a.volume = PHOTO_SHUTTER_VOLUME;
+    } catch (e5) {}
+  }
+}
+
+/**
+ * 在用户手势内预热 Video 录制音效，避免倒计时结束时 `play()` 被拒。
+ * @returns {void}
+ */
+function primeVideoRecordAudioInUserGesture() {
+  var a = getVideoRecordAudio();
+  if (!a) return;
+  try {
+    var v = a.volume;
+    a.volume = 0;
+    a.currentTime = 0;
+    var p = a.play();
+    if (p && typeof p.then === 'function') {
+      p.then(function () {
+        try {
+          a.pause();
+          a.currentTime = 0;
+          a.volume = v;
+        } catch (e2) {}
+      }).catch(function () {
+        try {
+          a.volume = v;
+        } catch (e3) {}
+      });
+    } else {
+      try {
+        a.volume = v;
+      } catch (e4) {}
+    }
+  } catch (e) {
+    try {
+      a.volume = VIDEO_RECORD_VOLUME;
+    } catch (e5) {}
+  }
+}
+
+/**
+ * Photo 抓拍瞬间播放快门音；`play()` 失败不抛、不影响抓拍。
+ * @returns {void}
+ */
+function playPhotoShutterSound() {
+  var a = getPhotoShutterAudio();
+  if (!a) return;
+  try {
+    a.currentTime = 0;
+    var p = a.play();
+    if (p && typeof p.then === 'function') {
+      p.catch(function () {});
+    }
+  } catch (e) {
+  }
+}
+
+/**
+ * Video 开始录制时播放录制音效；失败不抛、不影响录制。
+ * @returns {void}
+ */
+function playVideoRecordSound() {
+  var a = getVideoRecordAudio();
+  if (!a) return;
+  try {
+    a.currentTime = 0;
+    var p = a.play();
+    if (p && typeof p.then === 'function') p.catch(function () {});
+  } catch (e) {}
+}
+
 /** @type {boolean} */
 let videoMode = false;
 /** Photo 模式下切到 Video 前记住的分辨率 / 比例 */
 let savedPhotoResValue = '';
 let savedPhotoAspectValue = '';
+/** @type {boolean} 从 Loop/Video 切回 Photo 时需恢复一次 */
+let restorePhotoSettingsAfterVideo = false;
 
 /** @type {boolean} 已拍未提交：预览态（本地循环 / 静帧，不上传） */
 let previewCaptureActive = false;
@@ -1070,13 +1246,13 @@ function syncResPickerOptionsVisibility() {
     var o = opts[i];
     var v = o.value;
     if (videoMode) {
-      o.hidden = v !== '60';
+      o.hidden = v !== '60' && v !== '80';
     } else {
       o.hidden = v === '60';
     }
   }
   if (!videoMode && resPicker.value === '60') {
-    var fb = '100';
+    var fb = '80';
     if (
       savedPhotoResValue &&
       savedPhotoResValue !== '60' &&
@@ -1095,9 +1271,9 @@ function syncResPickerOptionsVisibility() {
 function applyCaptureModeUi() {
   if (cameraShell) cameraShell.classList.toggle('cam-video-mode', videoMode);
   /**
-   * 未开摄像头：Style 禁用；Photo 下 Aspect/Resolution 可调；Video 下与已开摄像头时一致（60 + 1:1 且锁定）。
+   * 未开摄像头：Style 禁用；Photo 下 Aspect/Resolution 可调；Video 下与已开摄像头时一致（1:1；Resolution 可选 60/80）。
    * 预览态：仅确认画面，不可改比例/分辨率。
-   * 实时取景：Video 下锁定 Aspect / Resolution。
+   * 实时取景：Video 下锁定 Aspect（Resolution 可选 60/80）。
    */
   var flashSwitchLabel =
     flashToggle && flashToggle.parentElement && flashToggle.parentElement.classList.contains('flash-switch')
@@ -1113,16 +1289,16 @@ function applyCaptureModeUi() {
     }
     if (videoMode) {
       if (resPicker) {
-        resPicker.value = String(VIDEO_COLS);
-        resPicker.disabled = true;
-        resPicker.classList.add('select-strong-disabled');
+        if (resPicker.value !== '60' && resPicker.value !== '80') resPicker.value = String(VIDEO_DEFAULT_COLS);
+        resPicker.disabled = false;
+        resPicker.classList.remove('select-strong-disabled');
       }
       if (aspectPicker) {
         aspectPicker.value = '1:1';
         aspectPicker.disabled = true;
         aspectPicker.classList.add('select-strong-disabled');
       }
-      if (resPickerStack) resPickerStack.classList.add('select-locked');
+      if (resPickerStack) resPickerStack.classList.remove('select-locked');
       if (aspectPickerStack) aspectPickerStack.classList.add('select-locked');
     } else {
       if (aspectPicker) {
@@ -1135,14 +1311,22 @@ function applyCaptureModeUi() {
       }
       if (resPickerStack) resPickerStack.classList.remove('select-locked');
       if (aspectPickerStack) aspectPickerStack.classList.remove('select-locked');
-      if (
-        savedPhotoResValue &&
-        savedPhotoResValue !== '60' &&
-        resPicker.querySelector('option[value="' + savedPhotoResValue + '"]')
-      ) {
-        resPicker.value = savedPhotoResValue;
+      // 只在当前值为 Video 专用列数时回填 Photo 记忆值；避免覆盖用户在离线状态下手动选择的 Resolution。
+      if (resPicker && resPicker.value === '60') {
+        if (
+          savedPhotoResValue &&
+          savedPhotoResValue !== '60' &&
+          resPicker.querySelector('option[value="' + savedPhotoResValue + '"]')
+        ) {
+          resPicker.value = savedPhotoResValue;
+        } else {
+          resPicker.value = '80';
+        }
       }
-      if (savedPhotoAspectValue) aspectPicker.value = savedPhotoAspectValue;
+      if (restorePhotoSettingsAfterVideo) {
+        if (savedPhotoAspectValue) aspectPicker.value = savedPhotoAspectValue;
+        restorePhotoSettingsAfterVideo = false;
+      }
     }
     snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
   } else if (previewCaptureActive) {
@@ -1169,24 +1353,32 @@ function applyCaptureModeUi() {
       flashSwitchLabel.removeAttribute('aria-disabled');
     }
     aspectPicker.disabled = videoMode;
-    resPicker.disabled = videoMode;
-    resPicker.classList.toggle('select-strong-disabled', videoMode);
+    resPicker.disabled = false;
+    resPicker.classList.remove('select-strong-disabled');
     aspectPicker.classList.toggle('select-strong-disabled', videoMode);
-    if (resPickerStack) resPickerStack.classList.toggle('select-locked', videoMode);
+    if (resPickerStack) resPickerStack.classList.remove('select-locked');
     if (aspectPickerStack) aspectPickerStack.classList.toggle('select-locked', videoMode);
     if (videoMode) {
-      resPicker.value = String(VIDEO_COLS);
+      if (resPicker.value !== '60' && resPicker.value !== '80') resPicker.value = String(VIDEO_DEFAULT_COLS);
       aspectPicker.value = '1:1';
       snapBtn.textContent = SNAP_LABEL_VIDEO;
     } else {
-      if (
-        savedPhotoResValue &&
-        savedPhotoResValue !== '60' &&
-        resPicker.querySelector('option[value="' + savedPhotoResValue + '"]')
-      ) {
-        resPicker.value = savedPhotoResValue;
+      // 同上：仅在值无效（停留在 Video 的 60）时才恢复 Photo 的记忆值。
+      if (resPicker && resPicker.value === '60') {
+        if (
+          savedPhotoResValue &&
+          savedPhotoResValue !== '60' &&
+          resPicker.querySelector('option[value="' + savedPhotoResValue + '"]')
+        ) {
+          resPicker.value = savedPhotoResValue;
+        } else {
+          resPicker.value = '80';
+        }
       }
-      if (savedPhotoAspectValue) aspectPicker.value = savedPhotoAspectValue;
+      if (restorePhotoSettingsAfterVideo) {
+        if (savedPhotoAspectValue) aspectPicker.value = savedPhotoAspectValue;
+        restorePhotoSettingsAfterVideo = false;
+      }
       snapBtn.textContent = SNAP_LABEL_READY;
     }
   }
@@ -1241,6 +1433,10 @@ function setCaptureVideoMode(nextVideo) {
   if (nextVideo && !videoMode) {
     savedPhotoResValue = resPicker.value;
     savedPhotoAspectValue = aspectPicker.value;
+    restorePhotoSettingsAfterVideo = true;
+  }
+  if (!nextVideo && videoMode) {
+    restorePhotoSettingsAfterVideo = true;
   }
   videoMode = !!nextVideo;
   applyCaptureModeUi();
@@ -1424,9 +1620,8 @@ function syncAsciiLayout() {
  * @returns {number} 当前选取的列数，限制在 1 … MAX_RES_COLS（Video 模式固定 60）
  */
 function getCols() {
-  if (videoMode) return VIDEO_COLS;
   const n = parseInt(resPicker.value, 10);
-  if (!Number.isFinite(n)) return 100;
+  if (!Number.isFinite(n)) return 80;
   return Math.min(MAX_RES_COLS, Math.max(1, n));
 }
 
@@ -1439,11 +1634,17 @@ colorPicker.addEventListener('change', function () {
   syncIntroRequestRain();
 });
 resPicker.addEventListener('change', function () {
+  if (!videoMode && !previewCaptureActive) {
+    savedPhotoResValue = resPicker.value;
+  }
   invalidateAsciiCellMetrics();
   syncAsciiLayout();
   syncIntroRequestRain();
 });
 aspectPicker.addEventListener('change', function () {
+  if (!videoMode && !previewCaptureActive) {
+    savedPhotoAspectValue = aspectPicker.value;
+  }
   invalidateAsciiCellMetrics();
   syncAsciiLayout();
   syncIntroRequestRain();
@@ -1512,6 +1713,7 @@ const REQUEST_RAIN_BUILD_START_INTENSITY = 0.32;
  *   speed: number,
  *   trailLen: number,
  *   glyphs: string[],
+ *   glyphMirror: boolean[],
  *   gaps: boolean[],
  *   glyphRows: number,
  *   pauseFrames: number,
@@ -1562,18 +1764,54 @@ const INTRO_RAIN_SPACING_MUL = {
   100: 1.0,
   120: 0.88
 };
-/** 行高 = fontPx × mul，低分辨率略松、高分辨率略紧 */
-const INTRO_RAIN_LH_MUL = {
-  32: 1.36,
-  60: 1.3,
-  80: 1.25,
-  100: 1.2,
-  120: 1.15
-};
+/**
+ * Matrix 雨：开屏雨行高系数（全分辨率统一，保证竖向密度一致）。
+ * @type {number}
+ */
+const INTRO_RAIN_LINE_HEIGHT_MUL_UNIFIED = 1;
 
 /**
- * 字母（仅 ASCIICAMERA）+ 数字 + 符号 + 全项目 `CHAR_SETS` 块符并集。
- * @returns {string}
+ * 列内赋字时避免与上下邻格同字：随机重试次数上限。
+ * @type {number}
+ */
+const RAIN_GLYPH_ADJ_DUP_MAX_ATTEMPTS = 8;
+
+/**
+ * Matrix 雨：半角片假名单格水平镜像概率。
+ * @type {number}
+ */
+const MATRIX_RAIN_MIRROR_KATAKANA_PROB = 0.78;
+
+/**
+ * Matrix 雨：数字单格水平镜像概率（电影中数字亦常呈镜像感）。
+ * @type {number}
+ */
+const MATRIX_RAIN_MIRROR_NUMBER_PROB = 0.4;
+
+/**
+ * Matrix 雨：符号单格水平镜像概率。
+ * @type {number}
+ */
+const MATRIX_RAIN_MIRROR_SYMBOL_PROB = 0.48;
+
+/**
+ * Matrix 雨：大写拉丁字母镜像概率（池内已无小写）。
+ * @type {number}
+ */
+const MATRIX_RAIN_MIRROR_UPPER_LETTERS_PROB = 0.28;
+
+/**
+ * 半角片假名 + 数字 + 精选大写拉丁 + 用户指定符号 + 取景器 `CHAR_SETS` 块符并集（无小写）。
+ * @returns {{
+ *   katakana: string[],
+ *   numbers: string[],
+ *   letters: string[],
+ *   symbols: string[],
+ *   katakanaSet: Set<string>,
+ *   numberSet: Set<string>,
+ *   lettersSet: Set<string>,
+ *   symbolsSet: Set<string>
+ * }}
  */
 function buildMatrixIntroCharPool() {
   var katakana =
@@ -1588,8 +1826,16 @@ function buildMatrixIntroCharPool() {
     'ﾗﾘﾙﾚﾛ' +
     'ﾜｦﾝ';
   var numbers = '0123456789';
-  var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  var symbols = '+-*/\\|=<>:;._~!@#$%^&()';
+  /** 用户精选大写子集（无 A H I M O T U V W X Y） */
+  var letters = 'BCDEFGJKLNOPQRSZ';
+  /**
+   * 用户指定符号：ASCII 运算符/标点、`·•…` 与弯引号、逻辑符、破折号与省略号（再与 `CHAR_SETS` 块符并集合并）。
+   */
+  var symbols =
+    '+-*/\\|=<>:;.,_~!@#$%^&()`' +
+    '·•…:;\u2018\u2019\u201c\u201d' +
+    '\u2200\u2208\u2227\u2228\u00ac' +
+    '\u2014\u2015\u2026';
 
   /** 既有密度/块字符：至少包含 ·░▒▓；并继续并入 CHAR_SETS 的块字符 */
   var blockSeen = new Set();
@@ -1607,20 +1853,73 @@ function buildMatrixIntroCharPool() {
     }
   });
 
+  var katakanaArr = katakana.split('');
+  var numbersArr = numbers.split('');
+  var lettersArr = letters.split('');
+  var symbolsArr = (symbols + blocks).split('');
+  var symbolsSetOut = new Set(symbolsArr);
+  // #region agent log
+  (function () {
+    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
+      body: JSON.stringify({
+        sessionId: '67cfc6',
+        location: 'camera.html:buildMatrixIntroCharPool',
+        message: 'Matrix symbolsSet probe (removed geo+CJK segments)',
+        data: {
+          hypothesisId: 'H1',
+          symbolsSetSize: symbolsSetOut.size,
+          hasU25CF: symbolsSetOut.has('\u25cf'),
+          hasU3001: symbolsSetOut.has('\u3001'),
+          hasU00AB: symbolsSetOut.has('\u00ab'),
+          hasU2660: symbolsSetOut.has('\u2660'),
+          hasU221E: symbolsSetOut.has('\u221e'),
+          runId: 'pool-trim-verify'
+        },
+        timestamp: Date.now()
+      })
+    }).catch(function () {});
+  })();
+  // #endregion
   return {
-    katakana: katakana.split(''),
-    numbers: numbers.split(''),
-    letters: letters.split(''),
-    symbols: (symbols + blocks).split('')
+    katakana: katakanaArr,
+    numbers: numbersArr,
+    letters: lettersArr,
+    symbols: symbolsArr,
+    katakanaSet: new Set(katakanaArr),
+    numberSet: new Set(numbersArr),
+    lettersSet: new Set(lettersArr),
+    symbolsSet: symbolsSetOut
   };
 }
 
-/** @type {{ katakana: string[], numbers: string[], letters: string[], symbols: string[] } | null} */
+/**
+ * @type {{
+ *   katakana: string[],
+ *   numbers: string[],
+ *   letters: string[],
+ *   symbols: string[],
+ *   katakanaSet: Set<string>,
+ *   numberSet: Set<string>,
+ *   lettersSet: Set<string>,
+ *   symbolsSet: Set<string>
+ * } | null}
+ */
 let matrixIntroPoolCache = null;
 
 /**
  * Matrix 开屏雨字符池（缓存；`CHAR_SETS` 为常量）。
- * @returns {{ katakana: string[], numbers: string[], letters: string[], symbols: string[] }}
+ * @returns {{
+ *   katakana: string[],
+ *   numbers: string[],
+ *   letters: string[],
+ *   symbols: string[],
+ *   katakanaSet: Set<string>,
+ *   numberSet: Set<string>,
+ *   lettersSet: Set<string>,
+ *   symbolsSet: Set<string>
+ * }}
  */
 function getMatrixIntroCharPool() {
   if (matrixIntroPoolCache == null) {
@@ -1630,7 +1929,36 @@ function getMatrixIntroCharPool() {
 }
 
 /**
- * 60% Katakana / 20% Numbers / 10% Letters / 10% Symbols+Blocks（非均匀随机）。
+ * 为单格字符决定是否水平镜像（仅在 glyph 赋值时调用，非每帧；与 `glyphs[i]` 同步）。
+ * 片假名 / 数字 / 符号 / 大写字母各有可调概率。
+ * @param {string} ch
+ * @param {{
+ *   katakanaSet?: Set<string>,
+ *   numberSet?: Set<string>,
+ *   lettersSet?: Set<string>,
+ *   symbolsSet?: Set<string>
+ * }} pool
+ * @returns {boolean}
+ */
+function assignGlyphMirror(ch, pool) {
+  if (!ch || !pool) return false;
+  if (pool.katakanaSet && pool.katakanaSet.has(ch)) {
+    return Math.random() < MATRIX_RAIN_MIRROR_KATAKANA_PROB;
+  }
+  if (pool.numberSet && pool.numberSet.has(ch)) {
+    return Math.random() < MATRIX_RAIN_MIRROR_NUMBER_PROB;
+  }
+  if (pool.symbolsSet && pool.symbolsSet.has(ch)) {
+    return Math.random() < MATRIX_RAIN_MIRROR_SYMBOL_PROB;
+  }
+  if (pool.lettersSet && pool.lettersSet.has(ch)) {
+    return Math.random() < MATRIX_RAIN_MIRROR_UPPER_LETTERS_PROB;
+  }
+  return false;
+}
+
+/**
+ * 偏电影感：约 38% 片假名 / 12% 数字 / 5% 大写 / 45% 符号与块符（非均匀随机）。
  * @param {{ katakana: string[], numbers: string[], letters: string[], symbols: string[] }} pool
  * @returns {string}
  */
@@ -1639,12 +1967,44 @@ function pickMatrixIntroChar(pool) {
   var r = Math.random();
   /** @type {string[]} */
   var arr;
-  if (r < 0.6) arr = pool.katakana;
-  else if (r < 0.8) arr = pool.numbers;
-  else if (r < 0.9) arr = pool.letters;
+  if (r < 0.38) arr = pool.katakana;
+  else if (r < 0.5) arr = pool.numbers;
+  else if (r < 0.55) arr = pool.letters;
   else arr = pool.symbols;
   if (!arr || arr.length < 1) return '·';
   return arr[Math.floor(Math.random() * arr.length)] || '·';
+}
+
+/**
+ * 若 `candidate` 或与随机重试得到的字与上下邻（同列 `glyphs`）相同则再选；尽量不破坏邻格镜像状态。
+ * @param {{ katakana: string[], numbers: string[], letters: string[], symbols: string[] }} pool
+ * @param {{ glyphs: string[] }} col
+ * @param {number} row
+ * @param {number} rows
+ * @param {string} candidate
+ * @returns {string}
+ */
+function resolveGlyphAvoidVertAdjacent(pool, col, row, rows, candidate) {
+  var up = row > 0 ? col.glyphs[row - 1] : null;
+  var dn = row < rows - 1 ? col.glyphs[row + 1] : null;
+  /**
+   * @param {string} ch
+   * @returns {boolean}
+   */
+  function conflicts(ch) {
+    if (!ch) return true;
+    if (up != null && ch === up) return true;
+    if (dn != null && ch === dn) return true;
+    return false;
+  }
+  if (!conflicts(candidate)) return candidate;
+  var k;
+  var ch;
+  for (k = 0; k < RAIN_GLYPH_ADJ_DUP_MAX_ATTEMPTS; k++) {
+    ch = pickMatrixIntroChar(pool);
+    if (!conflicts(ch)) return ch;
+  }
+  return candidate;
 }
 
 /**
@@ -1663,8 +2023,12 @@ function createRequestRainColumn(x, h, lh, pool, alphaMul) {
   /** @type {boolean[]} */
   var gaps = new Array(trailLen);
   var pauseFrames = 0;
+  /** @type {boolean[]} */
+  var glyphMirror = new Array(rows);
+  var colGlyphRef = { glyphs: glyphs };
   for (var gi = 0; gi < rows; gi++) {
-    glyphs[gi] = pickMatrixIntroChar(pool);
+    glyphs[gi] = resolveGlyphAvoidVertAdjacent(pool, colGlyphRef, gi, rows, pickMatrixIntroChar(pool));
+    glyphMirror[gi] = assignGlyphMirror(glyphs[gi], pool);
   }
   for (var i = 0; i < trailLen; i++) {
     // 10–20% 稀疏留白：固定在尾迹位置（不是每帧重新随机）。
@@ -1679,6 +2043,7 @@ function createRequestRainColumn(x, h, lh, pool, alphaMul) {
     speed: 2.2 + Math.random() * 4.2,
     trailLen: trailLen,
     glyphs: glyphs,
+    glyphMirror: glyphMirror,
     gaps: gaps,
     glyphRows: rows,
     pauseFrames: pauseFrames,
@@ -1709,8 +2074,14 @@ function createRequestRainBgColumn(x, h, lh, pool, alphaMul) {
   var trailLen = 4 + Math.floor(Math.random() * 9); // 4–12
   var rows = Math.max(6, Math.ceil(h / Math.max(1, lh)) + 4);
   var glyphs = new Array(rows);
+  /** @type {boolean[]} */
+  var glyphMirrorBg = new Array(rows);
   var gaps = new Array(trailLen);
-  for (var gi = 0; gi < rows; gi++) glyphs[gi] = pickMatrixIntroChar(pool);
+  var colGlyphRefBg = { glyphs: glyphs };
+  for (var gi = 0; gi < rows; gi++) {
+    glyphs[gi] = resolveGlyphAvoidVertAdjacent(pool, colGlyphRefBg, gi, rows, pickMatrixIntroChar(pool));
+    glyphMirrorBg[gi] = assignGlyphMirror(glyphs[gi], pool);
+  }
   for (var i = 0; i < trailLen; i++) gaps[i] = Math.random() < 0.16;
   return {
     x: x,
@@ -1721,6 +2092,7 @@ function createRequestRainBgColumn(x, h, lh, pool, alphaMul) {
     speed: (2.2 + Math.random() * 4.2) * 0.82,
     trailLen: trailLen,
     glyphs: glyphs,
+    glyphMirror: glyphMirrorBg,
     gaps: gaps,
     glyphRows: rows,
     pauseFrames: 0,
@@ -1754,6 +2126,12 @@ function createRequestRainBgColumn(x, h, lh, pool, alphaMul) {
 function evolveRequestRainColumnGlyphs(col, h, lh, pool, paused) {
   if (!col || !col.glyphs || col.glyphs.length < 1) return;
   var rows = col.glyphs.length;
+  if (!col.glyphMirror || col.glyphMirror.length !== rows) {
+    col.glyphMirror = new Array(rows);
+    for (var syncM = 0; syncM < rows; syncM++) {
+      col.glyphMirror[syncM] = assignGlyphMirror(col.glyphs[syncM], pool);
+    }
+  }
   var headRow = Math.floor(col.headY / Math.max(1, lh));
   var tlen = Math.max(1, col.trailLen);
   var mj = col.mutJ != null ? col.mutJ : 1;
@@ -1836,11 +2214,18 @@ function evolveRequestRainColumnGlyphs(col, h, lh, pool, paused) {
     rate *= mj;
     rate *= biasMul;
     if (Math.random() < rate) {
-      col.glyphs[r] = pickMutatedGlyph(r);
+      var candMut = pickMutatedGlyph(r);
+      col.glyphs[r] = resolveGlyphAvoidVertAdjacent(pool, col, r, rows, candMut);
       // 记录近期片段（限制长度，避免内存增长）
       if (col.glyphs[r]) {
         col.recentGlyphs.push(col.glyphs[r]);
         if (col.recentGlyphs.length > 7) col.recentGlyphs.shift();
+      }
+      var newCh = col.glyphs[r];
+      if (r > 0 && newCh === col.glyphs[r - 1]) {
+        col.glyphMirror[r] = col.glyphMirror[r - 1];
+      } else {
+        col.glyphMirror[r] = assignGlyphMirror(newCh, pool);
       }
     }
   }
@@ -1895,6 +2280,7 @@ function stepRequestRainColumn(col, h, lh, pool) {
     col.trailLen = 6 + Math.floor(Math.random() * 15);
     var rows = Math.max(6, Math.ceil(h / Math.max(1, lh)) + 4);
     col.glyphs = new Array(rows);
+    col.glyphMirror = new Array(rows);
     col.glyphRows = rows;
     col.gaps = new Array(col.trailLen);
     col.pauseFrames = 0;
@@ -1907,7 +2293,11 @@ function stepRequestRainColumn(col, h, lh, pool) {
     col.actBias = 0;
     col.actBiasTarget = 0;
     col.actBiasTtl = 0;
-    for (var gi = 0; gi < rows; gi++) col.glyphs[gi] = pickMatrixIntroChar(pool);
+    var colGlyphRefReset = { glyphs: col.glyphs };
+    for (var gi = 0; gi < rows; gi++) {
+      col.glyphs[gi] = resolveGlyphAvoidVertAdjacent(pool, colGlyphRefReset, gi, rows, pickMatrixIntroChar(pool));
+      col.glyphMirror[gi] = assignGlyphMirror(col.glyphs[gi], pool);
+    }
     for (var r = 0; r < col.trailLen; r++) col.gaps[r] = Math.random() < 0.14;
     return;
   }
@@ -1970,13 +2360,12 @@ function getIntroRainColumnSpacingMul(resCols) {
 }
 
 /**
- * @param {number} resCols
+ * 开屏雨行高系数：全分辨率档位统一为 {@link INTRO_RAIN_LINE_HEIGHT_MUL_UNIFIED}。
+ * @param {number} _resCols 保留与调用方一致；未再按档区分行高。
  * @returns {number}
  */
-function getIntroRainLineHeightMul(resCols) {
-  var tier = snapIntroRainResTier(resCols);
-  var m = INTRO_RAIN_LH_MUL[tier];
-  return m != null ? m : 1.2;
+function getIntroRainLineHeightMul(_resCols) {
+  return INTRO_RAIN_LINE_HEIGHT_MUL_UNIFIED;
 }
 
 /**
@@ -2100,6 +2489,31 @@ function initRequestRainColumns(w, h, cellW, lh) {
 }
 
 /**
+ * 在 `textAlign:center` / `textBaseline:top` 下绘制单字；`mirror` 时水平镜像（Matrix 雨）。
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {string} ch
+ * @param {number} x
+ * @param {number} yy
+ * @param {boolean} mirror
+ * @returns {void}
+ */
+function fillRequestRainGlyph(ctx, ch, x, yy, mirror) {
+  if (!mirror) {
+    ctx.fillText(ch, x, yy);
+    return;
+  }
+  ctx.save();
+  ctx.translate(x, yy);
+  ctx.scale(-1, 1);
+  ctx.fillText(ch, 0, 0);
+  ctx.restore();
+  // #region agent log
+  if (typeof window.__dbgMirroredFills !== 'number') window.__dbgMirroredFills = 0;
+  window.__dbgMirroredFills++;
+  // #endregion
+}
+
+/**
  * 等宽列绘制：绿分层透明度 + 白头；字符每帧流变 + 随机突变。
  * @param {number} w
  * @param {number} h
@@ -2107,6 +2521,9 @@ function initRequestRainColumns(w, h, cellW, lh) {
  */
 function drawRequestRainFrame(w, h) {
   if (!requestRainCtx) return;
+  // #region agent log
+  window.__dbgMirroredFills = 0;
+  // #endregion
   requestRainCtx.clearRect(0, 0, w, h);
   requestRainCtx.font = requestRainFontSpec;
   requestRainCtx.textAlign = 'center';
@@ -2142,6 +2559,7 @@ function drawRequestRainFrame(w, h) {
         ((brow % bcol.glyphs.length) + bcol.glyphs.length) % bcol.glyphs.length;
       var bch = bcol.glyphs[bidx];
       if (!bch) bch = pickMatrixIntroChar(pool);
+      var bmir = !!(bcol.glyphMirror && bcol.glyphMirror[bidx]);
       var bmul = bcol.alphaMul;
       var ba;
       if (bd === 0) ba = 0.44 * bmul;
@@ -2150,7 +2568,7 @@ function drawRequestRainFrame(w, h) {
       else ba = 0.14 * bmul;
       requestRainCtx.fillStyle =
         'rgba(' + bgR + ',' + bgG + ',' + bgB + ',' + ba.toFixed(3) + ')';
-      requestRainCtx.fillText(bch, bcol.x, byy);
+      fillRequestRainGlyph(requestRainCtx, bch, bcol.x, byy, bmir);
     }
   }
   for (c = 0; c < requestRainColumns.length; c++) {
@@ -2171,22 +2589,50 @@ function drawRequestRainFrame(w, h) {
       var idx = ((row % col.glyphs.length) + col.glyphs.length) % col.glyphs.length;
       var ch = col.glyphs[idx];
       if (!ch) ch = pickMatrixIntroChar(pool);
+      var mir = !!(col.glyphMirror && col.glyphMirror[idx]);
       var mul = col.alphaMul;
       if (d === 0) {
-        // 头部：高亮白 + 更强辉光（仅头部；立即复位，避免影响尾迹）
+        // 头部：三层均在同一 save 栈内完成；若在 restore 之后再画亮芯，shadow 会被清空，辉光几乎看不见。
         var blur1 = Math.max(10, Math.min(28, lh * 1.35));
         var blur2 = Math.max(6, Math.min(18, lh * 0.95));
+        var blurCore = Math.max(8, Math.min(24, lh * 0.9));
         requestRainCtx.save();
-        requestRainCtx.shadowColor = 'rgba(255,255,255,0.85)';
+        requestRainCtx.shadowColor = 'rgba(255,255,255,0.88)';
         requestRainCtx.shadowBlur = blur1;
-        requestRainCtx.fillStyle = 'rgba(255,255,255,0.18)';
-        requestRainCtx.fillText(ch, col.x, yy);
-        requestRainCtx.shadowColor = 'rgba(255,255,255,0.7)';
+        requestRainCtx.fillStyle = 'rgba(255,255,255,0.24)';
+        fillRequestRainGlyph(requestRainCtx, ch, col.x, yy, mir);
+        requestRainCtx.shadowColor = 'rgba(255,255,255,0.82)';
         requestRainCtx.shadowBlur = blur2;
-        requestRainCtx.fillStyle = 'rgba(255,255,255,0.28)';
-        requestRainCtx.fillText(ch, col.x, yy);
+        requestRainCtx.fillStyle = 'rgba(255,255,255,0.42)';
+        fillRequestRainGlyph(requestRainCtx, ch, col.x, yy, mir);
+        requestRainCtx.shadowColor = 'rgba(255,255,255,0.95)';
+        requestRainCtx.shadowBlur = blurCore;
+        requestRainCtx.fillStyle = 'rgba(255,255,255,0.98)';
+        fillRequestRainGlyph(requestRainCtx, ch, col.x, yy, mir);
         requestRainCtx.restore();
-        requestRainCtx.fillStyle = 'rgba(255,255,255,0.96)';
+        // #region agent log
+        if (typeof window.__dbgHeadGlowFrame === 'undefined') window.__dbgHeadGlowFrame = 0;
+        window.__dbgHeadGlowFrame++;
+        if (window.__dbgHeadGlowFrame % 75 === 0) {
+          fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
+            body: JSON.stringify({
+              sessionId: '67cfc6',
+              location: 'camera.html:drawRequestRainFrame',
+              message: 'head glow: 3 passes inside save, restore clears shadow',
+              data: {
+                hypothesisId: 'H1',
+                blurCore: blurCore,
+                lh: lh,
+                mir: mir,
+                runId: 'head-glow-post-fix'
+              },
+              timestamp: Date.now()
+            })
+          }).catch(function () {});
+        }
+        // #endregion
       } else {
         // 前景主体：尽量统一强度（不做明显列内阶梯），仅在极尾端轻微淡出
         var a = 0.52 * mul;
@@ -2195,9 +2641,42 @@ function drawRequestRainFrame(w, h) {
         requestRainCtx.fillStyle =
           'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + a.toFixed(3) + ')';
       }
-      requestRainCtx.fillText(ch, col.x, yy);
+      if (d !== 0) {
+        fillRequestRainGlyph(requestRainCtx, ch, col.x, yy, mir);
+      }
     }
   }
+  // #region agent log
+  (function dbgRainMirrorVerify() {
+    if (typeof window.__dbgRainFrameIdx === 'undefined') window.__dbgRainFrameIdx = 0;
+    window.__dbgRainFrameIdx++;
+    if (window.__dbgRainFrameIdx % 90 !== 0) return;
+    var col0 = requestRainColumns[0];
+    var mt = 0;
+    var gl = 0;
+    if (col0 && col0.glyphMirror && col0.glyphs) {
+      gl = col0.glyphs.length;
+      for (var di = 0; di < gl; di++) if (col0.glyphMirror[di]) mt++;
+    }
+    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
+      body: JSON.stringify({
+        sessionId: '67cfc6',
+        location: 'camera.html:drawRequestRainFrame',
+        message: 'rain mirror: state vs mirrored fill count',
+        data: {
+          hypothesisId: 'H1',
+          glyphRows: gl,
+          mirrorTrueInCol0: mt,
+          mirroredFillsThisFrame: typeof window.__dbgMirroredFills === 'number' ? window.__dbgMirroredFills : 0
+        },
+        timestamp: Date.now(),
+        runId: 'mirror-draw-verify'
+      })
+    }).catch(function () {});
+  })();
+  // #endregion
 }
 
 /**
@@ -2475,6 +2954,8 @@ async function captureVideoAsciiFrames() {
   var frameLumas = [];
   var cols = 0;
   var rows = 0;
+  var videoCols = getCols();
+  if (videoCols !== 60 && videoCols !== 80) videoCols = VIDEO_DEFAULT_COLS;
   var t0 = performance.now();
   for (var i = 0; i < VIDEO_FRAME_COUNT; i++) {
     var targetMs = (i / VIDEO_FPS) * 1000;
@@ -2485,7 +2966,7 @@ async function captureVideoAsciiFrames() {
       var wait = Math.min(32, targetMs - now);
       if (wait > 1) await sleep(wait);
     }
-    var pack = toAsciiWithLuminance(VIDEO_COLS, 1);
+    var pack = toAsciiWithLuminance(videoCols, 1);
     frames.push(pack.ascii);
     frameLumas.push(pack.luma);
     cols = pack.cols;
@@ -2501,6 +2982,29 @@ async function captureVideoAsciiFrames() {
  */
 async function persistPhotoToGallery(payload) {
   try {
+    // #region agent log
+    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
+      body: JSON.stringify({
+        sessionId: '67cfc6',
+        runId: 'gallery-save-debug',
+        hypothesisId: 'H1',
+        location: 'camera.html:persistPhotoToGallery:enter',
+        message: 'persist enter',
+        data: {
+          href: String(location && location.href),
+          origin: String(location && location.origin),
+          hasCloudSync: !!window.AsciiCameraGalleryCloudSync,
+          cloudEnabled: !!(window.AsciiCameraGalleryCloudSync && window.AsciiCameraGalleryCloudSync.isEnabled && window.AsciiCameraGalleryCloudSync.isEnabled()),
+          provider: (window.AsciiCameraGalleryCloudSync && window.AsciiCameraGalleryCloudSync.getProvider) ? window.AsciiCameraGalleryCloudSync.getProvider() : null,
+          isAnim: !!(payload && typeof payload === 'object' && payload.isAnimated === true),
+          payloadType: payload == null ? null : typeof payload
+        },
+        timestamp: Date.now()
+      })
+    }).catch(function () {});
+    // #endregion
     var isAnim =
       payload &&
       typeof payload === 'object' &&
@@ -2570,9 +3074,42 @@ async function persistPhotoToGallery(payload) {
         syncCam.pushFromLocal().catch(function () {});
       }
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
+      body: JSON.stringify({
+        sessionId: '67cfc6',
+        runId: 'gallery-save-debug',
+        hypothesisId: 'H2',
+        location: 'camera.html:persistPhotoToGallery:ok',
+        message: 'persist ok',
+        data: {
+          topPhotoId: (savedRow && savedRow.id) ? String(savedRow.id) : null,
+          userCount: (window.AsciiCameraGalleryStorage && window.AsciiCameraGalleryStorage.loadUserPhotos) ? window.AsciiCameraGalleryStorage.loadUserPhotos().length : null
+        },
+        timestamp: Date.now()
+      })
+    }).catch(function () {});
+    // #endregion
     return true;
   } catch (e) {
     console.error(e);
+    // #region agent log
+    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
+      body: JSON.stringify({
+        sessionId: '67cfc6',
+        runId: 'gallery-save-debug',
+        hypothesisId: 'H3',
+        location: 'camera.html:persistPhotoToGallery:catch',
+        message: 'persist threw',
+        data: { name: e && e.name, message: e && e.message },
+        timestamp: Date.now()
+      })
+    }).catch(function () {});
+    // #endregion
     return false;
   }
 }
@@ -2710,6 +3247,8 @@ snapBtn.addEventListener('click', async () => {
     if (el) el.disabled = true;
   });
   const useFlash = flashToggle.checked;
+  if (!videoMode) primePhotoShutterAudioInUserGesture();
+  else primeVideoRecordAudioInUserGesture();
   try {
     for (let n = 3; n >= 1; n--) {
       snapBtn.textContent = String(n);
@@ -2729,6 +3268,7 @@ snapBtn.addEventListener('click', async () => {
         cancelAnimationFrame(animId);
         animId = null;
       }
+      playPhotoShutterSound();
       var photoPack = toAsciiWithLuminance(cols);
       persistArg = {
         isPhotoPreview: true,
@@ -2751,6 +3291,7 @@ snapBtn.addEventListener('click', async () => {
         if (p < 1) recRaf = requestAnimationFrame(tickRecProgress);
       }
       recRaf = requestAnimationFrame(tickRecProgress);
+      playVideoRecordSound();
       var vf;
       try {
         vf = await captureVideoAsciiFrames();
