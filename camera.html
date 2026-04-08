@@ -808,11 +808,10 @@
   <label class="ctl-stack cc-left" id="resPickerStack">
     <span class="ctl-label">Resolution</span>
     <select id="resPicker">
-      <option value="32">32 (Mini)</option>
-      <option value="60">60 (Video)</option>
-      <option value="80" selected>80 (Low)</option>
-      <option value="100">100 (Medium)</option>
-      <option value="120">120 (High)</option>
+      <option value="48">48 (Low)</option>
+      <option value="72" selected>72 (Medium)</option>
+      <option value="96">96 (High)</option>
+      <option value="120">120 (Ultra)</option>
     </select>
   </label>
   <label class="ctl-stack cc-left" id="aspectPickerStack">
@@ -912,9 +911,9 @@ const SNAP_LABEL_SAVING = 'Saving...';
 const SNAP_LABEL_RETAKE_PHOTO = '📷 Retake';
 const SNAP_LABEL_RETAKE_VIDEO = '🎥 Retake';
 /** 动画录制：列数、帧率、时长与 Supabase 约定一致 */
-const VIDEO_COLS = 60;
-/** Video 模式默认列数（Video 下允许 60/80，默认 80） */
-const VIDEO_DEFAULT_COLS = 80;
+const VIDEO_COLS = 72;
+/** Loop 模式固定为 72 */
+const VIDEO_DEFAULT_COLS = 72;
 const VIDEO_FRAME_COUNT = 12;
 const VIDEO_FPS = 6;
 const VIDEO_DURATION_MS = 2000;
@@ -1235,7 +1234,7 @@ function updateModeTabsUi() {
 }
 
 /**
- * Photo：隐藏 `60 (Video)`；Video：仅显示 60。须在写入 `resPicker.value` 之后调用。
+ * Photo：显示 48/72/96/120；Loop：仅显示 72。须在写入 `resPicker.value` 之后调用。
  * @returns {void}
  */
 function syncResPickerOptionsVisibility() {
@@ -1246,22 +1245,12 @@ function syncResPickerOptionsVisibility() {
     var o = opts[i];
     var v = o.value;
     if (videoMode) {
-      o.hidden = v !== '60' && v !== '80';
+      o.hidden = v !== '72';
     } else {
-      o.hidden = v === '60';
+      o.hidden = false;
     }
   }
-  if (!videoMode && resPicker.value === '60') {
-    var fb = '80';
-    if (
-      savedPhotoResValue &&
-      savedPhotoResValue !== '60' &&
-      resPicker.querySelector('option[value="' + savedPhotoResValue + '"]')
-    ) {
-      fb = savedPhotoResValue;
-    }
-    resPicker.value = fb;
-  }
+  if (videoMode && resPicker.value !== '72') resPicker.value = '72';
 }
 
 /**
@@ -1289,8 +1278,8 @@ function applyCaptureModeUi() {
     }
     if (videoMode) {
       if (resPicker) {
-        if (resPicker.value !== '60' && resPicker.value !== '80') resPicker.value = String(VIDEO_DEFAULT_COLS);
-        resPicker.disabled = false;
+        resPicker.value = String(VIDEO_DEFAULT_COLS);
+        resPicker.disabled = true;
         resPicker.classList.remove('select-strong-disabled');
       }
       if (aspectPicker) {
@@ -1311,16 +1300,15 @@ function applyCaptureModeUi() {
       }
       if (resPickerStack) resPickerStack.classList.remove('select-locked');
       if (aspectPickerStack) aspectPickerStack.classList.remove('select-locked');
-      // 只在当前值为 Video 专用列数时回填 Photo 记忆值；避免覆盖用户在离线状态下手动选择的 Resolution。
-      if (resPicker && resPicker.value === '60') {
+      // 只在当前值为 Loop（Video）专用列数时回填 Photo 记忆值；避免覆盖用户在离线状态下手动选择的 Resolution。
+      if (resPicker && resPicker.value === '72') {
         if (
           savedPhotoResValue &&
-          savedPhotoResValue !== '60' &&
           resPicker.querySelector('option[value="' + savedPhotoResValue + '"]')
         ) {
           resPicker.value = savedPhotoResValue;
         } else {
-          resPicker.value = '80';
+          resPicker.value = '72';
         }
       }
       if (restorePhotoSettingsAfterVideo) {
@@ -1359,20 +1347,22 @@ function applyCaptureModeUi() {
     if (resPickerStack) resPickerStack.classList.remove('select-locked');
     if (aspectPickerStack) aspectPickerStack.classList.toggle('select-locked', videoMode);
     if (videoMode) {
-      if (resPicker.value !== '60' && resPicker.value !== '80') resPicker.value = String(VIDEO_DEFAULT_COLS);
+      if (resPicker) {
+        resPicker.value = String(VIDEO_DEFAULT_COLS);
+        resPicker.disabled = true;
+      }
       aspectPicker.value = '1:1';
       snapBtn.textContent = SNAP_LABEL_VIDEO;
     } else {
       // 同上：仅在值无效（停留在 Video 的 60）时才恢复 Photo 的记忆值。
-      if (resPicker && resPicker.value === '60') {
+      if (resPicker && resPicker.value === '72') {
         if (
           savedPhotoResValue &&
-          savedPhotoResValue !== '60' &&
           resPicker.querySelector('option[value="' + savedPhotoResValue + '"]')
         ) {
           resPicker.value = savedPhotoResValue;
         } else {
-          resPicker.value = '80';
+          resPicker.value = '72';
         }
       }
       if (restorePhotoSettingsAfterVideo) {
@@ -1750,18 +1740,16 @@ let requestRainTrailSpan = 15;
 
 /** 离散档 intro 雨基准字号（px，再乘画幅系数） */
 const INTRO_RAIN_FONT_BASE = {
-  32: 20.5,
-  60: 15.8,
-  80: 12.8,
-  100: 10.2,
-  120: 8.4
+  48: 16.0,
+  72: 12.5,
+  96: 10.0,
+  120: 8.6
 };
 /** 列距乘子：低分辨率更疏、高分辨率更密 */
 const INTRO_RAIN_SPACING_MUL = {
-  32: 0.88,
-  60: 0.88,
-  80: 0.88,
-  100: 0.88,
+  48: 0.88,
+  72: 0.88,
+  96: 0.88,
   120: 0.88
 };
 /**
@@ -2310,7 +2298,7 @@ function stepRequestRainColumn(col, h, lh, pool) {
  */
 function getRainResolutionCols() {
   var n = parseInt(resPicker.value, 10);
-  if (!Number.isFinite(n)) return 100;
+  if (!Number.isFinite(n)) return 72;
   return Math.min(MAX_RES_COLS, Math.max(1, n));
 }
 
@@ -2320,7 +2308,7 @@ function getRainResolutionCols() {
  * @returns {number}
  */
 function snapIntroRainResTier(resCols) {
-  var tiers = [32, 60, 80, 100, 120];
+  var tiers = [48, 72, 96, 120];
   var r = Math.min(MAX_RES_COLS, Math.max(1, resCols));
   var best = tiers[0];
   var d;
@@ -2955,7 +2943,7 @@ async function captureVideoAsciiFrames() {
   var cols = 0;
   var rows = 0;
   var videoCols = getCols();
-  if (videoCols !== 60 && videoCols !== 80) videoCols = VIDEO_DEFAULT_COLS;
+  if (videoCols !== 72) videoCols = VIDEO_DEFAULT_COLS;
   var t0 = performance.now();
   for (var i = 0; i < VIDEO_FRAME_COUNT; i++) {
     var targetMs = (i / VIDEO_FPS) * 1000;

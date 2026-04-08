@@ -130,6 +130,25 @@
    * @param {Array<{ascii:string,color?:string,time:number}>} arr
    */
   function saveUserPhotos(arr) {
+    // #region agent log
+    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
+      body: JSON.stringify({
+        sessionId: '67cfc6',
+        runId: 'gallery-save-debug',
+        hypothesisId: 'H2',
+        location: 'gallery-storage.js:saveUserPhotos',
+        message: 'saveUserPhotos setItem',
+        data: {
+          key: STORAGE_KEY,
+          len: Array.isArray(arr) ? arr.length : null,
+          origin: (typeof location !== 'undefined' && location.origin) ? String(location.origin) : null
+        },
+        timestamp: Date.now()
+      })
+    }).catch(function () {});
+    // #endregion
     localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
   }
 
