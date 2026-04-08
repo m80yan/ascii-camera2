@@ -5,8 +5,8 @@
  * You can also set env vars on Vercel only and run `npm run build` to emit `config.local.js`.
  * For file:// gallery.html, you need a filled config.local.js locally or the app shows a “cloud not configured” banner.
  */
-window.ASCII_CAMERA_SUPABASE_URL = '';
-window.ASCII_CAMERA_SUPABASE_ANON_KEY = '';
+window.ASCII_CAMERA_SUPABASE_URL = 'YOUR_SUPABASE_URL';
+window.ASCII_CAMERA_SUPABASE_ANON_KEY = 'YOUR_SUPABASE_KEY';
 window.ASCII_CAMERA_SUPABASE_TABLE = 'ascii_gallery_sync';
 window.ASCII_CAMERA_SUPABASE_ROW_ID = 'default';
 window.ASCII_CAMERA_SUPABASE_PHOTOS_TABLE = 'ascii_photos';
