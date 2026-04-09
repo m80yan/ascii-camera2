@@ -68,38 +68,6 @@
   };
 
   /**
-   * @param {string[]} arr
-   * @param {number} k
-   * @returns {string[]}
-   */
-  P.rotateStringArrayForLoopCover = function (arr, k) {
-    if (!arr || !arr.length) return [];
-    var n = arr.length;
-    var kk = ((k % n) + n) % n;
-    var out = new Array(n);
-    for (var i = 0; i < n; i++) {
-      out[i] = arr[(kk + i) % n];
-    }
-    return out;
-  };
-
-  /**
-   * @param {Float32Array[]} arr
-   * @param {number} k
-   * @returns {Float32Array[]}
-   */
-  P.rotateFloat32ArrayArrayForLoopCover = function (arr, k) {
-    if (!arr || !arr.length) return [];
-    var n = arr.length;
-    var kk = ((k % n) + n) % n;
-    var out = new Array(n);
-    for (var i = 0; i < n; i++) {
-      out[i] = arr[(kk + i) % n];
-    }
-    return out;
-  };
-
-  /**
    * @returns {void}
    */
   P.applyLoopCoverRotationFromCanonical = function () {
@@ -113,11 +81,11 @@
       for (var i = 0; i < p._loopCaptureLumas.length; i++) {
         tempFrames.push(l2a(p._loopCaptureLumas[i], p.previewCols, p.previewRows, chars));
       }
-      p.frames = P.rotateStringArrayForLoopCover(tempFrames, k);
-      p.frameLumas = P.rotateFloat32ArrayArrayForLoopCover(p._loopCaptureLumas, k);
+      p.frames = global.AsciiCameraLoop.rotateStringArrayForLoopCover(tempFrames, k);
+      p.frameLumas = global.AsciiCameraLoop.rotateFloat32ArrayArrayForLoopCover(p._loopCaptureLumas, k);
       p.ascii = p.frames[0] || '';
     } else if (p._loopCaptureFramesOnly && p._loopCaptureFramesOnly.length) {
-      p.frames = P.rotateStringArrayForLoopCover(p._loopCaptureFramesOnly, k);
+      p.frames = global.AsciiCameraLoop.rotateStringArrayForLoopCover(p._loopCaptureFramesOnly, k);
       p.ascii = p.frames[0] || '';
     } else {
       return;
@@ -286,18 +254,7 @@
     } else if (payload && payload.isPhotoPreview === true) {
       out.textContent = payload.ascii || '';
     } else if (payload && payload.isAnimated && payload.frames && payload.frames.length) {
-      if (payload.frameLumas && payload.frameLumas.length) {
-        payload._loopCaptureLumas = payload.frameLumas.map(function (f) {
-          var c = new Float32Array(f.length);
-          c.set(f);
-          return c;
-        });
-        payload._loopCaptureFramesOnly = null;
-      } else {
-        payload._loopCaptureFramesOnly = payload.frames.slice();
-        payload._loopCaptureLumas = null;
-      }
-      payload.coverFrameIndex = 0;
+      global.AsciiCameraLoop.attachCanonicalLoopCaptureBuffers(payload);
       out.textContent = payload.frames[0] || '';
       P.startPreviewAnimLoop(payload.frames);
     }
@@ -404,8 +361,11 @@
         for (var ci = 0; ci < p._loopCaptureLumas.length; ci++) {
           framesOutCanon.push(l2a1(p._loopCaptureLumas[ci], p.previewCols, p.previewRows, chars));
         }
-        p.frames = P.rotateStringArrayForLoopCover(framesOutCanon, P.loopCoverFrameIndex);
-        p.frameLumas = P.rotateFloat32ArrayArrayForLoopCover(p._loopCaptureLumas, P.loopCoverFrameIndex);
+        p.frames = global.AsciiCameraLoop.rotateStringArrayForLoopCover(framesOutCanon, P.loopCoverFrameIndex);
+        p.frameLumas = global.AsciiCameraLoop.rotateFloat32ArrayArrayForLoopCover(
+          p._loopCaptureLumas,
+          P.loopCoverFrameIndex
+        );
         p.ascii = p.frames[0] || '';
         p.coverFrameIndex = P.loopCoverFrameIndex;
         C().out.textContent = p.frames[0] || '';

@@ -1014,6 +1014,7 @@
 <script src="gallery-cloud-sync.js"></script>
 <script src="scripts/camera-ui.js"></script>
 <script src="scripts/camera-preview.js"></script>
+<script src="scripts/camera-loop.js"></script>
 <script>
 /** 由 `gallery-storage.js` 挂载 */
 var AsciiCameraGalleryStorage = window.AsciiCameraGalleryStorage;
@@ -1021,6 +1022,8 @@ var AsciiCameraGalleryStorage = window.AsciiCameraGalleryStorage;
 var AsciiCameraUi = window.AsciiCameraUi;
 /** 由 `scripts/camera-preview.js` 挂载 */
 var AsciiCameraPreview = window.AsciiCameraPreview;
+/** 由 `scripts/camera-loop.js` 挂载 */
+var AsciiCameraLoop = window.AsciiCameraLoop;
 
 /** 测量失败时的字宽/行高比回退值 */
 const CELL_ASPECT_FALLBACK = 0.55;
@@ -1088,9 +1091,7 @@ const SNAP_LABEL_SAVING = 'Saving...';
 /** 预览态主按钮：重拍 */
 const SNAP_LABEL_RETAKE_PHOTO = '📷 Retake';
 const SNAP_LABEL_RETAKE_VIDEO = '🎥 Retake';
-/** 动画录制：列数、帧率、时长与 Supabase 约定一致 */
-const VIDEO_COLS = 72;
-/** Loop 模式固定为 72 */
+/** Loop 模式固定列数（与 `AsciiCameraLoop.VIDEO_COLS` 一致） */
 const VIDEO_DEFAULT_COLS = 72;
 /**
  * Photo 模式默认画幅（竖幅 3:4）；Loop 仍由 `applyCaptureModeUi` 强制 1:1，不使用本常量。
@@ -1098,9 +1099,9 @@ const VIDEO_DEFAULT_COLS = 72;
  */
 const PHOTO_DEFAULT_ASPECT = '3:4';
 AsciiCameraUi.setCaptureConstants({ VIDEO_DEFAULT_COLS: VIDEO_DEFAULT_COLS });
-const VIDEO_FRAME_COUNT = 12;
-const VIDEO_FPS = 6;
-const VIDEO_DURATION_MS = 2000;
+const VIDEO_FRAME_COUNT = AsciiCameraLoop.VIDEO_FRAME_COUNT;
+const VIDEO_FPS = AsciiCameraLoop.VIDEO_FPS;
+const VIDEO_DURATION_MS = AsciiCameraLoop.VIDEO_DURATION_MS;
 /** Video：冻结帧上展示黄色「SAVED」的最短时长（ms） */
 const VIDEO_POST_RECORD_FREEZE_MS = 1000;
 
@@ -2912,29 +2913,7 @@ function focusOpenerGalleryAfterSave() {
  * @returns {Promise<{ frames: string[], frameLumas: Float32Array[], cols: number, rows: number }>}
  */
 async function captureVideoAsciiFrames() {
-  var frames = [];
-  var frameLumas = [];
-  var cols = 0;
-  var rows = 0;
-  var videoCols = getCols();
-  if (videoCols !== 72) videoCols = VIDEO_DEFAULT_COLS;
-  var t0 = performance.now();
-  for (var i = 0; i < VIDEO_FRAME_COUNT; i++) {
-    var targetMs = (i / VIDEO_FPS) * 1000;
-    var now;
-    for (;;) {
-      now = performance.now() - t0;
-      if (now >= targetMs - 0.5) break;
-      var wait = Math.min(32, targetMs - now);
-      if (wait > 1) await sleep(wait);
-    }
-    var pack = toAsciiWithLuminance(videoCols, 1);
-    frames.push(pack.ascii);
-    frameLumas.push(pack.luma);
-    cols = pack.cols;
-    rows = pack.rows;
-  }
-  return { frames: frames, frameLumas: frameLumas, cols: cols, rows: rows };
+  return AsciiCameraLoop.captureVideoAsciiFrames();
 }
 
 /**
@@ -3094,6 +3073,13 @@ function restartLiveAsciiPreview() {
   render();
 }
 
+AsciiCameraLoop.bindLoopCapture({
+  sleep: sleep,
+  toAsciiWithLuminance: toAsciiWithLuminance,
+  getCols: getCols,
+  VIDEO_DEFAULT_COLS: VIDEO_DEFAULT_COLS
+});
+
 AsciiCameraPreview.bindCore({
   get videoMode() {
     return videoMode;
@@ -3114,7 +3100,7 @@ AsciiCameraPreview.bindCore({
   invalidateAsciiCellMetrics: invalidateAsciiCellMetrics,
   syncAsciiLayout: syncAsciiLayout,
   render: render,
-  VIDEO_FPS: VIDEO_FPS,
+  VIDEO_FPS: AsciiCameraLoop.VIDEO_FPS,
   SNAP_LABEL_RETAKE_PHOTO: SNAP_LABEL_RETAKE_PHOTO,
   SNAP_LABEL_RETAKE_VIDEO: SNAP_LABEL_RETAKE_VIDEO,
   SNAP_LABEL_READY: SNAP_LABEL_READY,
