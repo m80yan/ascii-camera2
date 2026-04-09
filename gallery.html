@@ -526,11 +526,10 @@
         <div class="upload-ctl">
           <span class="upload-ctl-label">Aspect</span>
           <select id="upload-aspect" aria-label="Aspect">
-            <option value="free">Free</option>
+            <option value="1:1">1:1</option>
             <option value="16:9">16:9</option>
             <option value="4:3">4:3</option>
-            <option value="3:4">3:4 (Portrait)</option>
-            <option value="1:1">1:1</option>
+            <option value="3:4" selected>3:4 (Portrait)</option>
           </select>
         </div>
       </div>
@@ -863,7 +862,8 @@ function getUploadCharSet() {
 }
 
 /**
- * @returns {number|null}
+ * 与 `camera.html` 中 `getAspectRatio()` / `#aspectPicker` 选项一致。
+ * @returns {number}
  */
 function getUploadAspectNumber() {
   const v = uploadAspect.value;
@@ -871,7 +871,7 @@ function getUploadAspectNumber() {
   if (v === '4:3') return 4 / 3;
   if (v === '3:4') return 3 / 4;
   if (v === '1:1') return 1;
-  return null;
+  return 1;
 }
 
 /**

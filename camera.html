@@ -92,7 +92,9 @@
     justify-content: center;
     line-height: 1;
   }
-  /** 状态行：占满 `.camera-content` 宽 */
+  /**
+   * 原 `#status` 已移至取景 overlay 行；保留空行占位，维持与原先一致的顶栏下间距（不改 Start / Snap 与下方控件间距）。
+   */
   .cam-status-below-actions {
     width: 100%;
     margin: 0 0 10px;
@@ -305,12 +307,143 @@
     top: 0;
     height: calc(2 * var(--cam-ctl-select-h));
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     justify-content: center;
     pointer-events: none;
   }
+  /**
+   * Loop 预览封面滑块：与 Submit 同宽，仅占 status slot 内，不增加 `.cam-submit-wrap` 的 padding。
+   */
+  #loop-cover-ui {
+    width: 100%;
+    max-width: 100%;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    padding: 0 2px;
+    pointer-events: auto;
+  }
+  #loop-cover-ui[hidden] {
+    display: none !important;
+  }
+  .loop-cover-inner {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+  /**
+   * Loop 封面 range：白底直轨（与 `.video-progress-track` 同 6px 高）、与背景同色的 `#0A0A0A` 刻度画在轨内；绿色方形拇指。
+   */
+  #loopCoverSlider {
+    width: 100%;
+    max-width: 100%;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    cursor: pointer;
+    background: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    --loop-cover-n: 12;
+  }
+  #loopCoverSlider:focus {
+    outline: 1px solid rgba(0, 255, 65, 0.45);
+    outline-offset: 1px;
+  }
+  #loopCoverSlider:focus:not(:focus-visible) {
+    outline: none;
+  }
+  #loopCoverSlider::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 6px;
+    border-radius: 0;
+    border: none;
+    background-color: #ffffff;
+    background-image: repeating-linear-gradient(
+      to right,
+      #0a0a0a 0 1px,
+      transparent 1px calc(100% / max(1, calc(var(--loop-cover-n) - 1)))
+    );
+  }
+  /** 单帧：轨内居中一条与背景同色的竖线 */
+  #loopCoverSlider.loop-cover-slider--single::-webkit-slider-runnable-track {
+    background-image: linear-gradient(
+      to right,
+      #ffffff 0 calc(50% - 0.5px),
+      #0a0a0a calc(50% - 0.5px) calc(50% + 0.5px),
+      #ffffff calc(50% + 0.5px) 100%
+    );
+    background-color: #ffffff;
+  }
+  #loopCoverSlider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -3px;
+    background: #00ff41;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  #loopCoverSlider::-moz-range-track {
+    width: 100%;
+    height: 6px;
+    border-radius: 0;
+    border: none;
+    background-color: #ffffff;
+    background-image: repeating-linear-gradient(
+      to right,
+      #0a0a0a 0 1px,
+      transparent 1px calc(100% / max(1, calc(var(--loop-cover-n) - 1)))
+    );
+  }
+  #loopCoverSlider.loop-cover-slider--single::-moz-range-track {
+    background-image: linear-gradient(
+      to right,
+      #ffffff 0 calc(50% - 0.5px),
+      #0a0a0a calc(50% - 0.5px) calc(50% + 0.5px),
+      #ffffff calc(50% + 0.5px) 100%
+    );
+    background-color: #ffffff;
+  }
+  #loopCoverSlider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: #00ff41;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  #loopCoverSlider::-moz-focus-outer {
+    border: 0;
+  }
+  .loop-cover-label-track {
+    position: relative;
+    width: 100%;
+    height: 13px;
+    margin-top: 0;
+    pointer-events: none;
+  }
+  #loopCoverLabel {
+    position: absolute;
+    top: 0;
+    left: 0%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: rgba(0, 255, 65, 0.85);
+    white-space: nowrap;
+    line-height: 1.2;
+  }
   #status { font-size: 11px; letter-spacing: 2px; opacity: 0.5; min-height: 22px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; pointer-events: none; text-align: center; color: inherit; }
   #status.live { color: #00ff41; opacity: 1; }
+  /** 取景中不显示「CAMERA ON」文案，仅保留绿点 */
+  #status.live .status-text { display: none; }
   .status-live-suffix { display: none; align-items: center; flex-shrink: 0; }
   #status.live .status-live-suffix { display: inline-flex; }
   #status .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #00ff41; box-shadow: 0 0 8px rgba(0,255,65,0.85); flex-shrink: 0; }
@@ -360,6 +493,7 @@
     pointer-events: auto;
   }
   .ascii-overlay-inner {
+    position: relative;
     width: 100%;
     min-height: var(--ascii-vf-overlay-row-h);
     max-width: var(--cam-actions-row-w);
@@ -375,9 +509,31 @@
   }
   .ascii-overlay-tabs {
     max-width: 100%;
+    flex-shrink: 0;
   }
   .ascii-overlay-flash {
     min-width: 0;
+    flex-shrink: 0;
+  }
+  /**
+   * 状态 `#status`：脱离 flex 中间列，相对 `.ascii-overlay-inner`（与下方 `#asciiActiveFrame` 同列同宽）水平居中；
+   * 避免 Photo/Loop 与 Flash 不等宽时「中间列中心」与「画幅中心」错位导致绿点偏右。
+   */
+  .ascii-overlay-inner #status {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: 0;
+    bottom: 0;
+    flex: none;
+    width: max-content;
+    max-width: min(100%, calc(100% - 16px));
+    margin: 0;
+    padding: 0 8px;
+    box-sizing: border-box;
+    align-self: auto;
+    min-height: 0;
+    z-index: 2;
   }
   /** Photo / Video：分段控件（共用外框、段间无空隙） */
   .cam-mode-tabs-wrap {
@@ -667,6 +823,10 @@
     visibility: hidden;
   }
   #saved-msg { margin: 0; font-size: 12px; letter-spacing: 2px; opacity: 0; transition: opacity 0.3s; color: #ffd700; min-height: 20px; text-align: center; width: 100%; }
+  /** Loop 封面条显示时隐藏 SAVING/SAVED 占位，避免叠层 */
+  .cam-submit-status-slot.cam-submit-status-slot--loop-cover #saved-msg {
+    display: none;
+  }
   #saved-msg.show { opacity: 1; }
   video, canvas:not(.ascii-request-rain-canvas) { display: none; }
   /* Notion 等 iframe 嵌入时提示：摄像头需在独立标签页使用 */
@@ -714,14 +874,7 @@
   <button id="startBtn" type="button">Start Camera</button>
   <button id="snapBtn" type="button" disabled>📷 Take Photo</button>
 </div>
-<div class="cam-status-below-actions">
-  <div id="status">
-    <span class="status-text">CAMERA OFF</span>
-    <span class="status-live-suffix" aria-hidden="true">
-      <span class="status-dot"></span>
-    </span>
-  </div>
-</div>
+<div class="cam-status-below-actions" aria-hidden="true"></div>
 </div>
 <div class="viewfinder-shell">
 <video id="video" autoplay playsinline></video>
@@ -747,6 +900,12 @@
                 <button type="button" class="cam-mode-tab" role="tab" id="camTabVideo" aria-selected="false">Loop</button>
               </div>
             </div>
+          </div>
+          <div id="status" class="ascii-overlay-status" role="status">
+            <span class="status-text">CAMERA OFF</span>
+            <span class="status-live-suffix" aria-hidden="true">
+              <span class="status-dot"></span>
+            </span>
           </div>
           <div class="ascii-overlay-flash">
             <label class="flash-switch">
@@ -817,16 +976,24 @@
   <label class="ctl-stack cc-left" id="aspectPickerStack">
     <span class="ctl-label">Aspect</span>
     <select id="aspectPicker">
-      <option value="1:1" selected>1:1</option>
+      <option value="1:1">1:1</option>
       <option value="16:9">16:9</option>
       <option value="4:3">4:3</option>
-      <option value="3:4">3:4 (Portrait)</option>
+      <option value="3:4" selected>3:4 (Portrait)</option>
     </select>
   </label>
   </div>
 </div>
 <div class="cam-submit-wrap">
-  <div class="cam-submit-status-slot">
+  <div class="cam-submit-status-slot" id="camSubmitStatusSlot">
+    <div id="loop-cover-ui" class="loop-cover-ui" hidden aria-hidden="true">
+      <div class="loop-cover-inner">
+        <input type="range" id="loopCoverSlider" min="0" max="0" value="0" step="1" aria-label="Choose Loop cover frame" />
+        <div class="loop-cover-label-track">
+          <span id="loopCoverLabel">Set as cover</span>
+        </div>
+      </div>
+    </div>
     <div id="saved-msg" aria-live="polite"></div>
   </div>
   <button type="button" id="submitGalleryBtn" class="cam-submit-gallery-btn" disabled aria-label="Submit to gallery">Submit to Gallery</button>
@@ -875,6 +1042,10 @@ const snapBtn  = document.getElementById('snapBtn');
 const submitGalleryBtn = document.getElementById('submitGalleryBtn');
 const statusEl = document.getElementById('status');
 const savedMsg = document.getElementById('saved-msg');
+const camSubmitStatusSlot = document.getElementById('camSubmitStatusSlot');
+const loopCoverUi = document.getElementById('loop-cover-ui');
+const loopCoverSlider = document.getElementById('loopCoverSlider');
+const loopCoverLabel = document.getElementById('loopCoverLabel');
 const colorPicker    = document.getElementById('colorPicker');
 const densityPicker  = document.getElementById('densityPicker');
 const resPicker      = document.getElementById('resPicker');
@@ -914,6 +1085,11 @@ const SNAP_LABEL_RETAKE_VIDEO = '🎥 Retake';
 const VIDEO_COLS = 72;
 /** Loop 模式固定为 72 */
 const VIDEO_DEFAULT_COLS = 72;
+/**
+ * Photo 模式默认画幅（竖幅 3:4）；Loop 仍由 `applyCaptureModeUi` 强制 1:1，不使用本常量。
+ * @type {string}
+ */
+const PHOTO_DEFAULT_ASPECT = '3:4';
 const VIDEO_FRAME_COUNT = 12;
 const VIDEO_FPS = 6;
 const VIDEO_DURATION_MS = 2000;
@@ -1086,6 +1262,203 @@ let previewCaptureActive = false;
 let pendingGalleryPayload = null;
 /** @type {ReturnType<typeof setInterval> | null} 预览态 GIF 本地循环 */
 let previewAnimTimer = null;
+/** Loop 封面：选中的「录制时间序」帧索引（0..n-1），与 `pendingGalleryPayload.coverFrameIndex` 同步 */
+let loopCoverFrameIndex = 0;
+/** 指针在滑块上（未离开）：暂停循环；`mouseleave` 清除 */
+let loopCoverHoverLatch = false;
+/** 在滑块上按下拖动：暂停；`mouseup`/`touchend` 清除并顺带清 hover latch，以便松手后恢复循环 */
+let loopCoverPointerDown = false;
+
+/**
+ * 是否在滑块交互中暂停 Loop 预览循环（悬停未离轨或按住拖动）。
+ * @returns {boolean}
+ */
+function isLoopCoverSliderPauseActive() {
+  return loopCoverHoverLatch || loopCoverPointerDown;
+}
+
+/**
+ * 按当前 `pendingGalleryPayload.frames` 与暂停状态刷新取景：暂停则只显示 `frames[0]`，否则重启 interval 循环。
+ * @returns {void}
+ */
+function syncLoopCoverPreviewPlayback() {
+  var p = pendingGalleryPayload;
+  if (!previewCaptureActive || !p || !p.isAnimated || !p.frames || !p.frames.length) return;
+  if (!loopCoverUi || loopCoverUi.hidden) return;
+  clearPreviewAnimLoop();
+  out.textContent = p.frames[0] || '';
+  if (!isLoopCoverSliderPauseActive()) {
+    startPreviewAnimLoop(p.frames);
+  }
+}
+
+/**
+ * 将数组旋转为以索引 `k` 的元素为首（用于封面帧）。
+ * @param {string[]} arr
+ * @param {number} k
+ * @returns {string[]}
+ */
+function rotateStringArrayForLoopCover(arr, k) {
+  if (!arr || !arr.length) return [];
+  var n = arr.length;
+  var kk = ((k % n) + n) % n;
+  var out = new Array(n);
+  for (var i = 0; i < n; i++) {
+    out[i] = arr[(kk + i) % n];
+  }
+  return out;
+}
+
+/**
+ * @param {Float32Array[]} arr
+ * @param {number} k
+ * @returns {Float32Array[]}
+ */
+function rotateFloat32ArrayArrayForLoopCover(arr, k) {
+  if (!arr || !arr.length) return [];
+  var n = arr.length;
+  var kk = ((k % n) + n) % n;
+  var out = new Array(n);
+  for (var i = 0; i < n; i++) {
+    out[i] = arr[(kk + i) % n];
+  }
+  return out;
+}
+
+/**
+ * 按当前 `loopCoverFrameIndex` 从 `_loopCaptureLumas` / `_loopCaptureFramesOnly` 重算 `frames` 与 `frameLumas` 并刷新预览循环。
+ * @returns {void}
+ */
+function applyLoopCoverRotationFromCanonical() {
+  var p = pendingGalleryPayload;
+  if (!p || !p.isAnimated || !p.frames || !p.frames.length) return;
+  var k = loopCoverFrameIndex;
+  var chars = getChars();
+  if (p._loopCaptureLumas && p._loopCaptureLumas.length && p.previewCols && p.previewRows) {
+    var tempFrames = [];
+    for (var i = 0; i < p._loopCaptureLumas.length; i++) {
+      tempFrames.push(luminanceToAscii(p._loopCaptureLumas[i], p.previewCols, p.previewRows, chars));
+    }
+    p.frames = rotateStringArrayForLoopCover(tempFrames, k);
+    p.frameLumas = rotateFloat32ArrayArrayForLoopCover(p._loopCaptureLumas, k);
+    p.ascii = p.frames[0] || '';
+  } else if (p._loopCaptureFramesOnly && p._loopCaptureFramesOnly.length) {
+    p.frames = rotateStringArrayForLoopCover(p._loopCaptureFramesOnly, k);
+    p.ascii = p.frames[0] || '';
+  } else {
+    return;
+  }
+  p.coverFrameIndex = k;
+  clearPreviewAnimLoop();
+  out.textContent = p.frames[0] || '';
+  if (!isLoopCoverSliderPauseActive()) {
+    startPreviewAnimLoop(p.frames);
+  }
+  invalidateAsciiCellMetrics();
+  syncAsciiLayout();
+  updateLoopCoverLabelPosition();
+}
+
+/**
+ * 将滑块标签「Set as cover」置于与当前 thumb 对应的水平位置。
+ * @returns {void}
+ */
+function updateLoopCoverLabelPosition() {
+  if (!loopCoverSlider || !loopCoverLabel) return;
+  var min = parseFloat(loopCoverSlider.min);
+  var max = parseFloat(loopCoverSlider.max);
+  var v = parseFloat(loopCoverSlider.value);
+  if (!Number.isFinite(min)) min = 0;
+  if (!Number.isFinite(max)) max = 0;
+  if (!Number.isFinite(v)) v = 0;
+  var pct = max <= min ? 0 : ((v - min) / (max - min)) * 100;
+  loopCoverLabel.style.left = pct + '%';
+}
+
+/**
+ * 是否处于「Loop 预览」：仅此时允许显示封面滑块。
+ * @returns {boolean}
+ */
+function shouldShowLoopCoverUi() {
+  return (
+    previewCaptureActive === true &&
+    videoMode === true &&
+    pendingGalleryPayload != null &&
+    typeof pendingGalleryPayload === 'object' &&
+    pendingGalleryPayload.isAnimated === true &&
+    Array.isArray(pendingGalleryPayload.frames) &&
+    pendingGalleryPayload.frames.length > 0
+  );
+}
+
+/**
+ * 按 `previewCaptureActive` / `videoMode` / 动画 payload 统一显示或隐藏封面滑块，避免状态切换后残留。
+ * @returns {void}
+ */
+function syncLoopCoverUiVisibility() {
+  if (shouldShowLoopCoverUi()) {
+    var p = pendingGalleryPayload;
+    setupLoopCoverUi(p.frames.length, loopCoverFrameIndex);
+  } else {
+    hideLoopCoverUi();
+  }
+}
+
+/**
+ * Loop 预览：显示封面滑块（与 Submit 同宽），并挂上 slot class。
+ * @param {number} frameCount
+ * @param {number} [preserveIndex] 保存失败恢复 UI 时保持当前封面索引
+ * @returns {void}
+ */
+function setupLoopCoverUi(frameCount, preserveIndex) {
+  if (!loopCoverUi || !loopCoverSlider || !camSubmitStatusSlot) return;
+  var n = Math.max(1, Math.floor(frameCount));
+  loopCoverSlider.min = '0';
+  loopCoverSlider.max = String(Math.max(0, n - 1));
+  loopCoverSlider.step = '1';
+  if (arguments.length >= 2 && preserveIndex != null && Number.isFinite(preserveIndex)) {
+    var pi = Math.max(0, Math.min(n - 1, Math.floor(preserveIndex)));
+    loopCoverFrameIndex = pi;
+    loopCoverSlider.value = String(pi);
+  } else {
+    loopCoverSlider.value = '0';
+    loopCoverFrameIndex = 0;
+  }
+  loopCoverSlider.style.setProperty('--loop-cover-n', String(n));
+  if (n <= 1) {
+    loopCoverSlider.classList.add('loop-cover-slider--single');
+  } else {
+    loopCoverSlider.classList.remove('loop-cover-slider--single');
+  }
+  loopCoverUi.hidden = false;
+  loopCoverUi.setAttribute('aria-hidden', 'false');
+  camSubmitStatusSlot.classList.add('cam-submit-status-slot--loop-cover');
+  requestAnimationFrame(updateLoopCoverLabelPosition);
+}
+
+/**
+ * 提交失败后若仍在 Loop 预览，恢复封面滑块显示。
+ * @returns {void}
+ */
+function restoreLoopCoverUiAfterFailedSubmit() {
+  syncLoopCoverUiVisibility();
+}
+
+/**
+ * 隐藏 Loop 封面控件并恢复 status 区用于 SAVING/SAVED。
+ * @returns {void}
+ */
+function hideLoopCoverUi() {
+  loopCoverHoverLatch = false;
+  loopCoverPointerDown = false;
+  if (loopCoverUi) {
+    loopCoverUi.hidden = true;
+    loopCoverUi.setAttribute('aria-hidden', 'true');
+  }
+  if (camSubmitStatusSlot) {
+    camSubmitStatusSlot.classList.remove('cam-submit-status-slot--loop-cover');
+  }
+}
 
 /**
  * 停止预览动画循环。
@@ -1120,6 +1493,8 @@ function startPreviewAnimLoop(frames) {
  * @returns {void}
  */
 function enterPreviewState(payload) {
+  hideLoopCoverUi();
+  loopCoverFrameIndex = 0;
   previewCaptureActive = true;
   pendingGalleryPayload = payload;
   if (cameraShell) cameraShell.classList.add('cam-preview-capture');
@@ -1134,6 +1509,18 @@ function enterPreviewState(payload) {
   } else if (payload && payload.isPhotoPreview === true) {
     out.textContent = payload.ascii || '';
   } else if (payload && payload.isAnimated && payload.frames && payload.frames.length) {
+    if (payload.frameLumas && payload.frameLumas.length) {
+      payload._loopCaptureLumas = payload.frameLumas.map(function (f) {
+        var c = new Float32Array(f.length);
+        c.set(f);
+        return c;
+      });
+      payload._loopCaptureFramesOnly = null;
+    } else {
+      payload._loopCaptureFramesOnly = payload.frames.slice();
+      payload._loopCaptureLumas = null;
+    }
+    payload.coverFrameIndex = 0;
     out.textContent = payload.frames[0] || '';
     startPreviewAnimLoop(payload.frames);
   }
@@ -1156,6 +1543,8 @@ function enterPreviewState(payload) {
  * @returns {void}
  */
 function retakeFromPreview() {
+  hideLoopCoverUi();
+  loopCoverFrameIndex = 0;
   clearPreviewAnimLoop();
   previewCaptureActive = false;
   pendingGalleryPayload = null;
@@ -1175,6 +1564,8 @@ function retakeFromPreview() {
  * @returns {void}
  */
 function exitPreviewAfterSuccessfulSubmit() {
+  hideLoopCoverUi();
+  loopCoverFrameIndex = 0;
   clearPreviewAnimLoop();
   previewCaptureActive = false;
   pendingGalleryPayload = null;
@@ -1313,6 +1704,7 @@ function applyCaptureModeUi() {
       }
       if (restorePhotoSettingsAfterVideo) {
         if (savedPhotoAspectValue) aspectPicker.value = savedPhotoAspectValue;
+        else if (aspectPicker) aspectPicker.value = PHOTO_DEFAULT_ASPECT;
         restorePhotoSettingsAfterVideo = false;
       }
     }
@@ -1367,6 +1759,7 @@ function applyCaptureModeUi() {
       }
       if (restorePhotoSettingsAfterVideo) {
         if (savedPhotoAspectValue) aspectPicker.value = savedPhotoAspectValue;
+        else if (aspectPicker) aspectPicker.value = PHOTO_DEFAULT_ASPECT;
         restorePhotoSettingsAfterVideo = false;
       }
       snapBtn.textContent = SNAP_LABEL_READY;
@@ -1379,6 +1772,7 @@ function applyCaptureModeUi() {
   syncAsciiLayout();
   if (!stream) syncIntroRequestRain();
   if (stream && animId == null && !previewCaptureActive) render();
+  syncLoopCoverUiVisibility();
 }
 
 /**
@@ -2878,6 +3272,25 @@ function applyPreviewStyleFromDensity() {
     return;
   }
   if (p && p.isAnimated === true && Array.isArray(p.frameLumas) && p.previewCols && p.previewRows) {
+    if (p._loopCaptureLumas && p._loopCaptureLumas.length) {
+      var framesOutCanon = [];
+      for (var ci = 0; ci < p._loopCaptureLumas.length; ci++) {
+        framesOutCanon.push(luminanceToAscii(p._loopCaptureLumas[ci], p.previewCols, p.previewRows, chars));
+      }
+      p.frames = rotateStringArrayForLoopCover(framesOutCanon, loopCoverFrameIndex);
+      p.frameLumas = rotateFloat32ArrayArrayForLoopCover(p._loopCaptureLumas, loopCoverFrameIndex);
+      p.ascii = p.frames[0] || '';
+      p.coverFrameIndex = loopCoverFrameIndex;
+      out.textContent = p.frames[0] || '';
+      clearPreviewAnimLoop();
+      if (!isLoopCoverSliderPauseActive()) {
+        startPreviewAnimLoop(p.frames);
+      }
+      invalidateAsciiCellMetrics();
+      syncAsciiLayout();
+      updateLoopCoverLabelPosition();
+      return;
+    }
     var framesOut = [];
     for (var i = 0; i < p.frameLumas.length; i++) {
       framesOut.push(luminanceToAscii(p.frameLumas[i], p.previewCols, p.previewRows, chars));
@@ -2886,7 +3299,9 @@ function applyPreviewStyleFromDensity() {
     p.ascii = framesOut[0] || '';
     out.textContent = framesOut[0] || '';
     clearPreviewAnimLoop();
-    startPreviewAnimLoop(framesOut);
+    if (!isLoopCoverSliderPauseActive()) {
+      startPreviewAnimLoop(framesOut);
+    }
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
   }
@@ -2999,6 +3414,9 @@ async function persistPhotoToGallery(payload) {
       payload.isAnimated === true &&
       Array.isArray(payload.frames) &&
       payload.frames.length > 0;
+    if (isAnim && typeof payload === 'object') {
+      payload.coverFrameIndex = loopCoverFrameIndex;
+    }
     var asciiStr = '';
     if (isAnim) {
       asciiStr = String(payload.ascii || payload.frames[0] || '');
@@ -3055,6 +3473,7 @@ async function persistPhotoToGallery(payload) {
         /** @type {{ ascii: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} */
         var insertPayload = Object.assign({}, savedRow || photoPayload);
         if (isAnim && payload.frames) insertPayload.frames = payload.frames;
+        if (isAnim) insertPayload.coverFrameIndex = loopCoverFrameIndex;
         var camIns = await syncCam.insertPhotoRow(insertPayload);
         if (!camIns) {
           AsciiCameraGalleryStorage.deleteUserPhotoAt(0);
@@ -3118,12 +3537,14 @@ function restartLiveAsciiPreview() {
 
 function setStatusOffline() {
   statusEl.classList.remove('live');
+  statusEl.removeAttribute('aria-label');
   statusEl.querySelector('.status-text').textContent = 'CAMERA OFF';
 }
 
 function setStatusLive() {
   statusEl.classList.add('live');
-  statusEl.querySelector('.status-text').textContent = 'CAMERA ON';
+  statusEl.setAttribute('aria-label', 'Camera on');
+  statusEl.querySelector('.status-text').textContent = '';
 }
 
 startBtn.addEventListener('click', async () => {
@@ -3222,9 +3643,9 @@ startBtn.addEventListener('click', async () => {
  */
 snapBtn.addEventListener('click', async () => {
   if (!stream || snapCountdownActive) return;
+  /** Retake：先退出预览恢复实时取景，再与同一次点击走同一套倒计时与拍摄（不再要求用户再点一次主按钮）。 */
   if (previewCaptureActive) {
     retakeFromPreview();
-    return;
   }
   const cols = getCols();
   const ctl = [densityPicker, colorPicker, resPicker, aspectPicker, camTabPhoto, camTabVideo];
@@ -3353,6 +3774,7 @@ snapBtn.addEventListener('click', async () => {
 async function submitPreviewToGallery() {
   if (!previewCaptureActive || pendingGalleryPayload == null || !stream) return;
   var payload = pendingGalleryPayload;
+  hideLoopCoverUi();
   if (submitGalleryBtn) submitGalleryBtn.disabled = true;
   snapBtn.disabled = true;
   snapBtn.textContent = SNAP_LABEL_SAVING;
@@ -3360,11 +3782,9 @@ async function submitPreviewToGallery() {
   snapBtn.setAttribute('aria-busy', 'true');
   var isVideoCapture =
     payload && typeof payload === 'object' && payload.isAnimated === true;
-  if (!isVideoCapture) {
-    savedMsg.textContent = SNAP_LABEL_SAVING;
-    savedMsg.style.color = '#ffd700';
-    savedMsg.classList.add('show');
-  }
+  savedMsg.textContent = SNAP_LABEL_SAVING;
+  savedMsg.style.color = '#ffd700';
+  savedMsg.classList.add('show');
   try {
     var ok = await persistPhotoToGallery(payload);
     if (ok) {
@@ -3397,6 +3817,7 @@ async function submitPreviewToGallery() {
       savedMsg.classList.remove('show');
       if (submitGalleryBtn) submitGalleryBtn.disabled = false;
       snapBtn.disabled = false;
+      restoreLoopCoverUiAfterFailedSubmit();
     }
   } catch (e) {
     console.error(e);
@@ -3407,6 +3828,7 @@ async function submitPreviewToGallery() {
     savedMsg.classList.remove('show');
     if (submitGalleryBtn) submitGalleryBtn.disabled = false;
     snapBtn.disabled = false;
+    restoreLoopCoverUiAfterFailedSubmit();
   } finally {
     snapBtn.classList.remove('snap-saving');
     snapBtn.removeAttribute('aria-busy');
@@ -3421,6 +3843,76 @@ if (submitGalleryBtn) {
     void submitPreviewToGallery();
   });
 }
+
+if (loopCoverUi) {
+  loopCoverUi.addEventListener('mouseenter', function () {
+    if (!previewCaptureActive || !pendingGalleryPayload || !pendingGalleryPayload.isAnimated) return;
+    if (loopCoverUi.hidden) return;
+    loopCoverHoverLatch = true;
+    syncLoopCoverPreviewPlayback();
+  });
+  loopCoverUi.addEventListener('mouseleave', function () {
+    loopCoverHoverLatch = false;
+    syncLoopCoverPreviewPlayback();
+  });
+}
+if (loopCoverSlider) {
+  loopCoverSlider.addEventListener('input', function () {
+    if (!previewCaptureActive || !pendingGalleryPayload || !pendingGalleryPayload.isAnimated) return;
+    loopCoverFrameIndex = parseInt(loopCoverSlider.value, 10) || 0;
+    applyLoopCoverRotationFromCanonical();
+  });
+  loopCoverSlider.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    if (!previewCaptureActive || !pendingGalleryPayload || !pendingGalleryPayload.isAnimated) return;
+    loopCoverPointerDown = true;
+    syncLoopCoverPreviewPlayback();
+  });
+  window.addEventListener('mouseup', function () {
+    if (!loopCoverPointerDown) return;
+    loopCoverPointerDown = false;
+    loopCoverHoverLatch = false;
+    syncLoopCoverPreviewPlayback();
+  });
+  loopCoverSlider.addEventListener(
+    'touchstart',
+    function () {
+      if (!previewCaptureActive || !pendingGalleryPayload || !pendingGalleryPayload.isAnimated) return;
+      loopCoverPointerDown = true;
+      syncLoopCoverPreviewPlayback();
+    },
+    { passive: true }
+  );
+  window.addEventListener(
+    'touchend',
+    function () {
+      if (!loopCoverPointerDown) return;
+      loopCoverPointerDown = false;
+      loopCoverHoverLatch = false;
+      syncLoopCoverPreviewPlayback();
+    },
+    { passive: true }
+  );
+  window.addEventListener(
+    'touchcancel',
+    function () {
+      if (!loopCoverPointerDown) return;
+      loopCoverPointerDown = false;
+      loopCoverHoverLatch = false;
+      syncLoopCoverPreviewPlayback();
+    },
+    { passive: true }
+  );
+}
+
+window.addEventListener(
+  'resize',
+  function () {
+    if (!loopCoverUi || loopCoverUi.hidden) return;
+    updateLoopCoverLabelPosition();
+  },
+  { passive: true }
+);
 
 requestAnimationFrame(function () {
   applyCaptureModeUi();
