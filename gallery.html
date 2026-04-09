@@ -117,25 +117,28 @@
   #curate-mode-btn[hidden] {
     display: none !important;
   }
-  /** 与 `#upload-btn` 同款绿框与悬停（策展退出与上传操作视觉一致） */
-  #upload-btn,
+  /**
+   * 主行动：Open Camera、Exit Curate — 绿框/绿字/悬停（与原 `#upload-btn` 规则相同）。
+   * 次行动：Upload Image — 琥珀色（与原 `#live-btn` 规则相同）。
+   */
+  #live-btn,
+  #live-btn:visited,
   #curate-mode-btn {
     border: 1px solid #00ff41;
     color: #00ff41;
   }
-  #upload-btn:hover,
+  #live-btn:hover,
   #curate-mode-btn:hover {
     background: rgba(0, 255, 65, 0.1);
   }
-  /** 与相机页 `#snapBtn` 一致：琥珀色、略宽字距；`text-transform` 不强制，便于「OPEN CAMERA ➤」原样展示 */
-  #live-btn,
-  #live-btn:visited {
+  #upload-btn,
+  #upload-btn:visited {
     border: 1px solid #ffd700;
     color: #ffd700;
     letter-spacing: 1px;
     text-transform: none;
   }
-  #live-btn:hover {
+  #upload-btn:hover {
     background: rgba(255, 215, 0, 0.1);
   }
   #upload-input { display: none; }
