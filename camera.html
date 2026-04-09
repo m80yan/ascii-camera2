@@ -639,7 +639,7 @@
   }
   /**
    * 开屏 code-rain：仅 `.ascii-active-frame` 内（`overflow:hidden` 裁剪）；Start Camera 后淡出。
-   * 与隐藏采样 canvas 区分：`video, canvas:not(.ascii-request-rain-canvas)`。
+   * 与隐藏采样 canvas 区分：`video, canvas:not(.ascii-request-rain-canvas):not(.ascii-frame-mask-canvas)`。
    */
   .ascii-request-rain-canvas {
     position: absolute;
@@ -659,6 +659,23 @@
   .ascii-request-rain-canvas.ascii-request-rain-canvas--visible {
     opacity: 1;
   }
+  /**
+   * Photo 取景框遮罩画布：纯黑格、叠于雨效之上；不改动画幅尺寸与 ASCII 生成。
+   */
+  .ascii-frame-mask-canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 5;
+    pointer-events: none;
+    display: none;
+    opacity: 1;
+  }
+  .ascii-frame-mask-canvas.ascii-frame-mask-canvas--visible {
+    display: block;
+  }
   .ascii-slot-inner {
     display: flex;
     flex-direction: column;
@@ -675,6 +692,33 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: var(--cam-action-gap);
     row-gap: 12px;
+  }
+  /**
+   * 与 Aspect 列同列；`min-height` 与单行 `.flash-switch` 可视高度对齐，行 `display:none` 时槽仍占位，避免 Submit 区整体上移。
+   */
+  .frame-mask-slot {
+    grid-column: 2;
+    margin-top: -4px;
+    padding-top: 0;
+    min-height: 24px;
+    box-sizing: border-box;
+  }
+  .frame-mask-row {
+    min-height: 0;
+  }
+  /** 与 Flash 同款 `.flash-switch`，置于 Aspect 列内左对齐 */
+  .frame-mask-row .frame-mask-flash-switch {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  /**
+   * `[hidden]` 默认 `display:none` 会被 `.ctl-stack { display:flex }`（同级选择器、后写）覆盖，导致 Loop 下行仍可见。
+   * `#camera-shell.cam-video-mode` 作为双保险，保证 Video 下行不参与布局与点击。
+   */
+  #frameMaskRow[hidden],
+  #camera-shell.cam-video-mode #frameMaskRow {
+    display: none !important;
+    pointer-events: none !important;
   }
   .ascii-inner {
     flex: 1 1 auto;
@@ -828,7 +872,7 @@
     display: none;
   }
   #saved-msg.show { opacity: 1; }
-  video, canvas:not(.ascii-request-rain-canvas) { display: none; }
+  video, canvas:not(.ascii-request-rain-canvas):not(.ascii-frame-mask-canvas) { display: none; }
   /* Notion 等 iframe 嵌入时提示：摄像头需在独立标签页使用 */
   .iframe-hint {
     display: flex;
@@ -925,6 +969,8 @@
                   <pre id="ascii-out" aria-hidden="true">Click &quot;START CAMERA&quot; to begin</pre>
                 </div>
                 <canvas id="requestRainCanvas" class="ascii-request-rain-canvas" width="1" height="1" aria-hidden="true"></canvas>
+                <!-- Photo 取景预览专用：ASCII 格二值遮罩，不改变导出/提交；置于雨效之上 -->
+                <canvas id="asciiFrameMaskCanvas" class="ascii-frame-mask-canvas" width="1" height="1" aria-hidden="true"></canvas>
               </div>
               <div id="video-progress-root" class="video-progress-root video-progress-root--inactive" aria-hidden="true">
                 <div class="video-progress-track">
@@ -982,6 +1028,16 @@
       <option value="3:4" selected>3:4 (Portrait)</option>
     </select>
   </label>
+  <!-- 占位：行隐藏时仍保留与 Flash 行相近高度，避免整段控件区高度塌陷、Submit 上移 -->
+  <div class="frame-mask-slot" id="frameMaskSlot">
+    <div class="frame-mask-row ctl-stack cc-left" id="frameMaskRow" hidden>
+      <label class="flash-switch frame-mask-flash-switch" id="frameMaskFlashLabel">
+        <input type="checkbox" id="frameMaskCheckbox" autocomplete="off" />
+        <span class="flash-switch-box" aria-hidden="true"></span>
+        <span class="flash-switch-label" id="frameMaskLabelText">Evil Queen (Oval)</span>
+      </label>
+    </div>
+  </div>
   </div>
 </div>
 <div class="cam-submit-wrap">
@@ -1275,6 +1331,455 @@ AsciiCameraUi.initStateAccess({
   }
 });
 
+const frameMaskRow = document.getElementById('frameMaskRow');
+const frameMaskCheckbox = document.getElementById('frameMaskCheckbox');
+const frameMaskLabelText = document.getElementById('frameMaskLabelText');
+const asciiFrameMaskCanvas = document.getElementById('asciiFrameMaskCanvas');
+/** @type {CanvasRenderingContext2D | null} */
+const asciiFrameMaskCtx = asciiFrameMaskCanvas ? asciiFrameMaskCanvas.getContext('2d') : null;
+
+/** 用于 `change` 前把勾选写回上一比例的记忆（与 `aspectPicker.value` 同步于 `applyCaptureModeUi` 末尾）。 */
+var lastAspectPickerValueForMask = aspectPicker ? aspectPicker.value : '';
+
+/** Photo 下 3:4 / 1:1 各自记住取景框遮罩勾选（切 Loop 时仅隐藏 UI，不切记忆）。 */
+var frameMaskCheckedOval = false;
+
+/** @type {boolean} */
+var frameMaskCheckedRound = false;
+
+/** 遮罩动画进度 0…1（1 = 内接圆/椭圆最终态，格角为纯黑）。 */
+var photoFrameMaskEase = 0;
+
+/** @type {number | null} */
+var photoFrameMaskAnimRaf = null;
+
+/** @type {number} */
+var photoFrameMaskAnimStartMs = 0;
+
+/** @type {number} */
+var photoFrameMaskAnimFrom = 0;
+
+/** @type {number} */
+var photoFrameMaskAnimTo = 0;
+
+/** 与旧 box-shadow 过渡同量级，略短 ease-out。 */
+var PHOTO_FRAME_MASK_ANIM_MS = 400;
+
+/**
+ * Photo 比例是否支持取景框遮罩（仅预览 UI，不参与导出）。
+ * @returns {'oval' | 'round' | null}
+ */
+function getPhotoFrameMaskKind() {
+  if (videoMode || !aspectPicker) return null;
+  var v = aspectPicker.value;
+  if (v === '3:4') return 'oval';
+  if (v === '1:1') return 'round';
+  return null;
+}
+
+/**
+ * 与 `toAsciiWithLuminance` 一致：按列数与画面宽高比推算行数。
+ * @param {number} cols
+ * @returns {number}
+ */
+function getAsciiMaskRowCountForCols(cols) {
+  var m = getAsciiCellMetrics();
+  var ar = getAspectRatio();
+  return Math.max(1, Math.round((cols * m.cellAspect) / ar));
+}
+
+/**
+ * 取景器内 ASCII 逻辑格相对活动画幅的像素布局（Camera OFF 时铺满画幅格网以对齐比例与分辨率）。
+ * @returns {{
+ *   cols: number,
+ *   rows: number,
+ *   originX: number,
+ *   originY: number,
+ *   cellW: number,
+ *   cellH: number,
+ *   frameW: number,
+ *   frameH: number,
+ *   contentBottomY: number,
+ *   contentRightX: number
+ * }}
+ */
+function getAsciiMaskGridLayout() {
+  var cols = getCols();
+  var rows = getAsciiMaskRowCountForCols(cols);
+  if (!asciiActiveFrame) {
+    return {
+      cols: cols,
+      rows: rows,
+      originX: 0,
+      originY: 0,
+      cellW: 1,
+      cellH: 1,
+      frameW: 1,
+      frameH: 1,
+      contentBottomY: 1,
+      contentRightX: 1
+    };
+  }
+  var fr = asciiActiveFrame.getBoundingClientRect();
+  var frameW = fr.width;
+  var frameH = fr.height;
+  if (asciiWrap && asciiWrap.classList.contains('ascii-wrap--offline')) {
+    return {
+      cols: cols,
+      rows: rows,
+      originX: 0,
+      originY: 0,
+      cellW: frameW / cols,
+      cellH: frameH / rows,
+      frameW: frameW,
+      frameH: frameH,
+      contentBottomY: frameH,
+      contentRightX: frameW
+    };
+  }
+  if (!out) {
+    return {
+      cols: cols,
+      rows: rows,
+      originX: 0,
+      originY: 0,
+      cellW: frameW / cols,
+      cellH: frameH / rows,
+      frameW: frameW,
+      frameH: frameH,
+      contentBottomY: frameH,
+      contentRightX: frameW
+    };
+  }
+  var or = out.getBoundingClientRect();
+  var ox = or.left - fr.left;
+  var oy = or.top - fr.top;
+  return {
+    cols: cols,
+    rows: rows,
+    originX: ox,
+    originY: oy,
+    cellW: or.width / cols,
+    cellH: or.height / rows,
+    frameW: frameW,
+    frameH: frameH,
+    contentBottomY: or.bottom - fr.top,
+    contentRightX: or.right - fr.left
+  };
+}
+
+/**
+ * ease-out cubic，与取景遮罩短过渡一致。
+ * @param {number} t 0…1
+ * @returns {number}
+ */
+function easeOutCubicPhotoMask(t) {
+  var x = Math.min(1, Math.max(0, t));
+  return 1 - Math.pow(1 - x, 3);
+}
+
+/**
+ * 取消进行中的遮罩动画帧。
+ * @returns {void}
+ */
+function cancelPhotoFrameMaskAnimation() {
+  if (photoFrameMaskAnimRaf != null) {
+    cancelAnimationFrame(photoFrameMaskAnimRaf);
+    photoFrameMaskAnimRaf = null;
+  }
+}
+
+/**
+ * 按当前 ease 绘制纯黑格（椭圆外）；不改变 `#ascii-out`。
+ * @param {number} ease 0…1
+ * @returns {void}
+ */
+function drawPhotoFrameMaskAtEase(ease) {
+  if (!asciiFrameMaskCanvas || !asciiFrameMaskCtx || !asciiActiveFrame) return;
+  var kind = getPhotoFrameMaskKind();
+  if (!kind) return;
+
+  var layout = getAsciiMaskGridLayout();
+  var W = layout.frameW;
+  var H = layout.frameH;
+  if (W < 2 || H < 2) return;
+
+  var dpr = typeof window.devicePixelRatio === 'number' ? window.devicePixelRatio : 1;
+  var cw = Math.max(1, Math.ceil(W * dpr));
+  var ch = Math.max(1, Math.ceil(H * dpr));
+  asciiFrameMaskCanvas.width = cw;
+  asciiFrameMaskCanvas.height = ch;
+  asciiFrameMaskCanvas.style.width = W + 'px';
+  asciiFrameMaskCanvas.style.height = H + 'px';
+  var ctx = asciiFrameMaskCtx;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  var t = Math.min(1, Math.max(0, ease));
+  var cx0 = W * 0.5;
+  var cy0 = H * 0.5;
+  /** 起始半轴：保证整格均在「洞内」→ 无黑格 */
+  var big = Math.max(W, H) * 2;
+  var a1;
+  var b1;
+  if (kind === 'round') {
+    var rf = Math.min(W, H) * 0.5;
+    a1 = rf;
+    b1 = rf;
+  } else {
+    a1 = W * 0.5;
+    b1 = H * 0.5;
+  }
+  var a = big + (a1 - big) * t;
+  var b = big + (b1 - big) * t;
+  var invA2 = 1 / (a * a);
+  var invB2 = 1 / (b * b);
+
+  /**
+   * 以格心判定是否在椭圆外后涂黑；用几何边界避免最后一行因取整露出亮线。
+   * @param {number} x1
+   * @param {number} y1
+   * @param {number} x2
+   * @param {number} y2
+   * @returns {void}
+   */
+  function fillMaskCellIfOutsideEllipse(x1, y1, x2, y2) {
+    var mcx = (x1 + x2) * 0.5;
+    var mcy = (y1 + y2) * 0.5;
+    var ddx = mcx - cx0;
+    var ddy = mcy - cy0;
+    if (ddx * ddx * invA2 + ddy * ddy * invB2 > 1) {
+      var fx = Math.floor(x1);
+      var fy = Math.floor(y1);
+      var fw = Math.max(1, Math.ceil(x2) - fx);
+      var fh = Math.max(1, Math.ceil(y2) - fy);
+      ctx.fillRect(fx, fy, fw, fh);
+    }
+  }
+
+  var col;
+  var row;
+  var x0 = layout.originX;
+  var y0 = layout.originY;
+  var cwCell = layout.cellW;
+  var rhCell = layout.cellH;
+  var contentBottomY = layout.contentBottomY;
+  var contentRightX = layout.contentRightX;
+  var x1;
+  var y1;
+  var x2;
+  var y2;
+  ctx.fillStyle = '#000000';
+
+  for (row = 0; row < layout.rows; row++) {
+    y1 = y0 + row * rhCell;
+    y2 = y0 + (row + 1) * rhCell;
+    if (row === layout.rows - 1) {
+      y2 = Math.min(y2, contentBottomY);
+    }
+    for (col = 0; col < layout.cols; col++) {
+      x1 = x0 + col * cwCell;
+      x2 = x0 + (col + 1) * cwCell;
+      if (col === layout.cols - 1) {
+        x2 = Math.min(x2, contentRightX);
+      }
+      fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+    }
+  }
+
+  /** 上/下/左/右 letterbox：与主格同宽高的瓦片铺满至画幅边，避免底缘露亮线。 */
+  var eps = 0.5;
+  for (y1 = 0; y1 < y0 - eps; y1 += rhCell) {
+    y2 = Math.min(y0, y1 + rhCell);
+    for (x1 = 0; x1 < W - eps; x1 += cwCell) {
+      x2 = Math.min(W, x1 + cwCell);
+      fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+    }
+  }
+  for (y1 = contentBottomY; y1 < H - eps; y1 += rhCell) {
+    y2 = Math.min(H, y1 + rhCell);
+    for (x1 = 0; x1 < W - eps; x1 += cwCell) {
+      x2 = Math.min(W, x1 + cwCell);
+      fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+    }
+  }
+  for (x1 = 0; x1 < x0 - eps; x1 += cwCell) {
+    x2 = Math.min(x0, x1 + cwCell);
+    for (y1 = 0; y1 < H - eps; y1 += rhCell) {
+      y2 = Math.min(H, y1 + rhCell);
+      fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+    }
+  }
+  for (x1 = contentRightX; x1 < W - eps; x1 += cwCell) {
+    x2 = Math.min(W, x1 + cwCell);
+    for (y1 = 0; y1 < H - eps; y1 += rhCell) {
+      y2 = Math.min(H, y1 + rhCell);
+      fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+    }
+  }
+}
+
+/**
+ * @returns {void}
+ */
+function showPhotoFrameMaskCanvas() {
+  if (!asciiFrameMaskCanvas) return;
+  asciiFrameMaskCanvas.classList.add('ascii-frame-mask-canvas--visible');
+  asciiFrameMaskCanvas.setAttribute('aria-hidden', 'false');
+}
+
+/**
+ * @returns {void}
+ */
+function hidePhotoFrameMaskCanvas() {
+  if (!asciiFrameMaskCanvas || !asciiFrameMaskCtx) return;
+  asciiFrameMaskCtx.clearRect(0, 0, asciiFrameMaskCanvas.width, asciiFrameMaskCanvas.height);
+  asciiFrameMaskCanvas.classList.remove('ascii-frame-mask-canvas--visible');
+  asciiFrameMaskCanvas.setAttribute('aria-hidden', 'true');
+}
+
+/**
+ * @param {number} fromEase
+ * @param {number} toEase
+ * @returns {void}
+ */
+function startPhotoFrameMaskAnimation(fromEase, toEase) {
+  if (!asciiFrameMaskCanvas || !asciiFrameMaskCtx) return;
+  cancelPhotoFrameMaskAnimation();
+  var reduceMotion =
+    typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) {
+    photoFrameMaskEase = toEase;
+    if (toEase <= 0) {
+      hidePhotoFrameMaskCanvas();
+    } else {
+      showPhotoFrameMaskCanvas();
+      drawPhotoFrameMaskAtEase(toEase);
+    }
+    return;
+  }
+  photoFrameMaskAnimFrom = fromEase;
+  photoFrameMaskAnimTo = toEase;
+  photoFrameMaskAnimStartMs =
+    typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+  showPhotoFrameMaskCanvas();
+
+  /**
+   * @param {number} now
+   * @returns {void}
+   */
+  function tick(now) {
+    var elapsed = now - photoFrameMaskAnimStartMs;
+    var u = Math.min(1, elapsed / PHOTO_FRAME_MASK_ANIM_MS);
+    var eased = easeOutCubicPhotoMask(u);
+    photoFrameMaskEase = photoFrameMaskAnimFrom + (photoFrameMaskAnimTo - photoFrameMaskAnimFrom) * eased;
+    drawPhotoFrameMaskAtEase(photoFrameMaskEase);
+    if (u < 1) {
+      photoFrameMaskAnimRaf = requestAnimationFrame(tick);
+    } else {
+      photoFrameMaskAnimRaf = null;
+      photoFrameMaskEase = photoFrameMaskAnimTo;
+      if (photoFrameMaskEase <= 0) {
+        hidePhotoFrameMaskCanvas();
+      } else {
+        drawPhotoFrameMaskAtEase(photoFrameMaskEase);
+      }
+    }
+  }
+  photoFrameMaskAnimRaf = requestAnimationFrame(tick);
+}
+
+/**
+ * 布局变化时保持当前遮罩显示（无动画跳变）；双 rAF 以等待 `scheduleAsciiScale` 后的 `#ascii-out` 外接矩形。
+ * @returns {void}
+ */
+function syncPhotoFrameMaskLayoutRedraw() {
+  var should =
+    !!getPhotoFrameMaskKind() && frameMaskCheckbox && frameMaskCheckbox.checked && !videoMode;
+  if (!should) return;
+  if (!asciiFrameMaskCanvas || !asciiFrameMaskCanvas.classList.contains('ascii-frame-mask-canvas--visible')) return;
+  window.requestAnimationFrame(function () {
+    window.requestAnimationFrame(function () {
+      if (
+        !asciiFrameMaskCanvas ||
+        !asciiFrameMaskCanvas.classList.contains('ascii-frame-mask-canvas--visible')
+      ) {
+        return;
+      }
+      drawPhotoFrameMaskAtEase(photoFrameMaskEase);
+    });
+  });
+}
+
+/**
+ * 同步「Evil Queen / Round Mirror」显隐与文案；切换比例时清除勾选。
+ * @returns {void}
+ */
+function updateFrameMaskUi() {
+  if (!frameMaskRow || !frameMaskCheckbox) return;
+  var kind = getPhotoFrameMaskKind();
+  var frameMaskFlashLabel = document.getElementById('frameMaskFlashLabel');
+
+  if (!kind) {
+    frameMaskRow.hidden = true;
+    frameMaskCheckbox.disabled = true;
+    frameMaskCheckbox.setAttribute('aria-hidden', 'true');
+    if (frameMaskFlashLabel) {
+      frameMaskFlashLabel.classList.add('flash-switch--disabled');
+      frameMaskFlashLabel.setAttribute('aria-disabled', 'true');
+    }
+    syncPhotoFrameMaskOverlay();
+    return;
+  }
+  frameMaskRow.hidden = false;
+  frameMaskCheckbox.disabled = false;
+  frameMaskCheckbox.removeAttribute('aria-hidden');
+  if (frameMaskFlashLabel) {
+    frameMaskFlashLabel.classList.remove('flash-switch--disabled');
+    frameMaskFlashLabel.removeAttribute('aria-disabled');
+  }
+  frameMaskCheckbox.checked = kind === 'oval' ? frameMaskCheckedOval : frameMaskCheckedRound;
+  if (frameMaskLabelText) {
+    frameMaskLabelText.textContent = kind === 'oval' ? 'Evil Queen (Oval)' : 'Round Mirror';
+  }
+  syncPhotoFrameMaskOverlay();
+}
+
+/**
+ * 根据勾选状态驱动 Canvas 遮罩动画（不改变 ASCII 与导出）。
+ * @returns {void}
+ */
+function syncPhotoFrameMaskOverlay() {
+  if (!asciiFrameMaskCanvas || !frameMaskCheckbox) return;
+  var kind = getPhotoFrameMaskKind();
+  var should = !!kind && frameMaskCheckbox.checked && !videoMode;
+
+  if (!should) {
+    cancelPhotoFrameMaskAnimation();
+    if (photoFrameMaskEase > 0) {
+      startPhotoFrameMaskAnimation(photoFrameMaskEase, 0);
+    } else {
+      photoFrameMaskEase = 0;
+      hidePhotoFrameMaskCanvas();
+    }
+    return;
+  }
+
+  if (photoFrameMaskAnimRaf != null) {
+    return;
+  }
+  if (
+    photoFrameMaskEase >= 0.999 &&
+    asciiFrameMaskCanvas.classList.contains('ascii-frame-mask-canvas--visible')
+  ) {
+    drawPhotoFrameMaskAtEase(1);
+    return;
+  }
+  cancelPhotoFrameMaskAnimation();
+  var fromE = photoFrameMaskEase > 0 && photoFrameMaskEase < 0.999 ? photoFrameMaskEase : 0;
+  startPhotoFrameMaskAnimation(fromE, 1);
+}
+
 /**
  * 根据当前模式更新 Video 锁定的分辨率 / 比例与按钮文案。
  * @returns {void}
@@ -1404,6 +1909,11 @@ function applyCaptureModeUi() {
   if (!stream) syncIntroRequestRain();
   if (stream && animId == null && !AsciiCameraPreview.previewCaptureActive) render();
   AsciiCameraPreview.syncLoopCoverUiVisibility();
+  if (aspectPicker) lastAspectPickerValueForMask = aspectPicker.value;
+  updateFrameMaskUi();
+  window.requestAnimationFrame(function () {
+    updateFrameMaskUi();
+  });
 }
 
 /**
@@ -1415,6 +1925,10 @@ function setCaptureVideoMode(nextVideo) {
   if (nextVideo && !videoMode) {
     savedPhotoResValue = resPicker.value;
     savedPhotoAspectValue = aspectPicker.value;
+    if (frameMaskCheckbox) {
+      if (aspectPicker.value === '3:4') frameMaskCheckedOval = frameMaskCheckbox.checked;
+      else if (aspectPicker.value === '1:1') frameMaskCheckedRound = frameMaskCheckbox.checked;
+    }
     restorePhotoSettingsAfterVideo = true;
   }
   if (!nextVideo && videoMode) {
@@ -1604,14 +2118,21 @@ AsciiCameraUi.wireEventBindings({
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
     syncIntroRequestRain();
+    syncPhotoFrameMaskLayoutRedraw();
   },
   onAspectPickerChange: function () {
+    if (!videoMode) {
+      if (lastAspectPickerValueForMask === '3:4') frameMaskCheckedOval = frameMaskCheckbox.checked;
+      else if (lastAspectPickerValueForMask === '1:1') frameMaskCheckedRound = frameMaskCheckbox.checked;
+    }
+    lastAspectPickerValueForMask = aspectPicker.value;
     if (!videoMode && !AsciiCameraPreview.previewCaptureActive) {
       savedPhotoAspectValue = aspectPicker.value;
     }
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
     syncIntroRequestRain();
+    updateFrameMaskUi();
   },
   onDensityPickerChange: function () {
     invalidateAsciiCellMetrics();
@@ -1620,6 +2141,7 @@ AsciiCameraUi.wireEventBindings({
     } else {
       syncAsciiLayout();
     }
+    syncPhotoFrameMaskLayoutRedraw();
   },
   onCamTabPhotoClick: function () {
     if (snapCountdownActive || AsciiCameraPreview.previewCaptureActive) return;
@@ -1642,8 +2164,17 @@ AsciiCameraUi.wireEventBindings({
   onAsciiFrameResizeObserved: function () {
     scheduleAsciiScale();
     syncIntroRequestRain();
+    syncPhotoFrameMaskLayoutRedraw();
   }
 });
+if (frameMaskCheckbox) {
+  frameMaskCheckbox.addEventListener('change', function () {
+    var k = getPhotoFrameMaskKind();
+    if (k === 'oval') frameMaskCheckedOval = frameMaskCheckbox.checked;
+    else if (k === 'round') frameMaskCheckedRound = frameMaskCheckbox.checked;
+    syncPhotoFrameMaskOverlay();
+  });
+}
 syncAsciiLayout();
 AsciiCameraUi.syncVideoProgressBarColor();
 out.style.color = colorPicker.value;
@@ -1823,30 +2354,6 @@ function buildMatrixIntroCharPool() {
   var lettersArr = letters.split('');
   var symbolsArr = (symbols + blocks).split('');
   var symbolsSetOut = new Set(symbolsArr);
-  // #region agent log
-  (function () {
-    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
-      body: JSON.stringify({
-        sessionId: '67cfc6',
-        location: 'camera.html:buildMatrixIntroCharPool',
-        message: 'Matrix symbolsSet probe (removed geo+CJK segments)',
-        data: {
-          hypothesisId: 'H1',
-          symbolsSetSize: symbolsSetOut.size,
-          hasU25CF: symbolsSetOut.has('\u25cf'),
-          hasU3001: symbolsSetOut.has('\u3001'),
-          hasU00AB: symbolsSetOut.has('\u00ab'),
-          hasU2660: symbolsSetOut.has('\u2660'),
-          hasU221E: symbolsSetOut.has('\u221e'),
-          runId: 'pool-trim-verify'
-        },
-        timestamp: Date.now()
-      })
-    }).catch(function () {});
-  })();
-  // #endregion
   return {
     katakana: katakanaArr,
     numbers: numbersArr,
@@ -2472,10 +2979,6 @@ function fillRequestRainGlyph(ctx, ch, x, yy, mirror) {
   ctx.scale(-1, 1);
   ctx.fillText(ch, 0, 0);
   ctx.restore();
-  // #region agent log
-  if (typeof window.__dbgMirroredFills !== 'number') window.__dbgMirroredFills = 0;
-  window.__dbgMirroredFills++;
-  // #endregion
 }
 
 /**
@@ -2486,9 +2989,6 @@ function fillRequestRainGlyph(ctx, ch, x, yy, mirror) {
  */
 function drawRequestRainFrame(w, h) {
   if (!requestRainCtx) return;
-  // #region agent log
-  window.__dbgMirroredFills = 0;
-  // #endregion
   requestRainCtx.clearRect(0, 0, w, h);
   requestRainCtx.font = requestRainFontSpec;
   requestRainCtx.textAlign = 'center';
@@ -2596,29 +3096,6 @@ function drawRequestRainFrame(w, h) {
         requestRainCtx.fillStyle = 'rgba(255,255,255,0.98)';
         fillRequestRainGlyph(requestRainCtx, ch, col.x, yy, mir);
         requestRainCtx.restore();
-        // #region agent log
-        if (typeof window.__dbgHeadGlowFrame === 'undefined') window.__dbgHeadGlowFrame = 0;
-        window.__dbgHeadGlowFrame++;
-        if (window.__dbgHeadGlowFrame % 75 === 0) {
-          fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
-            body: JSON.stringify({
-              sessionId: '67cfc6',
-              location: 'camera.html:drawRequestRainFrame',
-              message: 'head glow: 3 passes inside save, restore clears shadow',
-              data: {
-                hypothesisId: 'H1',
-                blurCore: blurCore,
-                lh: lh,
-                mir: mir,
-                runId: 'head-glow-post-fix'
-              },
-              timestamp: Date.now()
-            })
-          }).catch(function () {});
-        }
-        // #endregion
       } else {
         // 前景主体：尽量统一强度（不做明显列内阶梯），仅在极尾端轻微淡出
         var a = 0.52 * mul;
@@ -2632,37 +3109,6 @@ function drawRequestRainFrame(w, h) {
       }
     }
   }
-  // #region agent log
-  (function dbgRainMirrorVerify() {
-    if (typeof window.__dbgRainFrameIdx === 'undefined') window.__dbgRainFrameIdx = 0;
-    window.__dbgRainFrameIdx++;
-    if (window.__dbgRainFrameIdx % 90 !== 0) return;
-    var col0 = requestRainColumns[0];
-    var mt = 0;
-    var gl = 0;
-    if (col0 && col0.glyphMirror && col0.glyphs) {
-      gl = col0.glyphs.length;
-      for (var di = 0; di < gl; di++) if (col0.glyphMirror[di]) mt++;
-    }
-    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
-      body: JSON.stringify({
-        sessionId: '67cfc6',
-        location: 'camera.html:drawRequestRainFrame',
-        message: 'rain mirror: state vs mirrored fill count',
-        data: {
-          hypothesisId: 'H1',
-          glyphRows: gl,
-          mirrorTrueInCol0: mt,
-          mirroredFillsThisFrame: typeof window.__dbgMirroredFills === 'number' ? window.__dbgMirroredFills : 0
-        },
-        timestamp: Date.now(),
-        runId: 'mirror-draw-verify'
-      })
-    }).catch(function () {});
-  })();
-  // #endregion
 }
 
 /**
@@ -2923,29 +3369,6 @@ async function captureVideoAsciiFrames() {
  */
 async function persistPhotoToGallery(payload) {
   try {
-    // #region agent log
-    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
-      body: JSON.stringify({
-        sessionId: '67cfc6',
-        runId: 'gallery-save-debug',
-        hypothesisId: 'H1',
-        location: 'camera.html:persistPhotoToGallery:enter',
-        message: 'persist enter',
-        data: {
-          href: String(location && location.href),
-          origin: String(location && location.origin),
-          hasCloudSync: !!window.AsciiCameraGalleryCloudSync,
-          cloudEnabled: !!(window.AsciiCameraGalleryCloudSync && window.AsciiCameraGalleryCloudSync.isEnabled && window.AsciiCameraGalleryCloudSync.isEnabled()),
-          provider: (window.AsciiCameraGalleryCloudSync && window.AsciiCameraGalleryCloudSync.getProvider) ? window.AsciiCameraGalleryCloudSync.getProvider() : null,
-          isAnim: !!(payload && typeof payload === 'object' && payload.isAnimated === true),
-          payloadType: payload == null ? null : typeof payload
-        },
-        timestamp: Date.now()
-      })
-    }).catch(function () {});
-    // #endregion
     var isAnim =
       payload &&
       typeof payload === 'object' &&
@@ -3020,42 +3443,9 @@ async function persistPhotoToGallery(payload) {
         syncCam.pushFromLocal().catch(function () {});
       }
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
-      body: JSON.stringify({
-        sessionId: '67cfc6',
-        runId: 'gallery-save-debug',
-        hypothesisId: 'H2',
-        location: 'camera.html:persistPhotoToGallery:ok',
-        message: 'persist ok',
-        data: {
-          topPhotoId: (savedRow && savedRow.id) ? String(savedRow.id) : null,
-          userCount: (window.AsciiCameraGalleryStorage && window.AsciiCameraGalleryStorage.loadUserPhotos) ? window.AsciiCameraGalleryStorage.loadUserPhotos().length : null
-        },
-        timestamp: Date.now()
-      })
-    }).catch(function () {});
-    // #endregion
     return true;
   } catch (e) {
     console.error(e);
-    // #region agent log
-    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
-      body: JSON.stringify({
-        sessionId: '67cfc6',
-        runId: 'gallery-save-debug',
-        hypothesisId: 'H3',
-        location: 'camera.html:persistPhotoToGallery:catch',
-        message: 'persist threw',
-        data: { name: e && e.name, message: e && e.message },
-        timestamp: Date.now()
-      })
-    }).catch(function () {});
-    // #endregion
     return false;
   }
 }
