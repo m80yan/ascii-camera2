@@ -1012,9 +1012,12 @@
 </script>
 <script src="gallery-storage.js"></script>
 <script src="gallery-cloud-sync.js"></script>
+<script src="scripts/camera-ui.js"></script>
 <script>
 /** 由 `gallery-storage.js` 挂载 */
 var AsciiCameraGalleryStorage = window.AsciiCameraGalleryStorage;
+/** 由 `scripts/camera-ui.js` 挂载 */
+var AsciiCameraUi = window.AsciiCameraUi;
 
 /** 测量失败时的字宽/行高比回退值 */
 const CELL_ASPECT_FALLBACK = 0.55;
@@ -1030,47 +1033,48 @@ const CHAR_SETS = {
   binary:   '\u2588\u2591 '
 };
 let stream = null, animId = null;
-const video    = document.getElementById('video');
-const canvas   = document.getElementById('canvas');
+var U = AsciiCameraUi;
+const video    = U.video;
+const canvas   = U.canvas;
 const ctx      = canvas.getContext('2d', { willReadFrequently: true });
-const out      = document.getElementById('ascii-out');
-const asciiOffHelper = document.getElementById('asciiOffHelper');
-const asciiCellProbe = document.getElementById('ascii-cell-probe');
-const asciiWrap = document.getElementById('ascii-wrap');
-const startBtn = document.getElementById('startBtn');
-const snapBtn  = document.getElementById('snapBtn');
-const submitGalleryBtn = document.getElementById('submitGalleryBtn');
-const statusEl = document.getElementById('status');
-const savedMsg = document.getElementById('saved-msg');
-const camSubmitStatusSlot = document.getElementById('camSubmitStatusSlot');
-const loopCoverUi = document.getElementById('loop-cover-ui');
-const loopCoverSlider = document.getElementById('loopCoverSlider');
-const loopCoverLabel = document.getElementById('loopCoverLabel');
-const colorPicker    = document.getElementById('colorPicker');
-const densityPicker  = document.getElementById('densityPicker');
-const resPicker      = document.getElementById('resPicker');
-const aspectPicker   = document.getElementById('aspectPicker');
-const flashOutsideRoot = document.getElementById('flash-outside-root');
-const flashStripTop = document.getElementById('flash-strip-top');
-const flashStripLeft = document.getElementById('flash-strip-left');
-const flashStripRight = document.getElementById('flash-strip-right');
-const flashStripBottom = document.getElementById('flash-strip-bottom');
-const flashToggle    = document.getElementById('flashToggle');
-const cameraShell    = document.getElementById('camera-shell');
-const camTabPhoto    = document.getElementById('camTabPhoto');
-const camTabVideo    = document.getElementById('camTabVideo');
-const videoProgressRoot = document.getElementById('video-progress-root');
-const videoProgressBar = document.getElementById('video-progress-bar');
-const resPickerStack = document.getElementById('resPickerStack');
-const aspectPickerStack = document.getElementById('aspectPickerStack');
-const asciiActiveFrame = document.getElementById('asciiActiveFrame');
-const asciiActiveColumn = document.getElementById('asciiActiveColumn');
-const asciiOutScaleWrap = document.getElementById('asciiOutScaleWrap');
-const requestRainCanvas = document.getElementById('requestRainCanvas');
+const out      = U.out;
+const asciiOffHelper = U.asciiOffHelper;
+const asciiCellProbe = U.asciiCellProbe;
+const asciiWrap = U.asciiWrap;
+const startBtn = U.startBtn;
+const snapBtn  = U.snapBtn;
+const submitGalleryBtn = U.submitGalleryBtn;
+const statusEl = U.statusEl;
+const savedMsg = U.savedMsg;
+const camSubmitStatusSlot = U.camSubmitStatusSlot;
+const loopCoverUi = U.loopCoverUi;
+const loopCoverSlider = U.loopCoverSlider;
+const loopCoverLabel = U.loopCoverLabel;
+const colorPicker    = U.colorPicker;
+const densityPicker  = U.densityPicker;
+const resPicker      = U.resPicker;
+const aspectPicker   = U.aspectPicker;
+const flashOutsideRoot = U.flashOutsideRoot;
+const flashStripTop = U.flashStripTop;
+const flashStripLeft = U.flashStripLeft;
+const flashStripRight = U.flashStripRight;
+const flashStripBottom = U.flashStripBottom;
+const flashToggle    = U.flashToggle;
+const cameraShell    = U.cameraShell;
+const camTabPhoto    = U.camTabPhoto;
+const camTabVideo    = U.camTabVideo;
+const videoProgressRoot = U.videoProgressRoot;
+const videoProgressBar = U.videoProgressBar;
+const resPickerStack = U.resPickerStack;
+const aspectPickerStack = U.aspectPickerStack;
+const asciiActiveFrame = U.asciiActiveFrame;
+const asciiActiveColumn = U.asciiActiveColumn;
+const asciiOutScaleWrap = U.asciiOutScaleWrap;
+const requestRainCanvas = U.requestRainCanvas;
 /** @type {CanvasRenderingContext2D | null} */
 const requestRainCtx = requestRainCanvas ? requestRainCanvas.getContext('2d') : null;
-const iframeHint     = document.getElementById('iframe-hint');
-const iframeOpenTab  = document.getElementById('iframe-open-tab');
+const iframeHint     = U.iframeHint;
+const iframeOpenTab  = U.iframeOpenTab;
 
 /** 拍照按钮就绪文案（与 HTML 初始一致） */
 const SNAP_LABEL_READY = '📷 Take Photo';
@@ -1090,6 +1094,7 @@ const VIDEO_DEFAULT_COLS = 72;
  * @type {string}
  */
 const PHOTO_DEFAULT_ASPECT = '3:4';
+AsciiCameraUi.setCaptureConstants({ VIDEO_DEFAULT_COLS: VIDEO_DEFAULT_COLS });
 const VIDEO_FRAME_COUNT = 12;
 const VIDEO_FPS = 6;
 const VIDEO_DURATION_MS = 2000;
@@ -1256,6 +1261,17 @@ let restorePhotoSettingsAfterVideo = false;
 
 /** @type {boolean} 已拍未提交：预览态（本地循环 / 静帧，不上传） */
 let previewCaptureActive = false;
+AsciiCameraUi.initStateAccess({
+  get videoMode() {
+    return videoMode;
+  },
+  get stream() {
+    return stream;
+  },
+  get previewCaptureActive() {
+    return previewCaptureActive;
+  }
+});
 /**
  * @type {string | { isPhotoPreview: true, ascii: string, luma: Float32Array, cols: number, rows: number } | { isAnimated: true, ascii: string, frames: string[], frameLumas?: Float32Array[], previewCols?: number, previewRows?: number, frameCount?: number, fps?: number, durationMs?: number } | null}
  */
@@ -1531,7 +1547,7 @@ function enterPreviewState(payload) {
   if (submitGalleryBtn) submitGalleryBtn.disabled = false;
   snapBtn.textContent = videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO;
   snapBtn.disabled = false;
-  syncVideoProgressBarForMode();
+  AsciiCameraUi.syncVideoProgressBarForMode();
   applyCaptureModeUi();
   requestAnimationFrame(function () {
     requestAnimationFrame(syncAsciiLayout);
@@ -1578,70 +1594,6 @@ function exitPreviewAfterSuccessfulSubmit() {
   snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
   snapBtn.disabled = !stream;
   applyCaptureModeUi();
-}
-
-/**
- * 按 `#ascii-wrap` 在视口中的矩形，布置四块闪白条带（不覆盖取景内容）。
- * @returns {void}
- */
-function layoutFlashOutsideStrips() {
-  if (!flashStripTop || !asciiWrap) return;
-  var r = asciiWrap.getBoundingClientRect();
-  var vw = window.innerWidth;
-  var vh = window.innerHeight;
-  var topH = Math.max(0, r.top);
-  var leftW = Math.max(0, r.left);
-  var rightW = Math.max(0, vw - r.right);
-  var bottomH = Math.max(0, vh - r.bottom);
-  flashStripTop.style.left = '0px';
-  flashStripTop.style.top = '0px';
-  flashStripTop.style.width = vw + 'px';
-  flashStripTop.style.height = topH + 'px';
-  flashStripLeft.style.left = '0px';
-  flashStripLeft.style.top = r.top + 'px';
-  flashStripLeft.style.width = leftW + 'px';
-  flashStripLeft.style.height = Math.max(0, r.height) + 'px';
-  flashStripRight.style.left = r.right + 'px';
-  flashStripRight.style.top = r.top + 'px';
-  flashStripRight.style.width = rightW + 'px';
-  flashStripRight.style.height = Math.max(0, r.height) + 'px';
-  flashStripBottom.style.left = '0px';
-  flashStripBottom.style.top = r.bottom + 'px';
-  flashStripBottom.style.width = vw + 'px';
-  flashStripBottom.style.height = bottomH + 'px';
-}
-
-/**
- * 同步 Photo / Video 标签高亮状态。
- * @returns {void}
- */
-function updateModeTabsUi() {
-  if (camTabPhoto && camTabVideo) {
-    camTabPhoto.classList.toggle('active', !videoMode);
-    camTabPhoto.setAttribute('aria-selected', videoMode ? 'false' : 'true');
-    camTabVideo.classList.toggle('active', videoMode);
-    camTabVideo.setAttribute('aria-selected', videoMode ? 'true' : 'false');
-  }
-}
-
-/**
- * Photo：显示 48/72/96/120；Loop：仅显示 72。须在写入 `resPicker.value` 之后调用。
- * @returns {void}
- */
-function syncResPickerOptionsVisibility() {
-  if (!resPicker) return;
-  var opts = resPicker.querySelectorAll('option');
-  var i;
-  for (i = 0; i < opts.length; i++) {
-    var o = opts[i];
-    var v = o.value;
-    if (videoMode) {
-      o.hidden = v !== '72';
-    } else {
-      o.hidden = false;
-    }
-  }
-  if (videoMode && resPicker.value !== '72') resPicker.value = '72';
 }
 
 /**
@@ -1765,47 +1717,14 @@ function applyCaptureModeUi() {
       snapBtn.textContent = SNAP_LABEL_READY;
     }
   }
-  syncResPickerOptionsVisibility();
-  updateModeTabsUi();
-  syncVideoProgressBarForMode();
+  AsciiCameraUi.syncResPickerOptionsVisibility();
+  AsciiCameraUi.updateModeTabsUi();
+  AsciiCameraUi.syncVideoProgressBarForMode();
   invalidateAsciiCellMetrics();
   syncAsciiLayout();
   if (!stream) syncIntroRequestRain();
   if (stream && animId == null && !previewCaptureActive) render();
   syncLoopCoverUiVisibility();
-}
-
-/**
- * Video 且摄像头开时显示进度条；否则隐藏条但保留占位，避免顶动布局。
- * @returns {void}
- */
-function syncVideoProgressBarForMode() {
-  if (!videoProgressRoot || !videoProgressBar) return;
-  /** 预览态不显示录制/倒计时进度条（含 Video 动图循环预览） */
-  if (previewCaptureActive) {
-    videoProgressRoot.classList.add('video-progress-root--inactive');
-    videoProgressRoot.setAttribute('aria-hidden', 'true');
-    videoProgressBar.style.width = '100%';
-    return;
-  }
-  if (videoMode && stream) {
-    videoProgressRoot.classList.remove('video-progress-root--inactive');
-    videoProgressRoot.setAttribute('aria-hidden', 'false');
-    videoProgressBar.style.width = '100%';
-  } else {
-    videoProgressRoot.classList.add('video-progress-root--inactive');
-    videoProgressRoot.setAttribute('aria-hidden', 'true');
-    videoProgressBar.style.width = '100%';
-  }
-}
-
-/**
- * 视频进度条填充色与当前「Color」下拉及 `#ascii-out` 一致。
- * @returns {void}
- */
-function syncVideoProgressBarColor() {
-  if (!videoProgressBar || !colorPicker) return;
-  videoProgressBar.style.backgroundColor = colorPicker.value;
 }
 
 /**
@@ -1826,11 +1745,8 @@ function setCaptureVideoMode(nextVideo) {
   applyCaptureModeUi();
 }
 
-updateModeTabsUi();
-syncVideoProgressBarForMode();
-window.addEventListener('resize', function () {
-  layoutFlashOutsideStrips();
-});
+AsciiCameraUi.updateModeTabsUi();
+AsciiCameraUi.syncVideoProgressBarForMode();
 
 /**
  * 是否在第三方 iframe 中（如 Notion embed）；跨域访问 `window.top` 会抛错，视为已嵌入。
@@ -1853,29 +1769,13 @@ function openCameraInNewTab() {
   return window.open(window.location.href, name);
 }
 
-if (iframeHint && iframeOpenTab && isEmbeddedInFrame()) {
-  iframeHint.hidden = false;
-  iframeOpenTab.addEventListener('click', function (e) {
-    e.preventDefault();
-    openCameraInNewTab();
-  });
-}
+AsciiCameraUi.setupIframeEmbedUi(isEmbeddedInFrame(), function (e) {
+  e.preventDefault();
+  openCameraInNewTab();
+});
 
 /** @type {boolean} */
 let snapCountdownActive = false;
-
-if (camTabPhoto) {
-  camTabPhoto.addEventListener('click', function () {
-    if (snapCountdownActive || previewCaptureActive) return;
-    setCaptureVideoMode(false);
-  });
-}
-if (camTabVideo) {
-  camTabVideo.addEventListener('click', function () {
-    if (snapCountdownActive || previewCaptureActive) return;
-    setCaptureVideoMode(true);
-  });
-}
 
 /**
  * 测量 `#ascii-out` 实际单格宽高比（字宽÷行高），使采样列×行与屏幕像素块对齐；1:1 时画面呈正方形。
@@ -2009,60 +1909,64 @@ function getCols() {
   return Math.min(MAX_RES_COLS, Math.max(1, n));
 }
 
-colorPicker.addEventListener('change', function () {
-  out.style.color = colorPicker.value;
-  if (!stream && asciiOffHelper) {
-    asciiOffHelper.style.color = colorPicker.value;
-  }
-  syncVideoProgressBarColor();
-  syncIntroRequestRain();
-});
-resPicker.addEventListener('change', function () {
-  if (!videoMode && !previewCaptureActive) {
-    savedPhotoResValue = resPicker.value;
-  }
-  invalidateAsciiCellMetrics();
-  syncAsciiLayout();
-  syncIntroRequestRain();
-});
-aspectPicker.addEventListener('change', function () {
-  if (!videoMode && !previewCaptureActive) {
-    savedPhotoAspectValue = aspectPicker.value;
-  }
-  invalidateAsciiCellMetrics();
-  syncAsciiLayout();
-  syncIntroRequestRain();
-});
-densityPicker.addEventListener('change', function () {
-  invalidateAsciiCellMetrics();
-  if (previewCaptureActive) {
-    applyPreviewStyleFromDensity();
-  } else {
-    syncAsciiLayout();
-  }
-});
-window.addEventListener('resize', function () {
-  invalidateAsciiCellMetrics();
-  syncAsciiLayout();
-  syncIntroRequestRain();
-});
-if (document.fonts && document.fonts.ready) {
-  document.fonts.ready.then(function () {
+AsciiCameraUi.wireEventBindings({
+  onColorPickerChange: function () {
+    out.style.color = colorPicker.value;
+    if (!stream && asciiOffHelper) {
+      asciiOffHelper.style.color = colorPicker.value;
+    }
+    AsciiCameraUi.syncVideoProgressBarColor();
+    syncIntroRequestRain();
+  },
+  onResPickerChange: function () {
+    if (!videoMode && !previewCaptureActive) {
+      savedPhotoResValue = resPicker.value;
+    }
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
     syncIntroRequestRain();
-  });
-}
-if (typeof ResizeObserver !== 'undefined') {
-  var asciiFrameResizeObserver = new ResizeObserver(function () {
+  },
+  onAspectPickerChange: function () {
+    if (!videoMode && !previewCaptureActive) {
+      savedPhotoAspectValue = aspectPicker.value;
+    }
+    invalidateAsciiCellMetrics();
+    syncAsciiLayout();
+    syncIntroRequestRain();
+  },
+  onDensityPickerChange: function () {
+    invalidateAsciiCellMetrics();
+    if (previewCaptureActive) {
+      applyPreviewStyleFromDensity();
+    } else {
+      syncAsciiLayout();
+    }
+  },
+  onCamTabPhotoClick: function () {
+    if (snapCountdownActive || previewCaptureActive) return;
+    setCaptureVideoMode(false);
+  },
+  onCamTabVideoClick: function () {
+    if (snapCountdownActive || previewCaptureActive) return;
+    setCaptureVideoMode(true);
+  },
+  onWindowResize: function () {
+    invalidateAsciiCellMetrics();
+    syncAsciiLayout();
+    syncIntroRequestRain();
+  },
+  onFontsReady: function () {
+    invalidateAsciiCellMetrics();
+    syncAsciiLayout();
+    syncIntroRequestRain();
+  },
+  onAsciiFrameResizeObserved: function () {
     scheduleAsciiScale();
     syncIntroRequestRain();
-  });
-  if (asciiActiveFrame) asciiFrameResizeObserver.observe(asciiActiveFrame);
-  if (asciiActiveColumn) asciiFrameResizeObserver.observe(asciiActiveColumn);
-}
+  }
+});
 syncAsciiLayout();
-syncVideoProgressBarColor();
+AsciiCameraUi.syncVideoProgressBarColor();
 out.style.color = colorPicker.value;
 if (!stream && asciiOffHelper) asciiOffHelper.style.color = colorPicker.value;
 
@@ -3552,20 +3456,8 @@ function restartLiveAsciiPreview() {
   if (animId != null) cancelAnimationFrame(animId);
   animId = null;
   out.style.color = colorPicker.value;
-  syncVideoProgressBarColor();
+  AsciiCameraUi.syncVideoProgressBarColor();
   render();
-}
-
-function setStatusOffline() {
-  statusEl.classList.remove('live');
-  statusEl.removeAttribute('aria-label');
-  statusEl.querySelector('.status-text').textContent = 'CAMERA OFF';
-}
-
-function setStatusLive() {
-  statusEl.classList.add('live');
-  statusEl.setAttribute('aria-label', 'Camera on');
-  statusEl.querySelector('.status-text').textContent = '';
 }
 
 startBtn.addEventListener('click', async () => {
@@ -3586,7 +3478,7 @@ startBtn.addEventListener('click', async () => {
     snapBtn.disabled = true;
     snapCountdownActive = false;
     snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
-    setStatusOffline();
+    AsciiCameraUi.setStatusOffline();
     if (asciiWrap) {
       asciiWrap.classList.add('ascii-wrap--offline');
       asciiWrap.classList.remove('ascii-wrap--startup-hide-helper');
@@ -3597,7 +3489,7 @@ startBtn.addEventListener('click', async () => {
     out.setAttribute('aria-hidden', 'true');
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
-    syncVideoProgressBarForMode();
+    AsciiCameraUi.syncVideoProgressBarForMode();
     applyCaptureModeUi();
     startRequestRainEffect();
     return;
@@ -3620,16 +3512,16 @@ startBtn.addEventListener('click', async () => {
     snapBtn.disabled = false;
     snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
     if (submitGalleryBtn) submitGalleryBtn.disabled = true;
-    setStatusLive();
+    AsciiCameraUi.setStatusLive();
     if (asciiWrap) asciiWrap.classList.remove('ascii-wrap--offline', 'ascii-wrap--startup-hide-helper');
     out.removeAttribute('aria-hidden');
     // 摄像头已开启：同步控件可用态（Photo 下 Style 应恢复可用）
     applyCaptureModeUi();
     out.style.color = colorPicker.value;
-    syncVideoProgressBarColor();
+    AsciiCameraUi.syncVideoProgressBarColor();
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
-    syncVideoProgressBarForMode();
+    AsciiCameraUi.syncVideoProgressBarForMode();
     if (animId == null && !previewCaptureActive) render();
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
@@ -3638,7 +3530,7 @@ startBtn.addEventListener('click', async () => {
       });
     });
   } catch (e) {
-    setStatusOffline();
+    AsciiCameraUi.setStatusOffline();
     statusEl.querySelector('.status-text').textContent = 'Access denied';
     out.textContent = 'Camera access denied';
     if (asciiOffHelper) asciiOffHelper.textContent = out.textContent;
@@ -3684,7 +3576,7 @@ snapBtn.addEventListener('click', async () => {
     for (let n = 3; n >= 1; n--) {
       snapBtn.textContent = String(n);
       if (useFlash && n === 1) {
-        layoutFlashOutsideStrips();
+        AsciiCameraUi.layoutFlashOutsideStrips();
         if (flashOutsideRoot) flashOutsideRoot.classList.add('on');
       }
       await sleep(1000);
@@ -3774,13 +3666,13 @@ snapBtn.addEventListener('click', async () => {
       }
     });
     if (previewCaptureActive) {
-      syncVideoProgressBarForMode();
+      AsciiCameraUi.syncVideoProgressBarForMode();
       syncAsciiLayout();
       snapBtn.textContent = videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO;
       snapBtn.disabled = false;
     } else {
       restartLiveAsciiPreview();
-      syncVideoProgressBarForMode();
+      AsciiCameraUi.syncVideoProgressBarForMode();
       syncAsciiLayout();
       snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
       snapBtn.disabled = !stream;
