@@ -1013,11 +1013,14 @@
 <script src="gallery-storage.js"></script>
 <script src="gallery-cloud-sync.js"></script>
 <script src="scripts/camera-ui.js"></script>
+<script src="scripts/camera-preview.js"></script>
 <script>
 /** 由 `gallery-storage.js` 挂载 */
 var AsciiCameraGalleryStorage = window.AsciiCameraGalleryStorage;
 /** 由 `scripts/camera-ui.js` 挂载 */
 var AsciiCameraUi = window.AsciiCameraUi;
+/** 由 `scripts/camera-preview.js` 挂载 */
+var AsciiCameraPreview = window.AsciiCameraPreview;
 
 /** 测量失败时的字宽/行高比回退值 */
 const CELL_ASPECT_FALLBACK = 0.55;
@@ -1259,8 +1262,6 @@ let savedPhotoAspectValue = '';
 /** @type {boolean} 从 Loop/Video 切回 Photo 时需恢复一次 */
 let restorePhotoSettingsAfterVideo = false;
 
-/** @type {boolean} 已拍未提交：预览态（本地循环 / 静帧，不上传） */
-let previewCaptureActive = false;
 AsciiCameraUi.initStateAccess({
   get videoMode() {
     return videoMode;
@@ -1269,332 +1270,9 @@ AsciiCameraUi.initStateAccess({
     return stream;
   },
   get previewCaptureActive() {
-    return previewCaptureActive;
+    return AsciiCameraPreview.previewCaptureActive;
   }
 });
-/**
- * @type {string | { isPhotoPreview: true, ascii: string, luma: Float32Array, cols: number, rows: number } | { isAnimated: true, ascii: string, frames: string[], frameLumas?: Float32Array[], previewCols?: number, previewRows?: number, frameCount?: number, fps?: number, durationMs?: number } | null}
- */
-let pendingGalleryPayload = null;
-/** @type {ReturnType<typeof setInterval> | null} 预览态 GIF 本地循环 */
-let previewAnimTimer = null;
-/** Loop 封面：选中的「录制时间序」帧索引（0..n-1），与 `pendingGalleryPayload.coverFrameIndex` 同步 */
-let loopCoverFrameIndex = 0;
-/** 指针在滑块上（未离开）：暂停循环；`mouseleave` 清除 */
-let loopCoverHoverLatch = false;
-/** 在滑块上按下拖动：暂停；`mouseup`/`touchend` 清除并顺带清 hover latch，以便松手后恢复循环 */
-let loopCoverPointerDown = false;
-
-/**
- * 是否在滑块交互中暂停 Loop 预览循环（悬停未离轨或按住拖动）。
- * @returns {boolean}
- */
-function isLoopCoverSliderPauseActive() {
-  return loopCoverHoverLatch || loopCoverPointerDown;
-}
-
-/**
- * 按当前 `pendingGalleryPayload.frames` 与暂停状态刷新取景：暂停则只显示 `frames[0]`，否则重启 interval 循环。
- * @returns {void}
- */
-function syncLoopCoverPreviewPlayback() {
-  var p = pendingGalleryPayload;
-  if (!previewCaptureActive || !p || !p.isAnimated || !p.frames || !p.frames.length) return;
-  if (!loopCoverUi || loopCoverUi.hidden) return;
-  clearPreviewAnimLoop();
-  out.textContent = p.frames[0] || '';
-  if (!isLoopCoverSliderPauseActive()) {
-    startPreviewAnimLoop(p.frames);
-  }
-}
-
-/**
- * 将数组旋转为以索引 `k` 的元素为首（用于封面帧）。
- * @param {string[]} arr
- * @param {number} k
- * @returns {string[]}
- */
-function rotateStringArrayForLoopCover(arr, k) {
-  if (!arr || !arr.length) return [];
-  var n = arr.length;
-  var kk = ((k % n) + n) % n;
-  var out = new Array(n);
-  for (var i = 0; i < n; i++) {
-    out[i] = arr[(kk + i) % n];
-  }
-  return out;
-}
-
-/**
- * @param {Float32Array[]} arr
- * @param {number} k
- * @returns {Float32Array[]}
- */
-function rotateFloat32ArrayArrayForLoopCover(arr, k) {
-  if (!arr || !arr.length) return [];
-  var n = arr.length;
-  var kk = ((k % n) + n) % n;
-  var out = new Array(n);
-  for (var i = 0; i < n; i++) {
-    out[i] = arr[(kk + i) % n];
-  }
-  return out;
-}
-
-/**
- * 按当前 `loopCoverFrameIndex` 从 `_loopCaptureLumas` / `_loopCaptureFramesOnly` 重算 `frames` 与 `frameLumas` 并刷新预览循环。
- * @returns {void}
- */
-function applyLoopCoverRotationFromCanonical() {
-  var p = pendingGalleryPayload;
-  if (!p || !p.isAnimated || !p.frames || !p.frames.length) return;
-  var k = loopCoverFrameIndex;
-  var chars = getChars();
-  if (p._loopCaptureLumas && p._loopCaptureLumas.length && p.previewCols && p.previewRows) {
-    var tempFrames = [];
-    for (var i = 0; i < p._loopCaptureLumas.length; i++) {
-      tempFrames.push(luminanceToAscii(p._loopCaptureLumas[i], p.previewCols, p.previewRows, chars));
-    }
-    p.frames = rotateStringArrayForLoopCover(tempFrames, k);
-    p.frameLumas = rotateFloat32ArrayArrayForLoopCover(p._loopCaptureLumas, k);
-    p.ascii = p.frames[0] || '';
-  } else if (p._loopCaptureFramesOnly && p._loopCaptureFramesOnly.length) {
-    p.frames = rotateStringArrayForLoopCover(p._loopCaptureFramesOnly, k);
-    p.ascii = p.frames[0] || '';
-  } else {
-    return;
-  }
-  p.coverFrameIndex = k;
-  clearPreviewAnimLoop();
-  out.textContent = p.frames[0] || '';
-  if (!isLoopCoverSliderPauseActive()) {
-    startPreviewAnimLoop(p.frames);
-  }
-  invalidateAsciiCellMetrics();
-  syncAsciiLayout();
-  updateLoopCoverLabelPosition();
-}
-
-/**
- * 将滑块标签「Set as cover」置于与当前 thumb 对应的水平位置。
- * @returns {void}
- */
-function updateLoopCoverLabelPosition() {
-  if (!loopCoverSlider || !loopCoverLabel) return;
-  var min = parseFloat(loopCoverSlider.min);
-  var max = parseFloat(loopCoverSlider.max);
-  var v = parseFloat(loopCoverSlider.value);
-  if (!Number.isFinite(min)) min = 0;
-  if (!Number.isFinite(max)) max = 0;
-  if (!Number.isFinite(v)) v = 0;
-  var pct = max <= min ? 0 : ((v - min) / (max - min)) * 100;
-  loopCoverLabel.style.left = pct + '%';
-}
-
-/**
- * 是否处于「Loop 预览」：仅此时允许显示封面滑块。
- * @returns {boolean}
- */
-function shouldShowLoopCoverUi() {
-  return (
-    previewCaptureActive === true &&
-    videoMode === true &&
-    pendingGalleryPayload != null &&
-    typeof pendingGalleryPayload === 'object' &&
-    pendingGalleryPayload.isAnimated === true &&
-    Array.isArray(pendingGalleryPayload.frames) &&
-    pendingGalleryPayload.frames.length > 0
-  );
-}
-
-/**
- * 按 `previewCaptureActive` / `videoMode` / 动画 payload 统一显示或隐藏封面滑块，避免状态切换后残留。
- * @returns {void}
- */
-function syncLoopCoverUiVisibility() {
-  if (shouldShowLoopCoverUi()) {
-    var p = pendingGalleryPayload;
-    setupLoopCoverUi(p.frames.length, loopCoverFrameIndex);
-  } else {
-    hideLoopCoverUi();
-  }
-}
-
-/**
- * Loop 预览：显示封面滑块（与 Submit 同宽），并挂上 slot class。
- * @param {number} frameCount
- * @param {number} [preserveIndex] 保存失败恢复 UI 时保持当前封面索引
- * @returns {void}
- */
-function setupLoopCoverUi(frameCount, preserveIndex) {
-  if (!loopCoverUi || !loopCoverSlider || !camSubmitStatusSlot) return;
-  var n = Math.max(1, Math.floor(frameCount));
-  loopCoverSlider.min = '0';
-  loopCoverSlider.max = String(Math.max(0, n - 1));
-  loopCoverSlider.step = '1';
-  if (arguments.length >= 2 && preserveIndex != null && Number.isFinite(preserveIndex)) {
-    var pi = Math.max(0, Math.min(n - 1, Math.floor(preserveIndex)));
-    loopCoverFrameIndex = pi;
-    loopCoverSlider.value = String(pi);
-  } else {
-    loopCoverSlider.value = '0';
-    loopCoverFrameIndex = 0;
-  }
-  loopCoverSlider.style.setProperty('--loop-cover-n', String(n));
-  if (n <= 1) {
-    loopCoverSlider.classList.add('loop-cover-slider--single');
-  } else {
-    loopCoverSlider.classList.remove('loop-cover-slider--single');
-  }
-  loopCoverUi.hidden = false;
-  loopCoverUi.setAttribute('aria-hidden', 'false');
-  camSubmitStatusSlot.classList.add('cam-submit-status-slot--loop-cover');
-  requestAnimationFrame(updateLoopCoverLabelPosition);
-}
-
-/**
- * 提交失败后若仍在 Loop 预览，恢复封面滑块显示。
- * @returns {void}
- */
-function restoreLoopCoverUiAfterFailedSubmit() {
-  syncLoopCoverUiVisibility();
-}
-
-/**
- * 隐藏 Loop 封面控件并恢复 status 区用于 SAVING/SAVED。
- * @returns {void}
- */
-function hideLoopCoverUi() {
-  loopCoverHoverLatch = false;
-  loopCoverPointerDown = false;
-  if (loopCoverUi) {
-    loopCoverUi.hidden = true;
-    loopCoverUi.setAttribute('aria-hidden', 'true');
-  }
-  if (camSubmitStatusSlot) {
-    camSubmitStatusSlot.classList.remove('cam-submit-status-slot--loop-cover');
-  }
-}
-
-/**
- * 停止预览动画循环。
- * @returns {void}
- */
-function clearPreviewAnimLoop() {
-  if (previewAnimTimer != null) {
-    clearInterval(previewAnimTimer);
-    previewAnimTimer = null;
-  }
-}
-
-/**
- * 预览态：本地循环播放已录制的 ASCII 帧。
- * @param {string[]} frames
- * @returns {void}
- */
-function startPreviewAnimLoop(frames) {
-  clearPreviewAnimLoop();
-  if (!frames || !frames.length) return;
-  var idx = 0;
-  out.textContent = frames[0];
-  previewAnimTimer = setInterval(function () {
-    idx = (idx + 1) % frames.length;
-    out.textContent = frames[idx];
-  }, Math.round(1000 / VIDEO_FPS));
-}
-
-/**
- * 进入预览：展示静帧或循环帧；不调用云端。
- * @param {string | { isPhotoPreview?: true, ascii?: string, luma?: Float32Array, cols?: number, rows?: number } | { isAnimated: true, ascii: string, frames: string[], frameLumas?: Float32Array[], previewCols?: number, previewRows?: number, frameCount?: number, fps?: number, durationMs?: number }} payload
- * @returns {void}
- */
-function enterPreviewState(payload) {
-  hideLoopCoverUi();
-  loopCoverFrameIndex = 0;
-  previewCaptureActive = true;
-  pendingGalleryPayload = payload;
-  if (cameraShell) cameraShell.classList.add('cam-preview-capture');
-  clearPreviewAnimLoop();
-  if (animId != null) {
-    cancelAnimationFrame(animId);
-    animId = null;
-  }
-  out.removeAttribute('aria-hidden');
-  if (typeof payload === 'string') {
-    out.textContent = payload;
-  } else if (payload && payload.isPhotoPreview === true) {
-    out.textContent = payload.ascii || '';
-  } else if (payload && payload.isAnimated && payload.frames && payload.frames.length) {
-    if (payload.frameLumas && payload.frameLumas.length) {
-      payload._loopCaptureLumas = payload.frameLumas.map(function (f) {
-        var c = new Float32Array(f.length);
-        c.set(f);
-        return c;
-      });
-      payload._loopCaptureFramesOnly = null;
-    } else {
-      payload._loopCaptureFramesOnly = payload.frames.slice();
-      payload._loopCaptureLumas = null;
-    }
-    payload.coverFrameIndex = 0;
-    out.textContent = payload.frames[0] || '';
-    startPreviewAnimLoop(payload.frames);
-  }
-  out.style.color = colorPicker.value;
-  if (asciiWrap && stream) asciiWrap.classList.remove('ascii-wrap--offline');
-  invalidateAsciiCellMetrics();
-  syncAsciiLayout();
-  if (submitGalleryBtn) submitGalleryBtn.disabled = false;
-  snapBtn.textContent = videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO;
-  snapBtn.disabled = false;
-  AsciiCameraUi.syncVideoProgressBarForMode();
-  applyCaptureModeUi();
-  requestAnimationFrame(function () {
-    requestAnimationFrame(syncAsciiLayout);
-  });
-}
-
-/**
- * 重拍：丢弃预览，恢复实时取景。
- * @returns {void}
- */
-function retakeFromPreview() {
-  hideLoopCoverUi();
-  loopCoverFrameIndex = 0;
-  clearPreviewAnimLoop();
-  previewCaptureActive = false;
-  pendingGalleryPayload = null;
-  if (cameraShell) cameraShell.classList.remove('cam-preview-capture');
-  if (submitGalleryBtn) submitGalleryBtn.disabled = true;
-  if (camTabPhoto) camTabPhoto.disabled = false;
-  if (camTabVideo) camTabVideo.disabled = false;
-  invalidateAsciiCellMetrics();
-  restartLiveAsciiPreview();
-  snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
-  snapBtn.disabled = !stream;
-  applyCaptureModeUi();
-}
-
-/**
- * 提交成功后退出预览并恢复实时取景。
- * @returns {void}
- */
-function exitPreviewAfterSuccessfulSubmit() {
-  hideLoopCoverUi();
-  loopCoverFrameIndex = 0;
-  clearPreviewAnimLoop();
-  previewCaptureActive = false;
-  pendingGalleryPayload = null;
-  if (cameraShell) cameraShell.classList.remove('cam-preview-capture');
-  if (submitGalleryBtn) submitGalleryBtn.disabled = true;
-  if (camTabPhoto) camTabPhoto.disabled = false;
-  if (camTabVideo) camTabVideo.disabled = false;
-  invalidateAsciiCellMetrics();
-  restartLiveAsciiPreview();
-  snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
-  snapBtn.disabled = !stream;
-  applyCaptureModeUi();
-}
 
 /**
  * 根据当前模式更新 Video 锁定的分辨率 / 比例与按钮文案。
@@ -1661,7 +1339,7 @@ function applyCaptureModeUi() {
       }
     }
     snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
-  } else if (previewCaptureActive) {
+  } else if (AsciiCameraPreview.previewCaptureActive) {
     if (densityPicker) densityPicker.disabled = false;
     if (colorPicker) colorPicker.disabled = false;
     /** 预览为非实时态：禁止 Flash（避免误触） */
@@ -1723,8 +1401,8 @@ function applyCaptureModeUi() {
   invalidateAsciiCellMetrics();
   syncAsciiLayout();
   if (!stream) syncIntroRequestRain();
-  if (stream && animId == null && !previewCaptureActive) render();
-  syncLoopCoverUiVisibility();
+  if (stream && animId == null && !AsciiCameraPreview.previewCaptureActive) render();
+  AsciiCameraPreview.syncLoopCoverUiVisibility();
 }
 
 /**
@@ -1732,7 +1410,7 @@ function applyCaptureModeUi() {
  * @returns {void}
  */
 function setCaptureVideoMode(nextVideo) {
-  if (previewCaptureActive) return;
+  if (AsciiCameraPreview.previewCaptureActive) return;
   if (nextVideo && !videoMode) {
     savedPhotoResValue = resPicker.value;
     savedPhotoAspectValue = aspectPicker.value;
@@ -1919,7 +1597,7 @@ AsciiCameraUi.wireEventBindings({
     syncIntroRequestRain();
   },
   onResPickerChange: function () {
-    if (!videoMode && !previewCaptureActive) {
+    if (!videoMode && !AsciiCameraPreview.previewCaptureActive) {
       savedPhotoResValue = resPicker.value;
     }
     invalidateAsciiCellMetrics();
@@ -1927,7 +1605,7 @@ AsciiCameraUi.wireEventBindings({
     syncIntroRequestRain();
   },
   onAspectPickerChange: function () {
-    if (!videoMode && !previewCaptureActive) {
+    if (!videoMode && !AsciiCameraPreview.previewCaptureActive) {
       savedPhotoAspectValue = aspectPicker.value;
     }
     invalidateAsciiCellMetrics();
@@ -1936,18 +1614,18 @@ AsciiCameraUi.wireEventBindings({
   },
   onDensityPickerChange: function () {
     invalidateAsciiCellMetrics();
-    if (previewCaptureActive) {
+    if (AsciiCameraPreview.previewCaptureActive) {
       applyPreviewStyleFromDensity();
     } else {
       syncAsciiLayout();
     }
   },
   onCamTabPhotoClick: function () {
-    if (snapCountdownActive || previewCaptureActive) return;
+    if (snapCountdownActive || AsciiCameraPreview.previewCaptureActive) return;
     setCaptureVideoMode(false);
   },
   onCamTabVideoClick: function () {
-    if (snapCountdownActive || previewCaptureActive) return;
+    if (snapCountdownActive || AsciiCameraPreview.previewCaptureActive) return;
     setCaptureVideoMode(true);
   },
   onWindowResize: function () {
@@ -3185,51 +2863,7 @@ function toAsciiWithLuminance(cols, aspectOverride) {
  * @returns {void}
  */
 function applyPreviewStyleFromDensity() {
-  if (!previewCaptureActive || !pendingGalleryPayload) return;
-  var chars = getChars();
-  var p = pendingGalleryPayload;
-  if (p && typeof p === 'object' && p.isPhotoPreview === true && p.luma && p.cols && p.rows) {
-    var ascii = luminanceToAscii(p.luma, p.cols, p.rows, chars);
-    p.ascii = ascii;
-    out.textContent = ascii;
-    invalidateAsciiCellMetrics();
-    syncAsciiLayout();
-    return;
-  }
-  if (p && p.isAnimated === true && Array.isArray(p.frameLumas) && p.previewCols && p.previewRows) {
-    if (p._loopCaptureLumas && p._loopCaptureLumas.length) {
-      var framesOutCanon = [];
-      for (var ci = 0; ci < p._loopCaptureLumas.length; ci++) {
-        framesOutCanon.push(luminanceToAscii(p._loopCaptureLumas[ci], p.previewCols, p.previewRows, chars));
-      }
-      p.frames = rotateStringArrayForLoopCover(framesOutCanon, loopCoverFrameIndex);
-      p.frameLumas = rotateFloat32ArrayArrayForLoopCover(p._loopCaptureLumas, loopCoverFrameIndex);
-      p.ascii = p.frames[0] || '';
-      p.coverFrameIndex = loopCoverFrameIndex;
-      out.textContent = p.frames[0] || '';
-      clearPreviewAnimLoop();
-      if (!isLoopCoverSliderPauseActive()) {
-        startPreviewAnimLoop(p.frames);
-      }
-      invalidateAsciiCellMetrics();
-      syncAsciiLayout();
-      updateLoopCoverLabelPosition();
-      return;
-    }
-    var framesOut = [];
-    for (var i = 0; i < p.frameLumas.length; i++) {
-      framesOut.push(luminanceToAscii(p.frameLumas[i], p.previewCols, p.previewRows, chars));
-    }
-    p.frames = framesOut;
-    p.ascii = framesOut[0] || '';
-    out.textContent = framesOut[0] || '';
-    clearPreviewAnimLoop();
-    if (!isLoopCoverSliderPauseActive()) {
-      startPreviewAnimLoop(framesOut);
-    }
-    invalidateAsciiCellMetrics();
-    syncAsciiLayout();
-  }
+  AsciiCameraPreview.applyPreviewStyleFromDensity();
 }
 
 function getAspectRatio() {
@@ -3340,7 +2974,7 @@ async function persistPhotoToGallery(payload) {
       Array.isArray(payload.frames) &&
       payload.frames.length > 0;
     if (isAnim && typeof payload === 'object') {
-      payload.coverFrameIndex = loopCoverFrameIndex;
+      payload.coverFrameIndex = AsciiCameraPreview.loopCoverFrameIndex;
     }
     var asciiStr = '';
     if (isAnim) {
@@ -3398,7 +3032,7 @@ async function persistPhotoToGallery(payload) {
         /** @type {{ ascii: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} */
         var insertPayload = Object.assign({}, savedRow || photoPayload);
         if (isAnim && payload.frames) insertPayload.frames = payload.frames;
-        if (isAnim) insertPayload.coverFrameIndex = loopCoverFrameIndex;
+        if (isAnim) insertPayload.coverFrameIndex = AsciiCameraPreview.loopCoverFrameIndex;
         var camIns = await syncCam.insertPhotoRow(insertPayload);
         if (!camIns) {
           AsciiCameraGalleryStorage.deleteUserPhotoAt(0);
@@ -3460,12 +3094,54 @@ function restartLiveAsciiPreview() {
   render();
 }
 
+AsciiCameraPreview.bindCore({
+  get videoMode() {
+    return videoMode;
+  },
+  get stream() {
+    return stream;
+  },
+  get animId() {
+    return animId;
+  },
+  setAnimId: function (v) {
+    animId = v;
+  },
+  getChars: getChars,
+  luminanceToAscii: luminanceToAscii,
+  applyCaptureModeUi: applyCaptureModeUi,
+  restartLiveAsciiPreview: restartLiveAsciiPreview,
+  invalidateAsciiCellMetrics: invalidateAsciiCellMetrics,
+  syncAsciiLayout: syncAsciiLayout,
+  render: render,
+  VIDEO_FPS: VIDEO_FPS,
+  SNAP_LABEL_RETAKE_PHOTO: SNAP_LABEL_RETAKE_PHOTO,
+  SNAP_LABEL_RETAKE_VIDEO: SNAP_LABEL_RETAKE_VIDEO,
+  SNAP_LABEL_READY: SNAP_LABEL_READY,
+  SNAP_LABEL_VIDEO: SNAP_LABEL_VIDEO,
+  syncVideoProgressBarForMode: function () {
+    AsciiCameraUi.syncVideoProgressBarForMode();
+  },
+  out: out,
+  colorPicker: colorPicker,
+  cameraShell: cameraShell,
+  submitGalleryBtn: submitGalleryBtn,
+  snapBtn: snapBtn,
+  camTabPhoto: camTabPhoto,
+  camTabVideo: camTabVideo,
+  asciiWrap: asciiWrap,
+  loopCoverUi: loopCoverUi,
+  loopCoverSlider: loopCoverSlider,
+  loopCoverLabel: loopCoverLabel,
+  camSubmitStatusSlot: camSubmitStatusSlot
+});
+
 startBtn.addEventListener('click', async () => {
   if (stream) {
     abortRequestRainEffect();
-    clearPreviewAnimLoop();
-    previewCaptureActive = false;
-    pendingGalleryPayload = null;
+    AsciiCameraPreview.clearPreviewAnimLoop();
+    AsciiCameraPreview.previewCaptureActive = false;
+    AsciiCameraPreview.pendingGalleryPayload = null;
     if (cameraShell) cameraShell.classList.remove('cam-preview-capture');
     if (submitGalleryBtn) submitGalleryBtn.disabled = true;
     if (camTabPhoto) camTabPhoto.disabled = false;
@@ -3522,7 +3198,7 @@ startBtn.addEventListener('click', async () => {
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
     AsciiCameraUi.syncVideoProgressBarForMode();
-    if (animId == null && !previewCaptureActive) render();
+    if (animId == null && !AsciiCameraPreview.previewCaptureActive) render();
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
         syncAsciiLayout();
@@ -3557,8 +3233,8 @@ startBtn.addEventListener('click', async () => {
 snapBtn.addEventListener('click', async () => {
   if (!stream || snapCountdownActive) return;
   /** Retake：先退出预览恢复实时取景，再与同一次点击走同一套倒计时与拍摄（不再要求用户再点一次主按钮）。 */
-  if (previewCaptureActive) {
-    retakeFromPreview();
+  if (AsciiCameraPreview.previewCaptureActive) {
+    AsciiCameraPreview.retakeFromPreview();
   }
   const cols = getCols();
   const ctl = [densityPicker, colorPicker, resPicker, aspectPicker, camTabPhoto, camTabVideo];
@@ -3640,7 +3316,7 @@ snapBtn.addEventListener('click', async () => {
       };
     }
 
-    enterPreviewState(persistArg);
+    AsciiCameraPreview.enterPreviewState(persistArg);
   } catch (err) {
     console.error(err);
     savedMsg.textContent = 'Capture failed: something went wrong.';
@@ -3654,7 +3330,7 @@ snapBtn.addEventListener('click', async () => {
     startBtn.disabled = false;
     ctl.forEach(function (el) {
       if (!el) return;
-      if (previewCaptureActive) {
+      if (AsciiCameraPreview.previewCaptureActive) {
         if (el === camTabPhoto || el === camTabVideo) el.disabled = true;
         else if (el === resPicker || el === aspectPicker) el.disabled = true;
         else el.disabled = false;
@@ -3665,7 +3341,7 @@ snapBtn.addEventListener('click', async () => {
         } else el.disabled = false;
       }
     });
-    if (previewCaptureActive) {
+    if (AsciiCameraPreview.previewCaptureActive) {
       AsciiCameraUi.syncVideoProgressBarForMode();
       syncAsciiLayout();
       snapBtn.textContent = videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO;
@@ -3685,9 +3361,9 @@ snapBtn.addEventListener('click', async () => {
  * @returns {Promise<void>}
  */
 async function submitPreviewToGallery() {
-  if (!previewCaptureActive || pendingGalleryPayload == null || !stream) return;
-  var payload = pendingGalleryPayload;
-  hideLoopCoverUi();
+  if (!AsciiCameraPreview.previewCaptureActive || AsciiCameraPreview.pendingGalleryPayload == null || !stream) return;
+  var payload = AsciiCameraPreview.pendingGalleryPayload;
+  AsciiCameraPreview.hideLoopCoverUi();
   if (submitGalleryBtn) submitGalleryBtn.disabled = true;
   snapBtn.disabled = true;
   snapBtn.textContent = SNAP_LABEL_SAVING;
@@ -3720,7 +3396,7 @@ async function submitPreviewToGallery() {
         await sleep(1800);
         savedMsg.classList.remove('show');
       }
-      exitPreviewAfterSuccessfulSubmit();
+      AsciiCameraPreview.exitPreviewAfterSuccessfulSubmit();
     } else {
       savedMsg.classList.remove('show');
       savedMsg.textContent = 'Save failed: storage full, unavailable, or disabled.';
@@ -3730,7 +3406,7 @@ async function submitPreviewToGallery() {
       savedMsg.classList.remove('show');
       if (submitGalleryBtn) submitGalleryBtn.disabled = false;
       snapBtn.disabled = false;
-      restoreLoopCoverUiAfterFailedSubmit();
+      AsciiCameraPreview.restoreLoopCoverUiAfterFailedSubmit();
     }
   } catch (e) {
     console.error(e);
@@ -3741,11 +3417,11 @@ async function submitPreviewToGallery() {
     savedMsg.classList.remove('show');
     if (submitGalleryBtn) submitGalleryBtn.disabled = false;
     snapBtn.disabled = false;
-    restoreLoopCoverUiAfterFailedSubmit();
+    AsciiCameraPreview.restoreLoopCoverUiAfterFailedSubmit();
   } finally {
     snapBtn.classList.remove('snap-saving');
     snapBtn.removeAttribute('aria-busy');
-    if (previewCaptureActive) {
+    if (AsciiCameraPreview.previewCaptureActive) {
       snapBtn.textContent = videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO;
     }
   }
@@ -3759,60 +3435,60 @@ if (submitGalleryBtn) {
 
 if (loopCoverUi) {
   loopCoverUi.addEventListener('mouseenter', function () {
-    if (!previewCaptureActive || !pendingGalleryPayload || !pendingGalleryPayload.isAnimated) return;
+    if (!AsciiCameraPreview.previewCaptureActive || !AsciiCameraPreview.pendingGalleryPayload || !AsciiCameraPreview.pendingGalleryPayload.isAnimated) return;
     if (loopCoverUi.hidden) return;
-    loopCoverHoverLatch = true;
-    syncLoopCoverPreviewPlayback();
+    AsciiCameraPreview.loopCoverHoverLatch = true;
+    AsciiCameraPreview.syncLoopCoverPreviewPlayback();
   });
   loopCoverUi.addEventListener('mouseleave', function () {
-    loopCoverHoverLatch = false;
-    syncLoopCoverPreviewPlayback();
+    AsciiCameraPreview.loopCoverHoverLatch = false;
+    AsciiCameraPreview.syncLoopCoverPreviewPlayback();
   });
 }
 if (loopCoverSlider) {
   loopCoverSlider.addEventListener('input', function () {
-    if (!previewCaptureActive || !pendingGalleryPayload || !pendingGalleryPayload.isAnimated) return;
-    loopCoverFrameIndex = parseInt(loopCoverSlider.value, 10) || 0;
-    applyLoopCoverRotationFromCanonical();
+    if (!AsciiCameraPreview.previewCaptureActive || !AsciiCameraPreview.pendingGalleryPayload || !AsciiCameraPreview.pendingGalleryPayload.isAnimated) return;
+    AsciiCameraPreview.loopCoverFrameIndex = parseInt(loopCoverSlider.value, 10) || 0;
+    AsciiCameraPreview.applyLoopCoverRotationFromCanonical();
   });
   loopCoverSlider.addEventListener('mousedown', function (e) {
     if (e.button !== 0) return;
-    if (!previewCaptureActive || !pendingGalleryPayload || !pendingGalleryPayload.isAnimated) return;
-    loopCoverPointerDown = true;
-    syncLoopCoverPreviewPlayback();
+    if (!AsciiCameraPreview.previewCaptureActive || !AsciiCameraPreview.pendingGalleryPayload || !AsciiCameraPreview.pendingGalleryPayload.isAnimated) return;
+    AsciiCameraPreview.loopCoverPointerDown = true;
+    AsciiCameraPreview.syncLoopCoverPreviewPlayback();
   });
   window.addEventListener('mouseup', function () {
-    if (!loopCoverPointerDown) return;
-    loopCoverPointerDown = false;
-    loopCoverHoverLatch = false;
-    syncLoopCoverPreviewPlayback();
+    if (!AsciiCameraPreview.loopCoverPointerDown) return;
+    AsciiCameraPreview.loopCoverPointerDown = false;
+    AsciiCameraPreview.loopCoverHoverLatch = false;
+    AsciiCameraPreview.syncLoopCoverPreviewPlayback();
   });
   loopCoverSlider.addEventListener(
     'touchstart',
     function () {
-      if (!previewCaptureActive || !pendingGalleryPayload || !pendingGalleryPayload.isAnimated) return;
-      loopCoverPointerDown = true;
-      syncLoopCoverPreviewPlayback();
+      if (!AsciiCameraPreview.previewCaptureActive || !AsciiCameraPreview.pendingGalleryPayload || !AsciiCameraPreview.pendingGalleryPayload.isAnimated) return;
+      AsciiCameraPreview.loopCoverPointerDown = true;
+      AsciiCameraPreview.syncLoopCoverPreviewPlayback();
     },
     { passive: true }
   );
   window.addEventListener(
     'touchend',
     function () {
-      if (!loopCoverPointerDown) return;
-      loopCoverPointerDown = false;
-      loopCoverHoverLatch = false;
-      syncLoopCoverPreviewPlayback();
+      if (!AsciiCameraPreview.loopCoverPointerDown) return;
+      AsciiCameraPreview.loopCoverPointerDown = false;
+      AsciiCameraPreview.loopCoverHoverLatch = false;
+      AsciiCameraPreview.syncLoopCoverPreviewPlayback();
     },
     { passive: true }
   );
   window.addEventListener(
     'touchcancel',
     function () {
-      if (!loopCoverPointerDown) return;
-      loopCoverPointerDown = false;
-      loopCoverHoverLatch = false;
-      syncLoopCoverPreviewPlayback();
+      if (!AsciiCameraPreview.loopCoverPointerDown) return;
+      AsciiCameraPreview.loopCoverPointerDown = false;
+      AsciiCameraPreview.loopCoverHoverLatch = false;
+      AsciiCameraPreview.syncLoopCoverPreviewPlayback();
     },
     { passive: true }
   );
@@ -3822,7 +3498,7 @@ window.addEventListener(
   'resize',
   function () {
     if (!loopCoverUi || loopCoverUi.hidden) return;
-    updateLoopCoverLabelPosition();
+    AsciiCameraPreview.updateLoopCoverLabelPosition();
   },
   { passive: true }
 );
