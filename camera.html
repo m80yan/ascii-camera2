@@ -2444,7 +2444,7 @@ function createRequestRainColumn(x, h, lh, pool, alphaMul) {
 }
 
 /**
- * 背景暗列：更短尾迹、更低活性、更慢一些；不含白头辉光。
+ * 背景暗列：更短尾迹、更低活性、更慢一些；字首为白芯辉光，alpha 与 `alphaMul` 及尾迹一致。
  * @param {number} x
  * @param {number} h
  * @param {number} lh
@@ -2943,9 +2943,30 @@ function drawRequestRainFrame(w, h) {
       if (!bch) bch = pickMatrixIntroChar(pool);
       var bmir = !!(bcol.glyphMirror && bcol.glyphMirror[bidx]);
       var bmul = bcol.alphaMul;
+      if (bd === 0) {
+        /* 与前景白头同结构；各层 alpha 乘 bmul，与暗列尾迹共用 alphaMul */
+        var blur1Bg = Math.max(10, Math.min(28, lh * 1.35));
+        var blur2Bg = Math.max(6, Math.min(18, lh * 0.95));
+        var blurCoreBg = Math.max(8, Math.min(24, lh * 0.9));
+        var wm = Math.max(0, Math.min(1, bmul));
+        requestRainCtx.save();
+        requestRainCtx.shadowColor = 'rgba(255,255,255,' + Math.min(1, 0.88 * wm).toFixed(3) + ')';
+        requestRainCtx.shadowBlur = blur1Bg;
+        requestRainCtx.fillStyle = 'rgba(255,255,255,' + Math.min(1, 0.24 * wm).toFixed(3) + ')';
+        fillRequestRainGlyph(requestRainCtx, bch, bcol.x, byy, bmir);
+        requestRainCtx.shadowColor = 'rgba(255,255,255,' + Math.min(1, 0.82 * wm).toFixed(3) + ')';
+        requestRainCtx.shadowBlur = blur2Bg;
+        requestRainCtx.fillStyle = 'rgba(255,255,255,' + Math.min(1, 0.42 * wm).toFixed(3) + ')';
+        fillRequestRainGlyph(requestRainCtx, bch, bcol.x, byy, bmir);
+        requestRainCtx.shadowColor = 'rgba(255,255,255,' + Math.min(1, 0.95 * wm).toFixed(3) + ')';
+        requestRainCtx.shadowBlur = blurCoreBg;
+        requestRainCtx.fillStyle = 'rgba(255,255,255,' + Math.min(1, 0.98 * wm).toFixed(3) + ')';
+        fillRequestRainGlyph(requestRainCtx, bch, bcol.x, byy, bmir);
+        requestRainCtx.restore();
+        continue;
+      }
       var ba;
-      if (bd === 0) ba = 0.44 * bmul;
-      else if (bd <= 2) ba = 0.34 * bmul;
+      if (bd <= 2) ba = 0.34 * bmul;
       else if (bd <= Math.floor(btlen * 0.68)) ba = 0.24 * bmul;
       else ba = 0.14 * bmul;
       requestRainCtx.fillStyle =

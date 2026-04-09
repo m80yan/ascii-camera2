@@ -244,7 +244,7 @@
     box-sizing: border-box;
   }
   /**
-   * 打开时：`lightbox-stage` 仅负责居中图片；`lightbox-nav-overlay` 单独一层，按钮相对遮罩固定 left/right，不随 inner 宽度变化。
+   * 打开时：`lightbox-stage` 居中图片；`lightbox-nav-overlay` 上叠放居中 `lightbox-nav-bar`（宽度封顶），按键不随图片尺寸变化。
    */
   #lightbox.open {
     display: block;
@@ -265,7 +265,7 @@
     pointer-events: auto;
   }
   /**
-   * 导航层：全幅覆盖内容区，仅按钮可点；左右偏移相对 `#lightbox` 内容盒固定。
+   * 导航层：全幅覆盖；实际按键落在 `.lightbox-nav-bar` 内，宽度封顶避免超宽屏两侧过远。
    */
   .lightbox-nav-overlay {
     position: absolute;
@@ -274,6 +274,24 @@
     right: 0;
     bottom: 0;
     z-index: 2;
+    pointer-events: none;
+  }
+  /**
+   * 居中导航条：与视口宽度解耦，不随图片尺寸变化；仅子按钮接收点击。
+   */
+  .lightbox-nav-bar {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(calc(100vw - 48px), 1200px);
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 0 12px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
     pointer-events: none;
   }
   #lightbox-inner {
@@ -312,12 +330,11 @@
     width: 100%;
   }
   /**
-   * 上一张/下一张：相对 `.lightbox-nav-overlay`（即 `#lightbox` 内容区）绝对定位，与图片宽高无关。
+   * 上一张/下一张：贴在 `.lightbox-nav-bar` 左右内侧，与图片区域无关。
    */
-  .lightbox-nav-overlay .lightbox-nav-btn {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
+  .lightbox-nav-bar .lightbox-nav-btn {
+    position: relative;
+    flex: 0 0 auto;
     pointer-events: auto;
     margin: 0;
     padding: 0 10px;
@@ -333,20 +350,12 @@
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
-  .lightbox-nav-overlay .lightbox-nav-btn:hover:not(:disabled) {
+  .lightbox-nav-bar .lightbox-nav-btn:hover:not(:disabled) {
     opacity: 0.92;
   }
-  .lightbox-nav-overlay .lightbox-nav-btn:disabled {
+  .lightbox-nav-bar .lightbox-nav-btn:disabled {
     opacity: 0.28;
     cursor: not-allowed;
-  }
-  #lightbox-nav-prev {
-    left: 12px;
-    right: auto;
-  }
-  #lightbox-nav-next {
-    left: auto;
-    right: 12px;
   }
   #lightbox-pre { font-family: monospace, ui-monospace, "Courier New", monospace; letter-spacing: 0; white-space: pre; margin: 0; display: inline-block; width: max-content; max-width: 100%; line-height: 1; cursor: default; }
   #lightbox-footer {
@@ -757,8 +766,10 @@
     </div>
   </div>
   <div class="lightbox-nav-overlay">
-    <button type="button" id="lightbox-nav-prev" class="lightbox-nav-btn" aria-label="Previous photo">&lt;</button>
-    <button type="button" id="lightbox-nav-next" class="lightbox-nav-btn" aria-label="Next photo">&gt;</button>
+    <div class="lightbox-nav-bar">
+      <button type="button" id="lightbox-nav-prev" class="lightbox-nav-btn" aria-label="Previous photo">&lt;</button>
+      <button type="button" id="lightbox-nav-next" class="lightbox-nav-btn" aria-label="Next photo">&gt;</button>
+    </div>
   </div>
 </div>
 <div id="confirm-modal">
