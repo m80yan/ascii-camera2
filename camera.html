@@ -1595,7 +1595,7 @@ AsciiCameraUi.wireEventBindings({
       asciiOffHelper.style.color = colorPicker.value;
     }
     AsciiCameraUi.syncVideoProgressBarColor();
-    syncIntroRequestRain();
+    /* 不改分辨率/画幅时勿调用 syncIntroRequestRain：否则会 resize 并重 init 列，开屏雨会「重启」。着色由 drawRequestRainFrame 每帧读 colorPicker。 */
   },
   onResPickerChange: function () {
     if (!videoMode && !AsciiCameraPreview.previewCaptureActive) {
