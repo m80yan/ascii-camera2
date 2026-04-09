@@ -50,6 +50,14 @@
   var loggedAsciiPhotosSsoNotice = false;
   /** 轮询间隔（毫秒）；嵌入页可较快看到相机页上传的更新 */
   var DEFAULT_POLL_MS = 16000;
+  /**
+   * 仅用于 Supabase `ascii_photos` 列表 GET 的 `limit` / 画廊分页每批条数。
+   */
+  var SUPABASE_ASCII_PHOTOS_FETCH_LIMIT = 60;
+  /** @type {boolean} 与 `gallery.html` 当前标签同步：Loop 为 true（轮询首屏用 `is_animated=eq.true`） */
+  var galleryFeedLoopOnly = false;
+  /** @type {number} 下一批 range 请求的 offset（由画廊写入，供日志/未来扩展） */
+  var galleryFeedNextOffset = 0;
 
   /** @type {((s: object) => void) | null} */
   var statusListener = null;
@@ -454,14 +462,21 @@
   }
 
   /**
-   * 拉取 `ascii_photos` 列表：不含 `frames` 列，减轻首屏体积。
+   * 拉取 `ascii_photos` 一页（offset/limit）；不含 `frames` 列。
+   * Loop 时在查询串加 `is_animated=eq.true`（服务端过滤）。
    * @param {number} limit
+   * @param {number} [offset]
+   * @param {boolean} [loopOnly]
    * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }>>}
    */
-  function fetchAsciiPhotosFromSupabase(limit) {
+  function fetchAsciiPhotosPageFromSupabase(limit, offset, loopOnly) {
     var c = getSupabaseConfig();
     var table = getSupabasePhotosTable();
-    var lim = Math.max(1, Math.min(500, typeof limit === 'number' ? limit : 24));
+    var lim = Math.max(
+      1,
+      Math.min(500, typeof limit === 'number' ? limit : SUPABASE_ASCII_PHOTOS_FETCH_LIMIT)
+    );
+    var off = Math.max(0, typeof offset === 'number' && Number.isFinite(offset) ? offset : 0);
     var cols =
       'id,ascii,color,created_at,owner_id,is_animated,frame_count,fps,duration_ms';
     var url =
@@ -471,7 +486,12 @@
       '?select=' +
       encodeURIComponent(cols) +
       '&order=created_at.desc&limit=' +
-      encodeURIComponent(String(lim));
+      encodeURIComponent(String(lim)) +
+      '&offset=' +
+      encodeURIComponent(String(off));
+    if (loopOnly === true) {
+      url += '&is_animated=eq.true';
+    }
     return fetch(url, {
       method: 'GET',
       cache: 'no-store',
@@ -512,16 +532,82 @@
   }
 
   /**
-   * 供 `gallery.html` 渲染：用户区 = 缓存表数据，示例图仅表为空时视觉上只有内置卡（仍 concat 示例）。
+   * 供画廊分页：`offset`/`limit` 与当前标签的 Loop 过滤。
+   * @param {number} offset PostgREST `offset`
+   * @param {number} limit PostgREST `limit`
+   * @param {boolean} loopOnly 仅 `is_animated=true`
+   * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }>>}
+   */
+  function fetchGalleryPage(offset, limit, loopOnly) {
+    return fetchAsciiPhotosPageFromSupabase(limit, offset, loopOnly === true);
+  }
+
+  /**
+   * 覆盖内存与 localStorage 用户列表（切换标签或首屏加载）。
+   * @param {Array<{ id?: string, ascii?: string }>} photos
+   * @returns {void}
+   */
+  function replaceSupabaseGalleryUserCache(photos) {
+    var list = Array.isArray(photos) ? photos.slice() : [];
+    supabaseGalleryUserCache = list;
+    if (global.AsciiCameraGalleryStorage && typeof global.AsciiCameraGalleryStorage.saveUserPhotos === 'function') {
+      global.AsciiCameraGalleryStorage.saveUserPhotos(list);
+    }
+  }
+
+  /**
+   * 追加一页并按 `id` 去重（保留既有顺序，仅追加新 id）。
+   * @param {Array<{ id?: string, ascii?: string }>} photos
+   * @returns {void}
+   */
+  function appendSupabaseGalleryUserCache(photos) {
+    if (!Array.isArray(photos) || photos.length === 0) return;
+    if (!supabaseGalleryUserCache.length) {
+      replaceSupabaseGalleryUserCache(photos);
+      return;
+    }
+    var seen = {};
+    var i;
+    for (i = 0; i < supabaseGalleryUserCache.length; i++) {
+      var r = supabaseGalleryUserCache[i];
+      if (r && r.id) seen[String(r.id)] = true;
+    }
+    var add = [];
+    for (i = 0; i < photos.length; i++) {
+      var p = photos[i];
+      if (!p || p.id == null) continue;
+      var id = String(p.id);
+      if (seen[id]) continue;
+      seen[id] = true;
+      add.push(p);
+    }
+    if (!add.length) return;
+    supabaseGalleryUserCache = supabaseGalleryUserCache.concat(add);
+    if (global.AsciiCameraGalleryStorage && typeof global.AsciiCameraGalleryStorage.saveUserPhotos === 'function') {
+      global.AsciiCameraGalleryStorage.saveUserPhotos(supabaseGalleryUserCache);
+    }
+  }
+
+  /**
+   * 画廊同步轮询上下文（`pullOnceSupabase` 合并策略与查询过滤用）。
+   * @param {{ loopOnly?: boolean, nextOffset?: number }} ctx
+   * @returns {void}
+   */
+  function setGalleryFeedPollContext(ctx) {
+    if (!ctx || typeof ctx !== 'object') return;
+    galleryFeedLoopOnly = ctx.loopOnly === true;
+    var n = ctx.nextOffset;
+    galleryFeedNextOffset =
+      typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+  }
+
+  /**
+   * 供 `gallery.html` 渲染：用户区 = `ascii_photos` 缓存（无内置示例拼接）。
    * @returns {{ photos: Array<{id:string,ascii:string,color?:string,time?:number,mine?:boolean,isDefault?:boolean}>, userCount: number }}
    */
   function getPhotosForGalleryRender() {
-    var builtins =
-      global.AsciiCameraGalleryStorage && typeof global.AsciiCameraGalleryStorage.getBuiltinGalleryCards === 'function'
-        ? global.AsciiCameraGalleryStorage.getBuiltinGalleryCards()
-        : [];
     var user = supabaseGalleryUserCache.slice();
-    return { photos: user.concat(builtins), userCount: user.length };
+    return { photos: user, userCount: user.length };
   }
 
   /**
@@ -868,7 +954,7 @@
 
   /**
    * Supabase：仅以 `ascii_photos` 覆盖缓存与 `localStorage` 用户列表（不合并旧本地、不用 JSON blob）。
-   * 拉取失败时保留上次成功缓存，不把画廊替换成「仅示例」。
+   * 拉取失败时保留上次成功缓存。
    * @returns {Promise<boolean>}
    */
   function pullOnceSupabase() {
@@ -888,18 +974,39 @@
         '[gallery-sync] gallery data source = ascii_photos only (ascii_gallery_sync.body unused)'
       );
     }
-    var max = global.AsciiCameraGalleryStorage.MAX_USER_PHOTOS || 24;
     var save = global.AsciiCameraGalleryStorage.saveUserPhotos;
     var beforeSnap = JSON.stringify(supabaseGalleryUserCache);
-    return fetchAsciiPhotosFromSupabase(max)
+    return fetchAsciiPhotosPageFromSupabase(
+      SUPABASE_ASCII_PHOTOS_FETCH_LIMIT,
+      0,
+      galleryFeedLoopOnly
+    )
       .then(function (remotePhotos) {
         if (pushInFlight) {
           return false;
         }
         var beforeCount = supabaseGalleryUserCache.length;
         var beforeFirstId = firstRowIdForPollLog(supabaseGalleryUserCache);
-        supabaseGalleryUserCache = remotePhotos.slice();
-        save(remotePhotos);
+        var first = Array.isArray(remotePhotos) ? remotePhotos : [];
+        var useMerge = supabaseGalleryUserCache.length > SUPABASE_ASCII_PHOTOS_FETCH_LIMIT;
+        if (useMerge) {
+          var firstIds = {};
+          var j;
+          for (j = 0; j < first.length; j++) {
+            var fr = first[j];
+            if (fr && fr.id != null) firstIds[String(fr.id)] = true;
+          }
+          var tail = [];
+          for (j = 0; j < supabaseGalleryUserCache.length; j++) {
+            var row = supabaseGalleryUserCache[j];
+            if (!row || row.id == null) continue;
+            if (!firstIds[String(row.id)]) tail.push(row);
+          }
+          supabaseGalleryUserCache = first.concat(tail);
+        } else {
+          supabaseGalleryUserCache = first.slice();
+        }
+        save(supabaseGalleryUserCache);
         var afterSnap = JSON.stringify(supabaseGalleryUserCache);
         var changed = beforeSnap !== afterSnap;
         var afterCount = supabaseGalleryUserCache.length;
@@ -1396,6 +1503,12 @@
     insertPhotoRow: insertPhotoRow,
     deletePhotoRow: deletePhotoRow,
     getPhotosForGalleryRender: getPhotosForGalleryRender,
+    /** 画廊分页每批条数（与内部 `SUPABASE_ASCII_PHOTOS_FETCH_LIMIT` 相同） */
+    GALLERY_PAGE_SIZE: SUPABASE_ASCII_PHOTOS_FETCH_LIMIT,
+    fetchGalleryPage: fetchGalleryPage,
+    replaceSupabaseGalleryUserCache: replaceSupabaseGalleryUserCache,
+    appendSupabaseGalleryUserCache: appendSupabaseGalleryUserCache,
+    setGalleryFeedPollContext: setGalleryFeedPollContext,
     /** @type {(s: string) => boolean} */
     isUuidPhotoId: isUuidString,
     schedulePush: schedulePush,

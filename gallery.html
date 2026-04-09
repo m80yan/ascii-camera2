@@ -10,14 +10,20 @@
    * 顶栏随页面滚动保持吸顶；半透明 + 背景模糊，底部 `::after` 做渐变穿透模糊过渡。
    * 负 margin 抵消 `body` 内边距，使条带横向贴边；`padding` 保持与原内容对齐。
    */
+  /**
+   * `scrollbar-gutter: stable`：避免 Loop/All 切换时因滚动条显隐导致整页宽度抖动。
+   */
+  html {
+    scrollbar-gutter: stable;
+  }
   #header {
     --hdr-action-btn-w: 12.5rem;
     --hdr-action-gap: 12px;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    justify-content: flex-start;
     position: sticky;
     top: 0;
     z-index: 50;
@@ -42,6 +48,15 @@
     -webkit-backdrop-filter: blur(10px);
     -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.95) 0%, transparent 100%);
     mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.95) 0%, transparent 100%);
+  }
+  /** 顶栏首行：标题与右侧按钮；与标签行左缘对齐（同为 `#header` 水平 padding）。 */
+  .header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    width: 100%;
   }
   /** 与 `#header` 的 margin 无关，仅标题行内对齐绿点 */
   h1 { font-size: 14px; letter-spacing: 4px; text-transform: uppercase; opacity: 0.6; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -215,8 +230,49 @@
   body.gallery-curator-mode .photo-card .delete-btn:hover {
     opacity: 1;
   }
-  #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 100; align-items: center; justify-content: center; padding: 24px; cursor: default; }
-  #lightbox.open { display: flex; }
+  #lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.92);
+    z-index: 100;
+    padding: 24px;
+    cursor: default;
+    box-sizing: border-box;
+  }
+  /**
+   * 打开时：`lightbox-stage` 仅负责居中图片；`lightbox-nav-overlay` 单独一层，按钮相对遮罩固定 left/right，不随 inner 宽度变化。
+   */
+  #lightbox.open {
+    display: block;
+  }
+  /**
+   * 居中图片区：尺寸随内容变，不参与导航按钮的定位计算。
+   */
+  .lightbox-stage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+    pointer-events: auto;
+  }
+  /**
+   * 导航层：全幅覆盖内容区，仅按钮可点；左右偏移相对 `#lightbox` 内容盒固定。
+   */
+  .lightbox-nav-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    pointer-events: none;
+  }
   #lightbox-inner {
     max-width: 90vw;
     max-height: 90vh;
@@ -230,6 +286,18 @@
     min-height: 0;
     overflow: hidden;
   }
+  /**
+   * 灯箱主内容区：仅包裹居中图片，与两侧导航分离。
+   */
+  .lightbox-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+  }
   #lightbox-scroll {
     flex: 1 1 auto;
     min-height: 0;
@@ -238,6 +306,44 @@
     justify-content: center;
     align-items: center;
     cursor: default;
+    width: 100%;
+  }
+  /**
+   * 上一张/下一张：相对 `.lightbox-nav-overlay`（即 `#lightbox` 内容区）绝对定位，与图片宽高无关。
+   */
+  .lightbox-nav-overlay .lightbox-nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: auto;
+    margin: 0;
+    padding: 0 10px;
+    min-width: 48px;
+    min-height: 48px;
+    border: none;
+    background: transparent;
+    color: #00ff41;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lightbox-nav-overlay .lightbox-nav-btn:hover:not(:disabled) {
+    opacity: 0.92;
+  }
+  .lightbox-nav-overlay .lightbox-nav-btn:disabled {
+    opacity: 0.28;
+    cursor: not-allowed;
+  }
+  #lightbox-nav-prev {
+    left: 12px;
+    right: auto;
+  }
+  #lightbox-nav-next {
+    left: auto;
+    right: 12px;
   }
   #lightbox-pre { font-family: monospace, ui-monospace, "Courier New", monospace; letter-spacing: 0; white-space: pre; margin: 0; display: inline-block; width: max-content; max-width: 100%; line-height: 1; cursor: default; }
   #lightbox-footer {
@@ -464,25 +570,110 @@
   /** 成功态用标题旁呼吸绿点；此处仅展示拉取/上传错误 */
   #cloud-sync-status { display: none; font-size: 10px; line-height: 1.55; letter-spacing: 0.35px; max-width: 760px; margin: 0 auto 14px; padding: 8px 12px; border-radius: 4px; box-sizing: border-box; width: 100%; }
   #cloud-sync-status.cloud-sync-err { color: #ff9999; border: 1px solid rgba(255,100,100,0.35); background: rgba(255,68,68,0.06); }
+  /**
+   * Supabase 画廊：标签在 `#header` 内第二行，与 `h1`「Gallery」左缘对齐（共用 header padding）。
+   * 活动项：64px×4px 下划线在标签文字下水平居中；标签文案在自身命中区内居中。
+   */
+  #gallery-feed-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    /** 与 `#header-actions`（Upload / Open Camera）同一 `gap`，见 `#header` 上的 `--hdr-action-gap` */
+    gap: var(--hdr-action-gap);
+    margin: 10px 0 0 0;
+    padding: 0;
+    box-sizing: border-box;
+    width: 100%;
+  }
+  #gallery-feed-tabs[hidden] {
+    display: none !important;
+  }
+  /**
+   * 命中高度与 `.hdr-btn` 一致（36px）；文字保持较轻，由内部 label 控制透明度。
+   */
+  .gallery-feed-tab {
+    background: transparent;
+    border: none;
+    color: #00ff41;
+    cursor: pointer;
+    box-sizing: border-box;
+    min-height: 36px;
+    height: 36px;
+    min-width: 72px;
+    padding: 0 14px;
+    margin: 0;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    line-height: 1.2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .gallery-feed-tab .gallery-feed-tab-label {
+    position: relative;
+    display: inline-block;
+    opacity: 0.42;
+    pointer-events: none;
+    text-align: center;
+  }
+  .gallery-feed-tab:hover .gallery-feed-tab-label {
+    opacity: 0.85;
+  }
+  .gallery-feed-tab[aria-selected="true"] .gallery-feed-tab-label {
+    opacity: 1;
+  }
+  .gallery-feed-tab[aria-selected="true"]:hover .gallery-feed-tab-label {
+    opacity: 1;
+  }
+  .gallery-feed-tab[aria-selected="true"] .gallery-feed-tab-label::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -10px;
+    width: 64px;
+    height: 4px;
+    margin-left: -32px;
+    background: #00ff41;
+  }
+  /**
+   * 画廊主区：略设 min-height，减轻短列表与长列表切换时的垂直跳动（配合 scrollbar-gutter）。
+   */
+  #gallery-feed-main {
+    min-height: min(36vh, 420px);
+  }
 </style>
 </head>
 <body>
 <pre id="gallery-cell-probe" class="gallery-cell-probe" aria-hidden="true">&#x2588;</pre>
 <div id="header">
-  <h1><span>Gallery</span><span id="gallery-cloud-dot-wrap" aria-hidden="true"><span class="gallery-cloud-dot"></span></span></h1>
-  <div id="header-actions">
-    <button type="button" class="hdr-btn" id="curate-mode-btn" hidden aria-hidden="true" title="Curator mode is on — click to exit">
-      Exit Curate
+  <div class="header-row">
+    <h1><span>Gallery</span><span id="gallery-cloud-dot-wrap" aria-hidden="true"><span class="gallery-cloud-dot"></span></span></h1>
+    <div id="header-actions">
+      <button type="button" class="hdr-btn" id="curate-mode-btn" hidden aria-hidden="true" title="Curator mode is on — click to exit">
+        Exit Curate
+      </button>
+      <button class="hdr-btn" id="upload-btn" type="button">Upload Image</button>
+      <input type="file" id="upload-input" accept="image/*">
+      <a class="hdr-btn" id="live-btn" href="camera.html">OPEN CAMERA ➤</a>
+    </div>
+  </div>
+  <div id="gallery-feed-tabs" role="tablist" aria-label="Gallery feed" hidden>
+    <button type="button" class="gallery-feed-tab" id="gallery-tab-all" role="tab" aria-selected="true" aria-controls="gallery">
+      <span class="gallery-feed-tab-label">All</span>
     </button>
-    <button class="hdr-btn" id="upload-btn" type="button">Upload Image</button>
-    <input type="file" id="upload-input" accept="image/*">
-    <a class="hdr-btn" id="live-btn" href="camera.html">OPEN CAMERA ➤</a>
+    <button type="button" class="gallery-feed-tab" id="gallery-tab-loop" role="tab" aria-selected="false" aria-controls="gallery">
+      <span class="gallery-feed-tab-label">Loop</span>
+    </button>
   </div>
 </div>
 <p id="cloud-status-banner" role="status"></p>
 <p id="cloud-sync-status" role="status" aria-live="polite"></p>
+<div id="gallery-feed-main">
 <div id="empty" style="display:none">No photos yet.<br>Use Upload or Open Camera — your shots are saved in this browser only.</div>
 <div id="gallery"></div>
+</div>
 <img id="upload-src-img" alt="">
 <div id="upload-modal" aria-hidden="true">
   <div id="upload-modal-inner">
@@ -517,19 +708,20 @@
         <div class="upload-ctl">
           <span class="upload-ctl-label">Resolution</span>
           <select id="upload-cols" aria-label="Resolution">
-            <option value="32">32 (Mini)</option>
-            <option value="80">80 (Low)</option>
-            <option value="100" selected>100 (Medium)</option>
-            <option value="120">120 (High)</option>
+            <option value="48">48 (Low)</option>
+            <option value="72">72 (Medium)</option>
+            <option value="96" selected>96 (High)</option>
+            <option value="120">120 (Ultra)</option>
           </select>
         </div>
         <div class="upload-ctl">
           <span class="upload-ctl-label">Aspect</span>
           <select id="upload-aspect" aria-label="Aspect">
+            <option value="free" selected>Free</option>
             <option value="1:1">1:1</option>
             <option value="16:9">16:9</option>
             <option value="4:3">4:3</option>
-            <option value="3:4" selected>3:4 (Portrait)</option>
+            <option value="3:4">3:4 (Portrait)</option>
           </select>
         </div>
       </div>
@@ -547,15 +739,23 @@
   </div>
 </div>
 <div id="lightbox">
-  <div id="lightbox-inner">
-    <div id="lightbox-scroll">
-      <pre id="lightbox-pre"></pre>
+  <div class="lightbox-stage">
+    <div id="lightbox-inner">
+      <div id="lightbox-body" class="lightbox-body">
+        <div id="lightbox-scroll">
+          <pre id="lightbox-pre"></pre>
+        </div>
+      </div>
+      <div id="lightbox-footer">
+        <button type="button" id="lightbox-like">Like</button>
+        <button type="button" id="lightbox-download-png">Download PNG</button>
+        <button type="button" id="lightbox-open-to-download" hidden aria-hidden="true" title="Opens the full gallery page for this item so you can download">Open to download</button>
+      </div>
     </div>
-    <div id="lightbox-footer">
-      <button type="button" id="lightbox-like">Like</button>
-      <button type="button" id="lightbox-download-png">Download PNG</button>
-      <button type="button" id="lightbox-open-to-download" hidden aria-hidden="true" title="Opens the full gallery page for this item so you can download">Open to download</button>
-    </div>
+  </div>
+  <div class="lightbox-nav-overlay">
+    <button type="button" id="lightbox-nav-prev" class="lightbox-nav-btn" aria-label="Previous photo">&lt;</button>
+    <button type="button" id="lightbox-nav-next" class="lightbox-nav-btn" aria-label="Next photo">&gt;</button>
   </div>
 </div>
 <div id="confirm-modal">
@@ -723,6 +923,16 @@ const uploadColor = document.getElementById('upload-color');
 const uploadCols = document.getElementById('upload-cols');
 const uploadAspect = document.getElementById('upload-aspect');
 let pendingDeleteIndex = null, photosCache = [];
+/** 灯箱内当前条目在 `photosCache`（当前可见 feed）中的下标；-1 表示未关联列表 */
+let lightboxFeedIndex = -1;
+/** Supabase 画廊：当前标签是否为 Loop（仅 `is_animated=true` 的查询） */
+let galleryFeedTabLoop = false;
+/** 下一页请求的 PostgREST offset */
+let galleryFeedNextOffset = 0;
+/** 当前标签下是否可能还有更多行 */
+let galleryFeedHasMore = true;
+/** 首屏或加载更多进行中 */
+let galleryFeedLoadingMore = false;
 
 /** localStorage 键：策展模式（轻量演示用，非服务端鉴权） */
 const ASCII_CURATOR_LS_KEY = 'ascii_curator_mode';
@@ -769,7 +979,7 @@ function initCuratorModeFromUrl() {
   return readCuratorModeFromStorage();
 }
 
-/** 为 true 时：用户区所有卡片显示 Remove（含他人作品）。普通访客仅对自己 `mine:true` 的作品显示 Remove。内置示例仅策展模式可点且会提示不可删。 */
+/** 为 true 时：用户区所有卡片显示 Remove（含他人作品）。普通访客仅对自己 `mine:true` 的作品显示 Remove。 */
 let curatorModeActive = initCuratorModeFromUrl();
 
 /**
@@ -862,11 +1072,12 @@ function getUploadCharSet() {
 }
 
 /**
- * 与 `camera.html` 中 `getAspectRatio()` / `#aspectPicker` 选项一致。
- * @returns {number}
+ * 与上传 `#upload-aspect` 一致；`free` 表示不强制裁剪（见 `imageToAscii` 的 `forcedAspect`）。
+ * @returns {number|null}
  */
 function getUploadAspectNumber() {
   const v = uploadAspect.value;
+  if (v === 'free') return null;
   if (v === '16:9') return 16 / 9;
   if (v === '4:3') return 4 / 3;
   if (v === '3:4') return 3 / 4;
@@ -884,7 +1095,7 @@ function renderUploadPreview() {
     uploadPreviewPre.textContent = '';
     return '';
   }
-  const cols = parseInt(uploadCols.value, 10) || 100;
+  const cols = parseInt(uploadCols.value, 10) || 96;
   const ascii = imageToAscii(uploadSrcImg, cols, getUploadAspectNumber(), getUploadCharSet());
   uploadPreviewPre.textContent = ascii;
   uploadPreviewPre.style.color = uploadColor.value;
@@ -1016,11 +1227,41 @@ function stopLightboxAsciiAnim() {
 }
 
 /**
- * @param {{ascii:string,color?:string,time?:number,id?:string,isAnimated?:boolean,frames?:string[],fps?:number}} photo
+ * 关闭灯箱并停止帧动画。
+ * @returns {void}
  */
-function openLightbox(photo) {
+function closeLightbox() {
+  stopLightboxAsciiAnim();
+  lightbox.classList.remove('open');
+}
+
+/**
+ * 根据 `lightboxFeedIndex` 与当前 `photosCache` 更新上一张/下一张禁用态。
+ * @returns {void}
+ */
+function updateLightboxNavButtons() {
+  var prev = document.getElementById('lightbox-nav-prev');
+  var next = document.getElementById('lightbox-nav-next');
+  if (!prev || !next) return;
+  var n = photosCache.length;
+  var i = lightboxFeedIndex;
+  var ok = i >= 0 && i < n;
+  prev.disabled = !ok || i <= 0;
+  next.disabled = !ok || i >= n - 1;
+}
+
+/**
+ * @param {{ascii:string,color?:string,time?:number,id?:string,isAnimated?:boolean,frames?:string[],fps?:number}} photo
+ * @param {number} [feedIndexOpt] 当前可见列表中的下标（与 All/Loop feed 一致）；省略时按 id 在 `photosCache` 中查找
+ */
+function openLightbox(photo, feedIndexOpt) {
   stopLightboxAsciiAnim();
   lightboxOpenPhoto = photo || null;
+  if (typeof feedIndexOpt === 'number' && feedIndexOpt >= 0 && feedIndexOpt < photosCache.length) {
+    lightboxFeedIndex = feedIndexOpt;
+  } else {
+    lightboxFeedIndex = findGalleryPhotoIndexByOpenId(resolveLightboxPhotoId(photo));
+  }
   lightboxLikeSessionGen++;
   const session = lightboxLikeSessionGen;
   lightboxPhotoId = resolveLightboxPhotoId(photo);
@@ -1038,6 +1279,7 @@ function openLightbox(photo) {
   lightboxPre.style.display = 'inline-block';
   lightboxPre.style.lineHeight = '1';
   lightbox.classList.add('open');
+  updateLightboxNavButtons();
 
   const sync = window.AsciiCameraGalleryCloudSync;
   if (sync && typeof sync.likesApiEnabled === 'function' && sync.likesApiEnabled() && lightboxPhotoId) {
@@ -1090,12 +1332,27 @@ function openLightbox(photo) {
     });
   }
 }
-lightbox.addEventListener('click', (e) => {
-  if (e.target === lightbox) {
-    stopLightboxAsciiAnim();
-    lightbox.classList.remove('open');
-  }
+lightbox.addEventListener('click', function (e) {
+  if (e.target.closest('#lightbox-inner')) return;
+  if (e.target.closest('.lightbox-nav-btn')) return;
+  closeLightbox();
 });
+
+(function setupLightboxFeedNav() {
+  var prev = document.getElementById('lightbox-nav-prev');
+  var next = document.getElementById('lightbox-nav-next');
+  if (!prev || !next) return;
+  prev.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (lightboxFeedIndex <= 0) return;
+    openLightbox(photosCache[lightboxFeedIndex - 1], lightboxFeedIndex - 1);
+  });
+  next.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (lightboxFeedIndex < 0 || lightboxFeedIndex >= photosCache.length - 1) return;
+    openLightbox(photosCache[lightboxFeedIndex + 1], lightboxFeedIndex + 1);
+  });
+})();
 
 if (lightboxLikeBtn) {
   lightboxLikeBtn.addEventListener('click', function () {
@@ -1619,7 +1876,7 @@ function tryConsumeGalleryOpenQuery() {
     var id = String(raw).trim();
     var idx = findGalleryPhotoIndexByOpenId(id);
     if (idx < 0) return;
-    openLightbox(photosCache[idx]);
+    openLightbox(photosCache[idx], idx);
     u.searchParams.delete(ASCII_GALLERY_OPEN_QUERY_KEY);
     var qs = u.searchParams.toString();
     var next = u.pathname + (qs ? '?' + qs : '') + u.hash;
@@ -1838,7 +2095,7 @@ async function deletePhoto(userIndex) {
 }
 
 /**
- * 重新渲染网格：Supabase 下仅使用 `ascii_photos` 缓存 + 内置示例；否则 localStorage 合并。
+ * 重新渲染网格：Supabase 下仅使用 `ascii_photos` 缓存；否则 localStorage 用户列表。
  */
 function refreshGallery() {
   if (typeof console !== 'undefined' && console.info) {
@@ -1866,6 +2123,149 @@ function refreshGallery() {
   }
   var merged = AsciiCameraGalleryStorage.getMergedGalleryPhotos();
   renderGallery(merged, AsciiCameraGalleryStorage.getUserPhotoCount());
+}
+
+/**
+ * 是否使用 Supabase `ascii_photos` 作为画廊数据源。
+ * @returns {boolean}
+ */
+function isSupabaseGalleryCloudEnabled() {
+  var s = window.AsciiCameraGalleryCloudSync;
+  return !!(s && s.isEnabled() && s.getProvider() === 'supabase');
+}
+
+/**
+ * 将当前标签与分页 offset 写入 `gallery-cloud-sync.js`，供轮询 `pullOnce` 合并策略与查询过滤使用。
+ * @returns {void}
+ */
+function syncGalleryFeedPollContext() {
+  var s = window.AsciiCameraGalleryCloudSync;
+  if (!s || typeof s.setGalleryFeedPollContext !== 'function') return;
+  s.setGalleryFeedPollContext({
+    loopOnly: galleryFeedTabLoop,
+    nextOffset: galleryFeedNextOffset
+  });
+}
+
+/**
+ * 重置并加载当前标签下第一页（60 条），写入云端缓存后刷新网格。
+ * @returns {Promise<void>}
+ */
+function loadFirstGalleryFeedPage() {
+  var sync = window.AsciiCameraGalleryCloudSync;
+  if (!isSupabaseGalleryCloudEnabled() || typeof sync.fetchGalleryPage !== 'function') {
+    return Promise.resolve();
+  }
+  if (galleryFeedLoadingMore) return Promise.resolve();
+  galleryFeedLoadingMore = true;
+  var pageSize = sync.GALLERY_PAGE_SIZE || 60;
+  return sync
+    .fetchGalleryPage(0, pageSize, galleryFeedTabLoop)
+    .then(function (rows) {
+      var list = Array.isArray(rows) ? rows : [];
+      sync.replaceSupabaseGalleryUserCache(list);
+      galleryFeedNextOffset = list.length;
+      galleryFeedHasMore = list.length >= pageSize;
+      syncGalleryFeedPollContext();
+      refreshGallery();
+    })
+    .catch(function () {
+      /* 失败时保留上次缓存；由调用方决定是否 refresh */
+    })
+    .finally(function () {
+      galleryFeedLoadingMore = false;
+    });
+}
+
+/**
+ * 滚动触底附近时加载下一页；按 id 去重在 sync 层完成。
+ * @returns {Promise<void>}
+ */
+function loadMoreGalleryFeedPage() {
+  var sync = window.AsciiCameraGalleryCloudSync;
+  if (!isSupabaseGalleryCloudEnabled() || typeof sync.fetchGalleryPage !== 'function') {
+    return Promise.resolve();
+  }
+  if (galleryFeedLoadingMore || !galleryFeedHasMore) return Promise.resolve();
+  galleryFeedLoadingMore = true;
+  var pageSize = sync.GALLERY_PAGE_SIZE || 60;
+  return sync
+    .fetchGalleryPage(galleryFeedNextOffset, pageSize, galleryFeedTabLoop)
+    .then(function (rows) {
+      var list = Array.isArray(rows) ? rows : [];
+      sync.appendSupabaseGalleryUserCache(list);
+      galleryFeedNextOffset += list.length;
+      galleryFeedHasMore = list.length >= pageSize;
+      syncGalleryFeedPollContext();
+      refreshGallery();
+    })
+    .finally(function () {
+      galleryFeedLoadingMore = false;
+    });
+}
+
+/**
+ * All / Loop 标签：切换时清空分页状态并拉首屏。
+ * @returns {void}
+ */
+function setupGalleryFeedTabs() {
+  if (window._galleryFeedTabsBound) return;
+  window._galleryFeedTabsBound = true;
+  var allBtn = document.getElementById('gallery-tab-all');
+  var loopBtn = document.getElementById('gallery-tab-loop');
+  /**
+   * @returns {void}
+   */
+  function applyTabUi() {
+    if (allBtn) {
+      allBtn.setAttribute('aria-selected', galleryFeedTabLoop ? 'false' : 'true');
+    }
+    if (loopBtn) {
+      loopBtn.setAttribute('aria-selected', galleryFeedTabLoop ? 'true' : 'false');
+    }
+  }
+  /**
+   * @param {boolean} loop
+   * @returns {void}
+   */
+  function switchTab(loop) {
+    if (galleryFeedTabLoop === loop) return;
+    closeLightbox();
+    galleryFeedTabLoop = loop;
+    galleryFeedNextOffset = 0;
+    galleryFeedHasMore = true;
+    applyTabUi();
+    if (!isSupabaseGalleryCloudEnabled()) return;
+    loadFirstGalleryFeedPage().catch(function () {
+      refreshGallery();
+    });
+  }
+  if (allBtn) allBtn.addEventListener('click', function () { switchTab(false); });
+  if (loopBtn) loopBtn.addEventListener('click', function () { switchTab(true); });
+  applyTabUi();
+}
+
+/**
+ * 窗口滚动接近底部时加载下一批 60 条。
+ * @returns {void}
+ */
+function setupGalleryFeedInfiniteScroll() {
+  if (window._galleryFeedScrollBound) return;
+  window._galleryFeedScrollBound = true;
+  window.addEventListener(
+    'scroll',
+    function () {
+      if (!isSupabaseGalleryCloudEnabled()) return;
+      if (galleryFeedLoadingMore || !galleryFeedHasMore) return;
+      var doc = document.documentElement;
+      var st = window.scrollY != null ? window.scrollY : doc.scrollTop;
+      var scrollBottom = doc.scrollHeight - doc.clientHeight - st;
+      if (scrollBottom < 480) {
+        loadMoreGalleryFeedPage();
+      }
+    },
+    { passive: true }
+  );
 }
 
 function timeAgo(ts) {
@@ -2059,7 +2459,8 @@ function renderGallery(photos, userCountOverride) {
     card.addEventListener('click', (e) => {
       const t = /** @type {HTMLElement} */ (e.target);
       if (t.classList.contains('delete-btn')) return;
-      openLightbox(photosCache[parseInt(card.dataset.index, 10)]);
+      var ix = parseInt(card.dataset.index, 10);
+      openLightbox(photosCache[ix], ix);
     });
     card.addEventListener('mouseenter', function () {
       var idx = parseInt(card.getAttribute('data-index') || '0', 10);
@@ -2172,6 +2573,7 @@ window.addEventListener('message', function (ev) {
     return;
   }
   window.addEventListener('focus', function () {
+    if (isSupabaseGalleryCloudEnabled()) syncGalleryFeedPollContext();
     AsciiCameraGalleryCloudSync.pullOnce().then(function (changed) {
       if (changed) refreshGallery();
     });
@@ -2260,18 +2662,40 @@ window.addEventListener('message', function (ev) {
   }
 
   if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
-    AsciiCameraGalleryCloudSync.pullOnce()
-      .then(function () {
-        refreshGallery();
-      })
-      .catch(function () {
-        refreshGallery();
-      })
-      .finally(function () {
-        AsciiCameraGalleryCloudSync.startPolling(function () {
+    var gsync = AsciiCameraGalleryCloudSync;
+    if (gsync.getProvider() === 'supabase') {
+      var tabsEl = document.getElementById('gallery-feed-tabs');
+      if (tabsEl) tabsEl.hidden = false;
+      galleryFeedTabLoop = false;
+      galleryFeedNextOffset = 0;
+      galleryFeedHasMore = true;
+      syncGalleryFeedPollContext();
+      setupGalleryFeedTabs();
+      setupGalleryFeedInfiniteScroll();
+      loadFirstGalleryFeedPage()
+        .catch(function () {
           refreshGallery();
-        }, pollIntervalMs());
-      });
+        })
+        .finally(function () {
+          gsync.startPolling(function () {
+            refreshGallery();
+          }, pollIntervalMs());
+        });
+    } else {
+      gsync
+        .pullOnce()
+        .then(function () {
+          refreshGallery();
+        })
+        .catch(function () {
+          refreshGallery();
+        })
+        .finally(function () {
+          gsync.startPolling(function () {
+            refreshGallery();
+          }, pollIntervalMs());
+        });
+    }
   } else {
     refreshGallery();
   }
