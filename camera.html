@@ -639,7 +639,7 @@
   }
   /**
    * 开屏 code-rain：仅 `.ascii-active-frame` 内（`overflow:hidden` 裁剪）；Start Camera 后淡出。
-   * 与隐藏采样 canvas 区分：`video, canvas:not(.ascii-request-rain-canvas)`。
+   * 与隐藏采样 canvas 区分：`video, canvas:not(.ascii-request-rain-canvas):not(.ascii-frame-mask-canvas)`。
    */
   .ascii-request-rain-canvas {
     position: absolute;
@@ -659,6 +659,23 @@
   .ascii-request-rain-canvas.ascii-request-rain-canvas--visible {
     opacity: 1;
   }
+  /**
+   * Photo 取景框遮罩画布：纯黑格、叠于雨效之上；不改动画幅尺寸与 ASCII 生成。
+   */
+  .ascii-frame-mask-canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 5;
+    pointer-events: none;
+    display: none;
+    opacity: 1;
+  }
+  .ascii-frame-mask-canvas.ascii-frame-mask-canvas--visible {
+    display: block;
+  }
   .ascii-slot-inner {
     display: flex;
     flex-direction: column;
@@ -675,6 +692,49 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: var(--cam-action-gap);
     row-gap: 12px;
+  }
+  /**
+   * 与锁定行同宽：1:1 时左右两格对齐 Style / Aspect 列；3:4 时仅右格占满（见 `.frame-mask-dual--oval-only`）。
+   */
+  .frame-mask-slot {
+    grid-column: 1 / -1;
+    margin-top: -4px;
+    padding-top: 0;
+    min-height: 24px;
+    box-sizing: border-box;
+  }
+  .frame-mask-dual {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--cam-action-gap);
+    align-items: start;
+    width: 100%;
+  }
+  .frame-mask-dual.frame-mask-dual--oval-only .frame-mask-cell--iron {
+    display: none !important;
+  }
+  /** 3:4 Evil Queen：仅占 Aspect 列，左缘与 Aspect 控件对齐（不跨整行网格漂移） */
+  .frame-mask-dual.frame-mask-dual--oval-only .frame-mask-cell--primary {
+    grid-column: 2;
+  }
+  .frame-mask-row {
+    min-height: 0;
+  }
+  /** 与 Flash 同款 `.flash-switch`，置于 Aspect 列内左对齐 */
+  .frame-mask-row .frame-mask-flash-switch {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  /**
+   * `[hidden]` 默认 `display:none` 会被 `.ctl-stack { display:flex }`（同级选择器、后写）覆盖，导致 Loop 下行仍可见。
+   * `#camera-shell.cam-video-mode` 作为双保险，保证 Video 下行不参与布局与点击。
+   */
+  #frameMaskRow[hidden],
+  #frameMaskIronRow[hidden],
+  #camera-shell.cam-video-mode #frameMaskRow,
+  #camera-shell.cam-video-mode #frameMaskIronRow {
+    display: none !important;
+    pointer-events: none !important;
   }
   .ascii-inner {
     flex: 1 1 auto;
@@ -828,7 +888,7 @@
     display: none;
   }
   #saved-msg.show { opacity: 1; }
-  video, canvas:not(.ascii-request-rain-canvas) { display: none; }
+  video, canvas:not(.ascii-request-rain-canvas):not(.ascii-frame-mask-canvas) { display: none; }
   /* Notion 等 iframe 嵌入时提示：摄像头需在独立标签页使用 */
   .iframe-hint {
     display: flex;
@@ -925,6 +985,8 @@
                   <pre id="ascii-out" aria-hidden="true">Click &quot;START CAMERA&quot; to begin</pre>
                 </div>
                 <canvas id="requestRainCanvas" class="ascii-request-rain-canvas" width="1" height="1" aria-hidden="true"></canvas>
+                <!-- Photo 取景预览专用：ASCII 格二值遮罩，不改变导出/提交；置于雨效之上 -->
+                <canvas id="asciiFrameMaskCanvas" class="ascii-frame-mask-canvas" width="1" height="1" aria-hidden="true"></canvas>
               </div>
               <div id="video-progress-root" class="video-progress-root video-progress-root--inactive" aria-hidden="true">
                 <div class="video-progress-track">
@@ -943,13 +1005,13 @@
 </div>
 <div class="camera-content">
 <div class="cam-controls-grid">
-  <label class="ctl-stack cc-left">
-    <span class="ctl-label">Style</span>
-    <select id="densityPicker">
-      <option value="detailed">Detailed</option>
-      <option value="simple">Simple</option>
-      <option value="blocks">Blocks</option>
-      <option value="binary">Binary</option>
+  <label class="ctl-stack cc-left" id="resPickerStack">
+    <span class="ctl-label">Resolution</span>
+    <select id="resPicker">
+      <option value="48">48 (Low)</option>
+      <option value="72" selected>72 (Medium)</option>
+      <option value="96">96 (High)</option>
+      <option value="120">120 (Ultra)</option>
     </select>
   </label>
   <label class="ctl-stack cc-left">
@@ -964,13 +1026,13 @@
     </select>
   </label>
   <div class="cam-mode-lock-strip" id="camModeLockStrip">
-  <label class="ctl-stack cc-left" id="resPickerStack">
-    <span class="ctl-label">Resolution</span>
-    <select id="resPicker">
-      <option value="48">48 (Low)</option>
-      <option value="72" selected>72 (Medium)</option>
-      <option value="96">96 (High)</option>
-      <option value="120">120 (Ultra)</option>
+  <label class="ctl-stack cc-left" id="densityPickerStack">
+    <span class="ctl-label">Style</span>
+    <select id="densityPicker">
+      <option value="detailed">Detailed</option>
+      <option value="simple">Simple</option>
+      <option value="blocks">Blocks</option>
+      <option value="binary">Binary</option>
     </select>
   </label>
   <label class="ctl-stack cc-left" id="aspectPickerStack">
@@ -982,6 +1044,29 @@
       <option value="3:4" selected>3:4 (Portrait)</option>
     </select>
   </label>
+  <!-- 1:1：左 Iron Bars（与 Style 列对齐）、右 Monocular（与 Aspect 列对齐）；3:4 仅右格 Evil Queen -->
+  <div class="frame-mask-slot" id="frameMaskSlot">
+    <div class="frame-mask-dual" id="frameMaskDual">
+      <div class="frame-mask-cell frame-mask-cell--iron" id="frameMaskIronCell" hidden>
+        <div class="frame-mask-row ctl-stack cc-left" id="frameMaskIronRow" hidden>
+          <label class="flash-switch frame-mask-flash-switch" id="frameMaskIronFlashLabel">
+            <input type="checkbox" id="frameMaskIronCheckbox" autocomplete="off" />
+            <span class="flash-switch-box" aria-hidden="true"></span>
+            <span class="flash-switch-label">Iron Bars</span>
+          </label>
+        </div>
+      </div>
+      <div class="frame-mask-cell frame-mask-cell--primary" id="frameMaskPrimaryCell">
+        <div class="frame-mask-row ctl-stack cc-left" id="frameMaskRow" hidden>
+          <label class="flash-switch frame-mask-flash-switch" id="frameMaskFlashLabel">
+            <input type="checkbox" id="frameMaskCheckbox" autocomplete="off" />
+            <span class="flash-switch-box" aria-hidden="true"></span>
+            <span class="flash-switch-label" id="frameMaskLabelText">Evil Queen (Oval)</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
   </div>
 </div>
 <div class="cam-submit-wrap">
@@ -1093,6 +1178,8 @@ const SNAP_LABEL_RETAKE_PHOTO = '📷 Retake';
 const SNAP_LABEL_RETAKE_VIDEO = '🎥 Retake';
 /** Loop 模式固定列数（与 `AsciiCameraLoop.VIDEO_COLS` 一致） */
 const VIDEO_DEFAULT_COLS = 72;
+/** Iron Bars 竖/横条屏幕厚度锚定 72 列档的单格宽高（与 Photo 分辨率「72」一致）。 */
+const IRON_BARS_REF_RES_COLS = VIDEO_DEFAULT_COLS;
 /**
  * Photo 模式默认画幅（竖幅 3:4）；Loop 仍由 `applyCaptureModeUi` 强制 1:1，不使用本常量。
  * @type {string}
@@ -1275,6 +1362,596 @@ AsciiCameraUi.initStateAccess({
   }
 });
 
+const frameMaskRow = document.getElementById('frameMaskRow');
+const frameMaskCheckbox = document.getElementById('frameMaskCheckbox');
+const frameMaskLabelText = document.getElementById('frameMaskLabelText');
+const frameMaskIronCheckbox = document.getElementById('frameMaskIronCheckbox');
+const frameMaskDual = document.getElementById('frameMaskDual');
+const frameMaskIronRow = document.getElementById('frameMaskIronRow');
+const frameMaskIronCell = document.getElementById('frameMaskIronCell');
+const asciiFrameMaskCanvas = document.getElementById('asciiFrameMaskCanvas');
+/** @type {CanvasRenderingContext2D | null} */
+const asciiFrameMaskCtx = asciiFrameMaskCanvas ? asciiFrameMaskCanvas.getContext('2d') : null;
+
+/** 用于 `change` 前把勾选写回上一比例的记忆（与 `aspectPicker.value` 同步于 `applyCaptureModeUi` 末尾）。 */
+var lastAspectPickerValueForMask = aspectPicker ? aspectPicker.value : '';
+
+/** Photo 下 3:4 / 1:1 各自记住取景框遮罩勾选（切 Loop 时仅隐藏 UI，不切记忆）。 */
+var frameMaskCheckedOval = false;
+
+/** @type {boolean} */
+var frameMaskCheckedRound = false;
+
+/** Photo 1:1 专用：Iron Bars 勾选记忆 */
+var frameMaskCheckedIronBars = false;
+
+/**
+ * 程序化改勾选（如 Photo→Loop 先收起遮罩）时为 true，避免写入 `frameMaskChecked*` 或触发预览重算。
+ * @type {boolean}
+ */
+var frameMaskMemorySuppress = false;
+
+/** 遮罩动画进度 0…1（1 = 内接圆/椭圆最终态，格角为纯黑）。 */
+var photoFrameMaskEase = 0;
+
+/** @type {number | null} */
+var photoFrameMaskAnimRaf = null;
+
+/** @type {number} */
+var photoFrameMaskAnimStartMs = 0;
+
+/** @type {number} */
+var photoFrameMaskAnimFrom = 0;
+
+/** @type {number} */
+var photoFrameMaskAnimTo = 0;
+
+/** 与旧 box-shadow 过渡同量级，略短 ease-out。 */
+var PHOTO_FRAME_MASK_ANIM_MS = 400;
+
+/**
+ * Photo 比例是否支持取景框遮罩（仅预览 UI，不参与导出）。
+ * @returns {'oval' | 'round' | null}
+ */
+function getPhotoFrameMaskKind() {
+  if (videoMode || !aspectPicker) return null;
+  var v = aspectPicker.value;
+  if (v === '3:4') return 'oval';
+  if (v === '1:1') return 'round';
+  return null;
+}
+
+/**
+ * 与 `toAsciiWithLuminance` 一致：按列数与画面宽高比推算行数。
+ * @param {number} cols
+ * @returns {number}
+ */
+function getAsciiMaskRowCountForCols(cols) {
+  var m = getAsciiCellMetrics();
+  var ar = getAspectRatio();
+  return Math.max(1, Math.round((cols * m.cellAspect) / ar));
+}
+
+/**
+ * 与 `getAsciiMaskRowCountForCols` 相同，但用显式 `cellAspect` / `aspectRatio`（铁栅 SSOT 不依赖 DOM 布局）。
+ * @param {number} cols
+ * @param {number} cellAspect
+ * @param {number} aspectRatio 画幅 W/H
+ * @returns {number}
+ */
+function getAsciiMaskRowCountForColsExplicit(cols, cellAspect, aspectRatio) {
+  var ca = cellAspect != null && Number.isFinite(cellAspect) && cellAspect > 0 ? cellAspect : CELL_ASPECT_FALLBACK;
+  var ar = aspectRatio != null && Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 1;
+  return Math.max(1, Math.round((cols * ca) / ar));
+}
+
+/**
+ * 取景器内 ASCII 逻辑格相对活动画幅的像素布局（Camera OFF 时铺满画幅格网以对齐比例与分辨率）。
+ * @returns {{
+ *   cols: number,
+ *   rows: number,
+ *   originX: number,
+ *   originY: number,
+ *   cellW: number,
+ *   cellH: number,
+ *   frameW: number,
+ *   frameH: number,
+ *   contentBottomY: number,
+ *   contentRightX: number
+ * }}
+ */
+/**
+ * Live 取景：Iron Bars 叠加需 `#ascii-out` 与 live 布局就绪；offline/全画幅会误导条带几何。
+ * @param {{ originX: number, originY: number, contentRightX: number, contentBottomY: number }} layout
+ * @returns {boolean}
+ */
+function isLiveAsciiMaskLayoutValidForIron(layout) {
+  if (!asciiWrap || asciiWrap.classList.contains('ascii-wrap--offline')) return false;
+  if (!out) return false;
+  var Wc = layout.contentRightX - layout.originX;
+  var Hc = layout.contentBottomY - layout.originY;
+  return Wc >= 2 && Hc >= 2;
+}
+
+function getAsciiMaskGridLayout() {
+  var cols = getCols();
+  var rows = getAsciiMaskRowCountForCols(cols);
+  if (!asciiActiveFrame) {
+    return {
+      cols: cols,
+      rows: rows,
+      originX: 0,
+      originY: 0,
+      cellW: 1,
+      cellH: 1,
+      frameW: 1,
+      frameH: 1,
+      contentBottomY: 1,
+      contentRightX: 1
+    };
+  }
+  var fr = asciiActiveFrame.getBoundingClientRect();
+  var frameW = fr.width;
+  var frameH = fr.height;
+  if (asciiWrap && asciiWrap.classList.contains('ascii-wrap--offline')) {
+    return {
+      cols: cols,
+      rows: rows,
+      originX: 0,
+      originY: 0,
+      cellW: frameW / cols,
+      cellH: frameH / rows,
+      frameW: frameW,
+      frameH: frameH,
+      contentBottomY: frameH,
+      contentRightX: frameW
+    };
+  }
+  if (!out) {
+    return {
+      cols: cols,
+      rows: rows,
+      originX: 0,
+      originY: 0,
+      cellW: frameW / cols,
+      cellH: frameH / rows,
+      frameW: frameW,
+      frameH: frameH,
+      contentBottomY: frameH,
+      contentRightX: frameW
+    };
+  }
+  var or = out.getBoundingClientRect();
+  var ox = or.left - fr.left;
+  var oy = or.top - fr.top;
+  return {
+    cols: cols,
+    rows: rows,
+    originX: ox,
+    originY: oy,
+    cellW: or.width / cols,
+    cellH: or.height / rows,
+    frameW: frameW,
+    frameH: frameH,
+    contentBottomY: or.bottom - fr.top,
+    contentRightX: or.right - fr.left
+  };
+}
+
+/**
+ * ease-out cubic，与取景遮罩短过渡一致。
+ * @param {number} t 0…1
+ * @returns {number}
+ */
+function easeOutCubicPhotoMask(t) {
+  var x = Math.min(1, Math.max(0, t));
+  return 1 - Math.pow(1 - x, 3);
+}
+
+/**
+ * 取消进行中的遮罩动画帧。
+ * @returns {void}
+ */
+function cancelPhotoFrameMaskAnimation() {
+  if (photoFrameMaskAnimRaf != null) {
+    cancelAnimationFrame(photoFrameMaskAnimRaf);
+    photoFrameMaskAnimRaf = null;
+  }
+}
+
+/**
+ * 按当前 ease 绘制取景遮罩（3:4 椭圆 / 1:1 Monocular 圆 / 1:1 Iron Bars 栅格）；不改变 `#ascii-out`。
+ * @param {number} ease 0…1
+ * @returns {void}
+ */
+function drawPhotoFrameMaskAtEase(ease) {
+  if (!asciiFrameMaskCanvas || !asciiFrameMaskCtx || !asciiActiveFrame || !aspectPicker) return;
+  var ap = aspectPicker.value;
+  var showOval = ap === '3:4' && frameMaskCheckbox && frameMaskCheckbox.checked;
+  var showRound = ap === '1:1' && frameMaskCheckbox && frameMaskCheckbox.checked;
+  var showIron = ap === '1:1' && frameMaskIronCheckbox && frameMaskIronCheckbox.checked;
+  if (!showOval && !showRound && !showIron) return;
+
+  var layout = getAsciiMaskGridLayout();
+  var W = layout.frameW;
+  var H = layout.frameH;
+  if (W < 2 || H < 2) return;
+
+  var dpr = typeof window.devicePixelRatio === 'number' ? window.devicePixelRatio : 1;
+  var cwPx = Math.max(1, Math.ceil(W * dpr));
+  var chPx = Math.max(1, Math.ceil(H * dpr));
+  asciiFrameMaskCanvas.width = cwPx;
+  asciiFrameMaskCanvas.height = chPx;
+  asciiFrameMaskCanvas.style.width = W + 'px';
+  asciiFrameMaskCanvas.style.height = H + 'px';
+  var ctx = asciiFrameMaskCtx;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  var t = Math.min(1, Math.max(0, ease));
+  var cx0 = W * 0.5;
+  var cy0 = H * 0.5;
+  var big = Math.max(W, H) * 2;
+  var a1;
+  var b1;
+  var shapeKind = showOval ? 'oval' : showRound ? 'round' : null;
+  if (shapeKind === 'round') {
+    var rf = Math.min(W, H) * 0.5;
+    a1 = rf;
+    b1 = rf;
+  } else if (shapeKind === 'oval') {
+    a1 = W * 0.5;
+    b1 = H * 0.5;
+  }
+  var a;
+  var b;
+  var invA2;
+  var invB2;
+  if (showOval || showRound) {
+    a = big + (a1 - big) * t;
+    b = big + (b1 - big) * t;
+    invA2 = 1 / (a * a);
+    invB2 = 1 / (b * b);
+  }
+
+  /**
+   * @param {number} x1
+   * @param {number} y1
+   * @param {number} x2
+   * @param {number} y2
+   * @returns {void}
+   */
+  function fillMaskCellIfOutsideEllipse(x1, y1, x2, y2) {
+    var mcx = (x1 + x2) * 0.5;
+    var mcy = (y1 + y2) * 0.5;
+    var ddx = mcx - cx0;
+    var ddy = mcy - cy0;
+    if (ddx * ddx * invA2 + ddy * ddy * invB2 > 1) {
+      var fx = Math.floor(x1);
+      var fy = Math.floor(y1);
+      var fw = Math.max(1, Math.ceil(x2) - fx);
+      var fh = Math.max(1, Math.ceil(y2) - fy);
+      ctx.fillRect(fx, fy, fw, fh);
+    }
+  }
+
+  var col;
+  var row;
+  var x0 = layout.originX;
+  var y0 = layout.originY;
+  var cwCell = layout.cellW;
+  var rhCell = layout.cellH;
+  var contentBottomY = layout.contentBottomY;
+  var contentRightX = layout.contentRightX;
+  var x1;
+  var y1;
+  var x2;
+  var y2;
+  ctx.fillStyle = '#000000';
+
+  if (showOval || showRound) {
+    for (row = 0; row < layout.rows; row++) {
+      y1 = y0 + row * rhCell;
+      y2 = y0 + (row + 1) * rhCell;
+      if (row === layout.rows - 1) {
+        y2 = Math.min(y2, contentBottomY);
+      }
+      for (col = 0; col < layout.cols; col++) {
+        x1 = x0 + col * cwCell;
+        x2 = x0 + (col + 1) * cwCell;
+        if (col === layout.cols - 1) {
+          x2 = Math.min(x2, contentRightX);
+        }
+        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+      }
+    }
+    var eps = 0.5;
+    for (y1 = 0; y1 < y0 - eps; y1 += rhCell) {
+      y2 = Math.min(y0, y1 + rhCell);
+      for (x1 = 0; x1 < W - eps; x1 += cwCell) {
+        x2 = Math.min(W, x1 + cwCell);
+        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+      }
+    }
+    for (y1 = contentBottomY; y1 < H - eps; y1 += rhCell) {
+      y2 = Math.min(H, y1 + rhCell);
+      for (x1 = 0; x1 < W - eps; x1 += cwCell) {
+        x2 = Math.min(W, x1 + cwCell);
+        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+      }
+    }
+    for (x1 = 0; x1 < x0 - eps; x1 += cwCell) {
+      x2 = Math.min(x0, x1 + cwCell);
+      for (y1 = 0; y1 < H - eps; y1 += rhCell) {
+        y2 = Math.min(H, y1 + rhCell);
+        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+      }
+    }
+    for (x1 = contentRightX; x1 < W - eps; x1 += cwCell) {
+      x2 = Math.min(W, x1 + cwCell);
+      for (y1 = 0; y1 < H - eps; y1 += rhCell) {
+        y2 = Math.min(H, y1 + rhCell);
+        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+      }
+    }
+  }
+
+  if (showIron && t > 0) {
+    if (isLiveAsciiMaskLayoutValidForIron(layout)) {
+      var specIron = buildIronBarsSpec(layout.cols, layout.rows, getAsciiCellMetrics().cellAspect, getAspectRatio());
+      /** 与 `applyIronBarsMaskToLuma` / `isIronBarMaskCellFromSpec` 一致：按格填充，避免整条 fillRect 与离散 luma 厚度漂移 */
+      for (row = 0; row < layout.rows; row++) {
+        y1 = y0 + row * rhCell;
+        y2 = y0 + (row + 1) * rhCell;
+        if (row === layout.rows - 1) {
+          y2 = Math.min(y2, contentBottomY);
+        }
+        for (col = 0; col < layout.cols; col++) {
+          if (!isIronBarMaskCellFromSpec(col, row, specIron)) continue;
+          x1 = x0 + col * cwCell;
+          x2 = x0 + (col + 1) * cwCell;
+          if (col === layout.cols - 1) {
+            x2 = Math.min(x2, contentRightX);
+          }
+          ctx.fillRect(Math.floor(x1), Math.floor(y1), Math.max(1, Math.ceil(x2) - Math.floor(x1)), Math.max(1, Math.ceil(y2) - Math.floor(y1)));
+        }
+      }
+    }
+  }
+}
+
+/**
+ * @returns {void}
+ */
+function showPhotoFrameMaskCanvas() {
+  if (!asciiFrameMaskCanvas) return;
+  asciiFrameMaskCanvas.classList.add('ascii-frame-mask-canvas--visible');
+  asciiFrameMaskCanvas.setAttribute('aria-hidden', 'false');
+}
+
+/**
+ * @returns {void}
+ */
+function hidePhotoFrameMaskCanvas() {
+  if (!asciiFrameMaskCanvas || !asciiFrameMaskCtx) return;
+  asciiFrameMaskCtx.clearRect(0, 0, asciiFrameMaskCanvas.width, asciiFrameMaskCanvas.height);
+  asciiFrameMaskCanvas.classList.remove('ascii-frame-mask-canvas--visible');
+  asciiFrameMaskCanvas.setAttribute('aria-hidden', 'true');
+}
+
+/**
+ * @param {number} fromEase
+ * @param {number} toEase
+ * @returns {void}
+ */
+/**
+ * @param {number} fromEase
+ * @param {number} toEase
+ * @param {() => void} [onComplete] 动画正常结束（含 reduced-motion 即时完成）时调用；取消动画则不调用
+ * @returns {void}
+ */
+function startPhotoFrameMaskAnimation(fromEase, toEase, onComplete) {
+  if (!asciiFrameMaskCanvas || !asciiFrameMaskCtx) return;
+  cancelPhotoFrameMaskAnimation();
+  var reduceMotion =
+    typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) {
+    photoFrameMaskEase = toEase;
+    if (toEase <= 0) {
+      hidePhotoFrameMaskCanvas();
+    } else {
+      showPhotoFrameMaskCanvas();
+      drawPhotoFrameMaskAtEase(toEase);
+    }
+    if (typeof onComplete === 'function') {
+      onComplete();
+    }
+    return;
+  }
+  photoFrameMaskAnimFrom = fromEase;
+  photoFrameMaskAnimTo = toEase;
+  photoFrameMaskAnimStartMs =
+    typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+  showPhotoFrameMaskCanvas();
+
+  /**
+   * @param {number} now
+   * @returns {void}
+   */
+  function tick(now) {
+    var elapsed = now - photoFrameMaskAnimStartMs;
+    var u = Math.min(1, elapsed / PHOTO_FRAME_MASK_ANIM_MS);
+    var eased = easeOutCubicPhotoMask(u);
+    photoFrameMaskEase = photoFrameMaskAnimFrom + (photoFrameMaskAnimTo - photoFrameMaskAnimFrom) * eased;
+    drawPhotoFrameMaskAtEase(photoFrameMaskEase);
+    if (u < 1) {
+      photoFrameMaskAnimRaf = requestAnimationFrame(tick);
+    } else {
+      photoFrameMaskAnimRaf = null;
+      photoFrameMaskEase = photoFrameMaskAnimTo;
+      if (photoFrameMaskEase <= 0) {
+        hidePhotoFrameMaskCanvas();
+      } else {
+        drawPhotoFrameMaskAtEase(photoFrameMaskEase);
+      }
+      if (typeof onComplete === 'function') {
+        onComplete();
+      }
+    }
+  }
+  photoFrameMaskAnimRaf = requestAnimationFrame(tick);
+}
+
+/**
+ * 布局变化时保持当前遮罩显示（无动画跳变）；双 rAF 以等待 `scheduleAsciiScale` 后的 `#ascii-out` 外接矩形。
+ * @returns {void}
+ */
+function syncPhotoFrameMaskLayoutRedraw() {
+  var should = !videoMode && anyPhotoFrameMaskControlActive();
+  if (!should) return;
+  if (!asciiFrameMaskCanvas || !asciiFrameMaskCanvas.classList.contains('ascii-frame-mask-canvas--visible')) return;
+  window.requestAnimationFrame(function () {
+    window.requestAnimationFrame(function () {
+      if (
+        !asciiFrameMaskCanvas ||
+        !asciiFrameMaskCanvas.classList.contains('ascii-frame-mask-canvas--visible')
+      ) {
+        return;
+      }
+      drawPhotoFrameMaskAtEase(photoFrameMaskEase);
+    });
+  });
+}
+
+/**
+ * Photo 取景：是否有任一可用遮罩勾选（用于布局重绘等）。
+ * @returns {boolean}
+ */
+function anyPhotoFrameMaskControlActive() {
+  if (!aspectPicker) return false;
+  var ap = aspectPicker.value;
+  if (ap === '3:4') {
+    return !!(frameMaskCheckbox && frameMaskCheckbox.checked);
+  }
+  if (ap === '1:1') {
+    return !!(
+      (frameMaskCheckbox && frameMaskCheckbox.checked) ||
+      (frameMaskIronCheckbox && frameMaskIronCheckbox.checked)
+    );
+  }
+  return false;
+}
+
+/**
+ * 同步 Evil Queen / Monocular / Iron Bars 显隐与文案。
+ * @returns {void}
+ */
+function updateFrameMaskUi() {
+  if (!frameMaskRow || !frameMaskCheckbox) return;
+  var kind = getPhotoFrameMaskKind();
+  var frameMaskFlashLabel = document.getElementById('frameMaskFlashLabel');
+
+  if (!kind) {
+    frameMaskRow.hidden = true;
+    frameMaskCheckbox.disabled = true;
+    frameMaskCheckbox.setAttribute('aria-hidden', 'true');
+    if (frameMaskFlashLabel) {
+      frameMaskFlashLabel.classList.add('flash-switch--disabled');
+      frameMaskFlashLabel.setAttribute('aria-disabled', 'true');
+    }
+    if (frameMaskIronRow) frameMaskIronRow.hidden = true;
+    if (frameMaskIronCell) frameMaskIronCell.hidden = true;
+    if (frameMaskIronCheckbox) {
+      frameMaskIronCheckbox.disabled = true;
+      frameMaskIronCheckbox.setAttribute('aria-hidden', 'true');
+    }
+    if (frameMaskDual) frameMaskDual.classList.remove('frame-mask-dual--oval-only');
+    syncPhotoFrameMaskOverlay();
+    return;
+  }
+
+  if (kind === 'oval') {
+    if (frameMaskDual) frameMaskDual.classList.add('frame-mask-dual--oval-only');
+    if (frameMaskIronRow) frameMaskIronRow.hidden = true;
+    if (frameMaskIronCell) frameMaskIronCell.hidden = true;
+    frameMaskRow.hidden = false;
+    frameMaskCheckbox.disabled = false;
+    frameMaskCheckbox.removeAttribute('aria-hidden');
+    if (frameMaskFlashLabel) {
+      frameMaskFlashLabel.classList.remove('flash-switch--disabled');
+      frameMaskFlashLabel.removeAttribute('aria-disabled');
+    }
+    frameMaskCheckbox.checked = frameMaskCheckedOval;
+    if (frameMaskLabelText) frameMaskLabelText.textContent = 'Evil Queen (Oval)';
+  } else {
+    if (frameMaskDual) frameMaskDual.classList.remove('frame-mask-dual--oval-only');
+    if (frameMaskIronCell) frameMaskIronCell.hidden = false;
+    if (frameMaskIronRow) frameMaskIronRow.hidden = false;
+    frameMaskRow.hidden = false;
+    frameMaskCheckbox.disabled = false;
+    frameMaskCheckbox.removeAttribute('aria-hidden');
+    if (frameMaskIronCheckbox) {
+      frameMaskIronCheckbox.disabled = false;
+      frameMaskIronCheckbox.removeAttribute('aria-hidden');
+    }
+    if (frameMaskFlashLabel) {
+      frameMaskFlashLabel.classList.remove('flash-switch--disabled');
+      frameMaskFlashLabel.removeAttribute('aria-disabled');
+    }
+    frameMaskCheckbox.checked = frameMaskCheckedRound;
+    if (frameMaskLabelText) frameMaskLabelText.textContent = 'Monocular';
+    if (frameMaskIronCheckbox) frameMaskIronCheckbox.checked = frameMaskCheckedIronBars;
+  }
+  syncPhotoFrameMaskOverlay();
+}
+
+/**
+ * 根据勾选状态驱动 Canvas 遮罩动画（不改变 ASCII 与导出）。
+ * @returns {void}
+ */
+function syncPhotoFrameMaskOverlay() {
+  if (!asciiFrameMaskCanvas) return;
+  if (!frameMaskCheckbox && !frameMaskIronCheckbox) return;
+  var kind = getPhotoFrameMaskKind();
+  var should = !!kind && !videoMode && anyPhotoFrameMaskControlActive();
+  /** 成片已写入暗角，避免与 Canvas 遮罩双重叠加 */
+  if (
+    should &&
+    typeof AsciiCameraPreview !== 'undefined' &&
+    AsciiCameraPreview.previewCaptureActive &&
+    AsciiCameraPreview.pendingGalleryPayload &&
+    AsciiCameraPreview.pendingGalleryPayload.isPhotoPreview === true &&
+    AsciiCameraPreview.pendingGalleryPayload.bakedFrameMask === true
+  ) {
+    should = false;
+  }
+
+  if (!should) {
+    cancelPhotoFrameMaskAnimation();
+    if (photoFrameMaskEase > 0) {
+      startPhotoFrameMaskAnimation(photoFrameMaskEase, 0);
+    } else {
+      photoFrameMaskEase = 0;
+      hidePhotoFrameMaskCanvas();
+    }
+    return;
+  }
+
+  if (photoFrameMaskAnimRaf != null) {
+    return;
+  }
+  if (
+    photoFrameMaskEase >= 0.999 &&
+    asciiFrameMaskCanvas.classList.contains('ascii-frame-mask-canvas--visible')
+  ) {
+    drawPhotoFrameMaskAtEase(1);
+    return;
+  }
+  cancelPhotoFrameMaskAnimation();
+  var fromE = photoFrameMaskEase > 0 && photoFrameMaskEase < 0.999 ? photoFrameMaskEase : 0;
+  startPhotoFrameMaskAnimation(fromE, 1);
+}
+
 /**
  * 根据当前模式更新 Video 锁定的分辨率 / 比例与按钮文案。
  * @returns {void}
@@ -1404,17 +2081,30 @@ function applyCaptureModeUi() {
   if (!stream) syncIntroRequestRain();
   if (stream && animId == null && !AsciiCameraPreview.previewCaptureActive) render();
   AsciiCameraPreview.syncLoopCoverUiVisibility();
+  if (aspectPicker) lastAspectPickerValueForMask = aspectPicker.value;
+  updateFrameMaskUi();
+  window.requestAnimationFrame(function () {
+    updateFrameMaskUi();
+  });
 }
 
 /**
  * @param {boolean} nextVideo 是否进入 Video
+ * @param {boolean} [skipFrameMaskCheckboxSnapshot] 为 true 时不从当前勾选覆盖 `frameMaskChecked*`（Photo→Loop 先程序化取消勾选时保留记忆）
  * @returns {void}
  */
-function setCaptureVideoMode(nextVideo) {
+function setCaptureVideoMode(nextVideo, skipFrameMaskCheckboxSnapshot) {
   if (AsciiCameraPreview.previewCaptureActive) return;
   if (nextVideo && !videoMode) {
     savedPhotoResValue = resPicker.value;
     savedPhotoAspectValue = aspectPicker.value;
+    if (!skipFrameMaskCheckboxSnapshot && frameMaskCheckbox && aspectPicker) {
+      if (aspectPicker.value === '3:4') frameMaskCheckedOval = frameMaskCheckbox.checked;
+      else if (aspectPicker.value === '1:1') {
+        frameMaskCheckedRound = frameMaskCheckbox.checked;
+        if (frameMaskIronCheckbox) frameMaskCheckedIronBars = frameMaskIronCheckbox.checked;
+      }
+    }
     restorePhotoSettingsAfterVideo = true;
   }
   if (!nextVideo && videoMode) {
@@ -1422,6 +2112,157 @@ function setCaptureVideoMode(nextVideo) {
   }
   videoMode = !!nextVideo;
   applyCaptureModeUi();
+}
+
+/**
+ * Photo→Loop：若为 1:1/3:4 且取景框开启，先播放遮罩收起再切 Loop；否则立即切换。
+ * 程序化取消勾选期间用 `frameMaskMemorySuppress` 保留 `frameMaskChecked*`，返回 Photo 后 `updateFrameMaskUi` 仍恢复勾选。
+ * @returns {void}
+ */
+function runPhotoFrameMaskExitThenToLoop() {
+  if (videoMode || !aspectPicker || !frameMaskCheckbox) {
+    setCaptureVideoMode(true);
+    return;
+  }
+  var ap = aspectPicker.value;
+  if (ap !== '1:1' && ap !== '3:4') {
+    setCaptureVideoMode(true);
+    return;
+  }
+  var hasFrame =
+    (getPhotoFrameMaskKind() === 'oval' && frameMaskCheckbox && frameMaskCheckbox.checked) ||
+    (aspectPicker &&
+      aspectPicker.value === '1:1' &&
+      ((frameMaskCheckbox && frameMaskCheckbox.checked) ||
+        (frameMaskIronCheckbox && frameMaskIronCheckbox.checked)));
+  if (!hasFrame) {
+    setCaptureVideoMode(true);
+    return;
+  }
+  frameMaskMemorySuppress = true;
+  if (frameMaskCheckbox) frameMaskCheckbox.checked = false;
+  if (frameMaskIronCheckbox) frameMaskIronCheckbox.checked = false;
+  cancelPhotoFrameMaskAnimation();
+  if (!asciiFrameMaskCanvas || !asciiFrameMaskCtx) {
+    frameMaskMemorySuppress = false;
+    setCaptureVideoMode(true, true);
+    return;
+  }
+  if (photoFrameMaskEase > 0) {
+    startPhotoFrameMaskAnimation(photoFrameMaskEase, 0, function () {
+      frameMaskMemorySuppress = false;
+      setCaptureVideoMode(true, true);
+    });
+  } else {
+    hidePhotoFrameMaskCanvas();
+    frameMaskMemorySuppress = false;
+    setCaptureVideoMode(true, true);
+  }
+}
+
+/**
+ * 切换比例 **当下**：Evil Queen / Monocular 是否在屏上视为「开着」。
+ * 依据 **旧比例** `oldAp`（即 `lastAspectPickerValueForMask`）与 **此时仍未被 `updateFrameMaskUi` 改写** 的主框勾选；仅 3:4/1:1 的 EQ/Mono 主勾选，Iron Bars 不参与。
+ * @param {string} oldAp
+ * @returns {boolean}
+ */
+function isSpecialFrameCurrentlyVisible(oldAp) {
+  if (videoMode || !frameMaskCheckbox) return false;
+  if (oldAp !== '3:4' && oldAp !== '1:1') return false;
+  return !!frameMaskCheckbox.checked;
+}
+
+/**
+ * 在 `onAspectPickerChange` 已把 **旧** 比例下的勾选写入 `frameMaskCheckedOval` / `frameMaskCheckedRound` 之后调用：
+ * 切到 `newAp` 后 `updateFrameMaskUi` 会立刻恢复的主框是否会为开（即目标侧 Evil Queen / Monocular 是否 **马上** 可见）。
+ * @param {string} newAp
+ * @returns {boolean}
+ */
+function willNewAspectShowSpecialFrameImmediately(newAp) {
+  if (newAp === '3:4') return frameMaskCheckedOval === true;
+  if (newAp === '1:1') return frameMaskCheckedRound === true;
+  return false;
+}
+
+/**
+ * 是否先播收起再改比例：`oldVis && !newVis`。无旧框 / 新侧也将显示 EQ 或 Mono → 立即切换。
+ * @param {string} oldAp
+ * @param {string} newAp
+ * @returns {boolean}
+ */
+function aspectChangeNeedsFrameExitFirst(oldAp, newAp) {
+  if (oldAp === newAp) return false;
+  var oldVis = isSpecialFrameCurrentlyVisible(oldAp);
+  var newVis = willNewAspectShowSpecialFrameImmediately(newAp);
+  if (!oldVis) return false;
+  if (newVis) return false;
+  return true;
+}
+
+/**
+ * 将比例提交为 `newAp` 并刷新布局/框线 UI（与原先 `onAspectPickerChange` 后半段一致）。
+ * @param {string} newAp
+ * @returns {void}
+ */
+function commitAspectPickerValueAndLayout(newAp) {
+  lastAspectPickerValueForMask = newAp;
+  if (aspectPicker) aspectPicker.value = newAp;
+  if (!videoMode && !AsciiCameraPreview.previewCaptureActive) {
+    savedPhotoAspectValue = newAp;
+  }
+  invalidateAsciiCellMetrics();
+  syncAsciiLayout();
+  syncIntroRequestRain();
+  updateFrameMaskUi();
+}
+
+/**
+ * Photo 下带活动取景框时切换比例：先把 `aspectPicker` 拉回 **旧** 比例并同步 `#ascii-out` 布局与雨，再播收起。
+ * 否则 `change` 触发时选单已是新比例，`getAspectRatio`/`syncAsciiActiveFrameAspect` 会先按新画幅 reflow，而遮罩仍按旧圆几何绘制，出现 1:1 Monocular 与其它画幅叠影。
+ * 双 rAF 与 `syncPhotoFrameMaskLayoutRedraw` 同节奏，待 `scheduleAsciiScale` 落地后再起遮罩动画；收起结束后再 `commitAspectPickerValueAndLayout(newAp)`。
+ * @param {string} oldAp
+ * @param {string} newAp
+ * @returns {void}
+ */
+function runAspectChangeWithFrameExitPipeline(oldAp, newAp) {
+  if (aspectPicker) aspectPicker.value = oldAp;
+  invalidateAsciiCellMetrics();
+  syncAsciiLayout();
+  syncIntroRequestRain();
+  cancelPhotoFrameMaskAnimation();
+
+  /**
+   * @returns {void}
+   */
+  function afterExit() {
+    commitAspectPickerValueAndLayout(newAp);
+  }
+
+  /**
+   * @returns {void}
+   */
+  function startMaskExitAfterLayout() {
+    if (!asciiFrameMaskCanvas || !asciiFrameMaskCtx) {
+      afterExit();
+      return;
+    }
+    /** 与 `syncPhotoFrameMaskOverlay` 一致：从当前 ease 或满遮罩起收 */
+    var fromEase =
+      photoFrameMaskEase > 0 && photoFrameMaskEase < 0.999 ? photoFrameMaskEase : 1;
+    if (fromEase <= 0) {
+      hidePhotoFrameMaskCanvas();
+      photoFrameMaskEase = 0;
+      afterExit();
+      return;
+    }
+    showPhotoFrameMaskCanvas();
+    drawPhotoFrameMaskAtEase(fromEase);
+    startPhotoFrameMaskAnimation(fromEase, 0, afterExit);
+  }
+
+  window.requestAnimationFrame(function () {
+    window.requestAnimationFrame(startMaskExitAfterLayout);
+  });
 }
 
 AsciiCameraUi.updateModeTabsUi();
@@ -1589,13 +2430,16 @@ function getCols() {
 }
 
 AsciiCameraUi.wireEventBindings({
+  /**
+   * 更新 ASCII / 离线 helper / 视频进度条色。不调用 `syncIntroRequestRain`，以免重建 Matrix 雨列；雨色由 `requestRainTick` 每帧读取 `colorPicker`。
+   * @returns {void}
+   */
   onColorPickerChange: function () {
     out.style.color = colorPicker.value;
     if (!stream && asciiOffHelper) {
       asciiOffHelper.style.color = colorPicker.value;
     }
     AsciiCameraUi.syncVideoProgressBarColor();
-    /* 不改分辨率/画幅时勿调用 syncIntroRequestRain：否则会 resize 并重 init 列，开屏雨会「重启」。着色由 drawRequestRainFrame 每帧读 colorPicker。 */
   },
   onResPickerChange: function () {
     if (!videoMode && !AsciiCameraPreview.previewCaptureActive) {
@@ -1604,14 +2448,39 @@ AsciiCameraUi.wireEventBindings({
     invalidateAsciiCellMetrics();
     syncAsciiLayout();
     syncIntroRequestRain();
+    syncPhotoFrameMaskLayoutRedraw();
   },
   onAspectPickerChange: function () {
-    if (!videoMode && !AsciiCameraPreview.previewCaptureActive) {
-      savedPhotoAspectValue = aspectPicker.value;
+    if (videoMode) {
+      lastAspectPickerValueForMask = aspectPicker.value;
+      invalidateAsciiCellMetrics();
+      syncAsciiLayout();
+      syncIntroRequestRain();
+      updateFrameMaskUi();
+      return;
     }
-    invalidateAsciiCellMetrics();
-    syncAsciiLayout();
-    syncIntroRequestRain();
+    var oldAp = lastAspectPickerValueForMask;
+    var newAp = aspectPicker.value;
+    if (!AsciiCameraPreview.previewCaptureActive) {
+      if (oldAp === '3:4') frameMaskCheckedOval = frameMaskCheckbox.checked;
+      else if (oldAp === '1:1') {
+        frameMaskCheckedRound = frameMaskCheckbox.checked;
+        if (frameMaskIronCheckbox) frameMaskCheckedIronBars = frameMaskIronCheckbox.checked;
+      }
+    }
+    if (AsciiCameraPreview.previewCaptureActive) {
+      lastAspectPickerValueForMask = newAp;
+      invalidateAsciiCellMetrics();
+      syncAsciiLayout();
+      syncIntroRequestRain();
+      updateFrameMaskUi();
+      return;
+    }
+    if (!aspectChangeNeedsFrameExitFirst(oldAp, newAp)) {
+      commitAspectPickerValueAndLayout(newAp);
+      return;
+    }
+    runAspectChangeWithFrameExitPipeline(oldAp, newAp);
   },
   onDensityPickerChange: function () {
     invalidateAsciiCellMetrics();
@@ -1620,6 +2489,7 @@ AsciiCameraUi.wireEventBindings({
     } else {
       syncAsciiLayout();
     }
+    syncPhotoFrameMaskLayoutRedraw();
   },
   onCamTabPhotoClick: function () {
     if (snapCountdownActive || AsciiCameraPreview.previewCaptureActive) return;
@@ -1627,7 +2497,7 @@ AsciiCameraUi.wireEventBindings({
   },
   onCamTabVideoClick: function () {
     if (snapCountdownActive || AsciiCameraPreview.previewCaptureActive) return;
-    setCaptureVideoMode(true);
+    runPhotoFrameMaskExitThenToLoop();
   },
   onWindowResize: function () {
     invalidateAsciiCellMetrics();
@@ -1642,8 +2512,53 @@ AsciiCameraUi.wireEventBindings({
   onAsciiFrameResizeObserved: function () {
     scheduleAsciiScale();
     syncIntroRequestRain();
+    syncPhotoFrameMaskLayoutRedraw();
   }
 });
+if (frameMaskCheckbox) {
+  frameMaskCheckbox.addEventListener('change', function () {
+    if (frameMaskMemorySuppress) {
+      return;
+    }
+    var k = getPhotoFrameMaskKind();
+    if (k === 'oval') frameMaskCheckedOval = frameMaskCheckbox.checked;
+    else if (k === 'round') frameMaskCheckedRound = frameMaskCheckbox.checked;
+    if (
+      typeof AsciiCameraPreview !== 'undefined' &&
+      AsciiCameraPreview.previewCaptureActive &&
+      AsciiCameraPreview.pendingGalleryPayload &&
+      AsciiCameraPreview.pendingGalleryPayload.isPhotoPreview === true &&
+      AsciiCameraPreview.pendingGalleryPayload.lumaCanonical &&
+      AsciiCameraPreview.pendingGalleryPayload.lumaCanonical.length > 0
+    ) {
+      regeneratePhotoPreviewFromCanonical();
+    } else {
+      syncPhotoFrameMaskOverlay();
+    }
+  });
+}
+if (frameMaskIronCheckbox) {
+  frameMaskIronCheckbox.addEventListener('change', function () {
+    if (frameMaskMemorySuppress) {
+      return;
+    }
+    if (getPhotoFrameMaskKind() === 'round') {
+      frameMaskCheckedIronBars = frameMaskIronCheckbox.checked;
+    }
+    if (
+      typeof AsciiCameraPreview !== 'undefined' &&
+      AsciiCameraPreview.previewCaptureActive &&
+      AsciiCameraPreview.pendingGalleryPayload &&
+      AsciiCameraPreview.pendingGalleryPayload.isPhotoPreview === true &&
+      AsciiCameraPreview.pendingGalleryPayload.lumaCanonical &&
+      AsciiCameraPreview.pendingGalleryPayload.lumaCanonical.length > 0
+    ) {
+      regeneratePhotoPreviewFromCanonical();
+    } else {
+      syncPhotoFrameMaskOverlay();
+    }
+  });
+}
 syncAsciiLayout();
 AsciiCameraUi.syncVideoProgressBarColor();
 out.style.color = colorPicker.value;
@@ -1823,30 +2738,6 @@ function buildMatrixIntroCharPool() {
   var lettersArr = letters.split('');
   var symbolsArr = (symbols + blocks).split('');
   var symbolsSetOut = new Set(symbolsArr);
-  // #region agent log
-  (function () {
-    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
-      body: JSON.stringify({
-        sessionId: '67cfc6',
-        location: 'camera.html:buildMatrixIntroCharPool',
-        message: 'Matrix symbolsSet probe (removed geo+CJK segments)',
-        data: {
-          hypothesisId: 'H1',
-          symbolsSetSize: symbolsSetOut.size,
-          hasU25CF: symbolsSetOut.has('\u25cf'),
-          hasU3001: symbolsSetOut.has('\u3001'),
-          hasU00AB: symbolsSetOut.has('\u00ab'),
-          hasU2660: symbolsSetOut.has('\u2660'),
-          hasU221E: symbolsSetOut.has('\u221e'),
-          runId: 'pool-trim-verify'
-        },
-        timestamp: Date.now()
-      })
-    }).catch(function () {});
-  })();
-  // #endregion
   return {
     katakana: katakanaArr,
     numbers: numbersArr,
@@ -2373,7 +3264,7 @@ function hexToRgbForRain(hex) {
 }
 
 /**
- * 摄像头未开时：分辨率/比例/颜色变更后重算雨效。
+ * 摄像头未开时：分辨率/比例/布局或字格变化后重算雨画布与列（不含仅改 Color；颜色由 `requestRainTick` 每帧读取）。
  * @returns {void}
  */
 function syncIntroRequestRain() {
@@ -2472,10 +3363,6 @@ function fillRequestRainGlyph(ctx, ch, x, yy, mirror) {
   ctx.scale(-1, 1);
   ctx.fillText(ch, 0, 0);
   ctx.restore();
-  // #region agent log
-  if (typeof window.__dbgMirroredFills !== 'number') window.__dbgMirroredFills = 0;
-  window.__dbgMirroredFills++;
-  // #endregion
 }
 
 /**
@@ -2486,9 +3373,6 @@ function fillRequestRainGlyph(ctx, ch, x, yy, mirror) {
  */
 function drawRequestRainFrame(w, h) {
   if (!requestRainCtx) return;
-  // #region agent log
-  window.__dbgMirroredFills = 0;
-  // #endregion
   requestRainCtx.clearRect(0, 0, w, h);
   requestRainCtx.font = requestRainFontSpec;
   requestRainCtx.textAlign = 'center';
@@ -2596,29 +3480,6 @@ function drawRequestRainFrame(w, h) {
         requestRainCtx.fillStyle = 'rgba(255,255,255,0.98)';
         fillRequestRainGlyph(requestRainCtx, ch, col.x, yy, mir);
         requestRainCtx.restore();
-        // #region agent log
-        if (typeof window.__dbgHeadGlowFrame === 'undefined') window.__dbgHeadGlowFrame = 0;
-        window.__dbgHeadGlowFrame++;
-        if (window.__dbgHeadGlowFrame % 75 === 0) {
-          fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
-            body: JSON.stringify({
-              sessionId: '67cfc6',
-              location: 'camera.html:drawRequestRainFrame',
-              message: 'head glow: 3 passes inside save, restore clears shadow',
-              data: {
-                hypothesisId: 'H1',
-                blurCore: blurCore,
-                lh: lh,
-                mir: mir,
-                runId: 'head-glow-post-fix'
-              },
-              timestamp: Date.now()
-            })
-          }).catch(function () {});
-        }
-        // #endregion
       } else {
         // 前景主体：尽量统一强度（不做明显列内阶梯），仅在极尾端轻微淡出
         var a = 0.52 * mul;
@@ -2632,37 +3493,6 @@ function drawRequestRainFrame(w, h) {
       }
     }
   }
-  // #region agent log
-  (function dbgRainMirrorVerify() {
-    if (typeof window.__dbgRainFrameIdx === 'undefined') window.__dbgRainFrameIdx = 0;
-    window.__dbgRainFrameIdx++;
-    if (window.__dbgRainFrameIdx % 90 !== 0) return;
-    var col0 = requestRainColumns[0];
-    var mt = 0;
-    var gl = 0;
-    if (col0 && col0.glyphMirror && col0.glyphs) {
-      gl = col0.glyphs.length;
-      for (var di = 0; di < gl; di++) if (col0.glyphMirror[di]) mt++;
-    }
-    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
-      body: JSON.stringify({
-        sessionId: '67cfc6',
-        location: 'camera.html:drawRequestRainFrame',
-        message: 'rain mirror: state vs mirrored fill count',
-        data: {
-          hypothesisId: 'H1',
-          glyphRows: gl,
-          mirrorTrueInCol0: mt,
-          mirroredFillsThisFrame: typeof window.__dbgMirroredFills === 'number' ? window.__dbgMirroredFills : 0
-        },
-        timestamp: Date.now(),
-        runId: 'mirror-draw-verify'
-      })
-    }).catch(function () {});
-  })();
-  // #endregion
 }
 
 /**
@@ -2787,6 +3617,292 @@ function abortRequestRainEffect() {
 }
 
 /**
+ * Photo 成片：在物理显示空间（字格宽高比 cellAspect）下按格心判定椭圆/圆内，外区置为最暗亮度（与 `luminanceToAscii` 中 b=0 对应）。
+ * 归一化坐标取字宽为 `cellAspect`、字高为 1，使圆在屏幕上为圆、椭圆与取景意图一致。
+ * @param {Float32Array} luma 行优先，原地修改
+ * @param {number} cols
+ * @param {number} rows
+ * @param {'oval' | 'round'} kind 3:4 内接竖椭圆 / 1:1 内接圆
+ * @param {number} [cellAspect] 与 `getAsciiCellMetrics().cellAspect`（字宽÷行高）一致；省略时按 1
+ * @returns {void}
+ */
+function applyPhotoFrameMaskToLuma(luma, cols, rows, kind, cellAspect) {
+  if (!luma || cols < 1 || rows < 1) return;
+  var n = cols * rows;
+  if (luma.length < n) return;
+  var ca = cellAspect != null && Number.isFinite(cellAspect) && cellAspect > 0 ? cellAspect : 1;
+  var cx = cols * ca * 0.5;
+  var cy = rows * 0.5;
+  var x;
+  var y;
+  var dx;
+  var dy;
+  if (kind === 'round') {
+    var r = Math.min(cols * ca, rows) * 0.5;
+    var r2 = r * r;
+    for (y = 0; y < rows; y++) {
+      for (x = 0; x < cols; x++) {
+        dx = (x + 0.5) * ca - cx;
+        dy = (y + 0.5) - cy;
+        if (dx * dx + dy * dy > r2) {
+          luma[y * cols + x] = 0;
+        }
+      }
+    }
+    return;
+  }
+  var a = cols * ca * 0.5;
+  var b = rows * 0.5;
+  if (a <= 0 || b <= 0) return;
+  var invA2 = 1 / (a * a);
+  var invB2 = 1 / (b * b);
+  for (y = 0; y < rows; y++) {
+    for (x = 0; x < cols; x++) {
+      dx = (x + 0.5) * ca - cx;
+      dy = (y + 0.5) - cy;
+      if (dx * dx * invA2 + dy * dy * invB2 > 1) {
+        luma[y * cols + x] = 0;
+      }
+    }
+  }
+}
+
+/**
+ * 铁栅横线行号：保留原 5 等分中第 1、第 4 条横线位置（去掉中间两条）。
+ * @param {number} rows
+ * @returns {{ h1: number, h2: number }}
+ */
+function getIronBarHorizontalRowIndices(rows) {
+  var h1 = Math.min(Math.max(0, rows - 1), Math.round((1 * rows) / 5));
+  var h2 = Math.min(Math.max(0, rows - 1), Math.round((4 * rows) / 5));
+  return { h1: h1, h2: h2 };
+}
+
+/**
+ * 竖条三等分留白（与 `getIronVerticalThreeBarsLayoutPx` 同式），宽度以「格宽」为单位。
+ * @param {number} contentWidthCells
+ * @param {number} barThicknessCells
+ * @returns {{ t: number, g: number, Wc: number }}
+ */
+function getIronVerticalThreeBarsLayoutCellUnits(contentWidthCells, barThicknessCells) {
+  var Wc = Math.max(0, contentWidthCells);
+  var t = Math.max(0, barThicknessCells);
+  var g = (Wc - 3 * t) / 4;
+  if (g < 0 && Wc > 0) {
+    t = Wc / 3;
+    g = 0;
+  }
+  return { t: t, g: g, Wc: Wc };
+}
+
+/**
+ * 1:1 铁栅几何 SSOT：仅依赖 cols、rows、cellAspect、画幅比；DOM 仅用于把本 spec 映射到像素。
+ * 竖条厚度：以 72 列为基准的连续厚度 `(4/72)*cols` 格宽，再 **向下取整** 格数后重算 g，避免 96/120 下分数厚度 + 整格重叠导致竖条过宽、与横条视觉趋同。
+ * @param {number} cols
+ * @param {number} rows
+ * @param {number} cellAspect
+ * @param {number} aspectRatio 画幅 W/H（与 `getAspectRatio()` 一致）
+ * @returns {{
+ *   cols: number,
+ *   rows: number,
+ *   rows72: number,
+ *   tVerticalInCells: number,
+ *   gInCells: number,
+ *   tHorizontalInRows: number,
+ *   h1: number,
+ *   h2: number,
+ *   centerVerticalExtraCols: number,
+ *   horizontalThicknessDeltaRows: number
+ * }}
+ */
+function buildIronBarsSpec(cols, rows, cellAspect, aspectRatio) {
+  var rows72 = getAsciiMaskRowCountForColsExplicit(IRON_BARS_REF_RES_COLS, cellAspect, aspectRatio);
+  var Wc = Math.max(0, cols);
+  var tFloat = (4 * Wc) / IRON_BARS_REF_RES_COLS;
+  var tV = Math.max(1, Math.floor(tFloat));
+  var lay = getIronVerticalThreeBarsLayoutCellUnits(Wc, tV);
+  var tH = rows / Math.max(1, rows72);
+  var h = getIronBarHorizontalRowIndices(rows);
+  /**
+   * 横条厚度微调（行单位）：96 为参考档 `IRON_BAR_HORIZ_DELTA_AT_REF`（保持不变）。
+   * 120：`delta_ref × (cols / 96)`，在更密网格上略加强横条变薄，使与 96 的竖/横观感比例接近（相对 96 的自然 upscale，非固定 +1 列/行）。
+   * 竖条不加列；48/72 与其余档为 0。
+   */
+  var IRON_BAR_HORIZ_REF_RES = 96;
+  var IRON_BAR_HORIZ_DELTA_AT_REF = -1;
+  var centerVerticalExtraCols = 0;
+  var horizontalThicknessDeltaRows = 0;
+  if (cols === IRON_BAR_HORIZ_REF_RES) {
+    horizontalThicknessDeltaRows = IRON_BAR_HORIZ_DELTA_AT_REF;
+  } else if (cols === 120) {
+    horizontalThicknessDeltaRows = IRON_BAR_HORIZ_DELTA_AT_REF * (cols / IRON_BAR_HORIZ_REF_RES);
+  }
+  return {
+    cols: cols,
+    rows: rows,
+    rows72: rows72,
+    tVerticalInCells: lay.t,
+    gInCells: lay.g,
+    tHorizontalInRows: tH,
+    h1: h.h1,
+    h2: h.h2,
+    centerVerticalExtraCols: centerVerticalExtraCols,
+    horizontalThicknessDeltaRows: horizontalThicknessDeltaRows
+  };
+}
+
+/**
+ * 1:1 铁栅竖条：3 条等间距留白，中间条几何中心落在内容区水平中心（像素，用于仅 px 场景）。
+ * @param {number} contentWidthPx 取景 ASCII 内容区宽度（px）
+ * @param {number} barThicknessPx 竖条厚度（px）
+ * @returns {{ t: number, g: number, Wc: number }}
+ */
+function getIronVerticalThreeBarsLayoutPx(contentWidthPx, barThicknessPx) {
+  return getIronVerticalThreeBarsLayoutCellUnits(contentWidthPx, barThicknessPx);
+}
+
+/**
+ * @param {number} a0
+ * @param {number} a1
+ * @param {number} b0
+ * @param {number} b1
+ * @returns {boolean}
+ */
+function segmentsOverlapPx(a0, a1, b0, b1) {
+  return Math.max(a0, b0) < Math.min(a1, b1);
+}
+
+/**
+ * 仅 48 列：左缘仍与 SSOT 的 `gInCells` / `tVerticalInCells` 一致（`floor(g)`、`floor(2g+t)`、`floor(3g+2t)`），每条竖条掩码宽度为 `t + 1` 列（在 SSOT 等宽 `t` 列基础上整体 +1 列，三条同等加粗）。
+ * @param {number} col
+ * @param {number} g
+ * @param {number} t
+ * @returns {boolean}
+ */
+function ironBarVert48EqualWidthCol(col, g, t) {
+  var w = Math.max(1, Math.floor(t) + 1);
+  var s0 = Math.floor(g);
+  var s1 = Math.floor(2 * g + t);
+  var s2 = Math.floor(3 * g + 2 * t);
+  return (
+    (col >= s0 && col <= s0 + w - 1) ||
+    (col >= s1 && col <= s1 + w - 1) ||
+    (col >= s2 && col <= s2 + w - 1)
+  );
+}
+
+/**
+ * 仅 120 列：先按格心落在 `[2g+t, 2g+2t]` 数出中间竖条列数 `w` 与首列 `s1`，左右用同宽 `w` 与 SSOT 的 `floor(g)` / `floor(3g+2t)` 起笔，使左右加宽对齐中间（不缩中间）。
+ * @param {number} col
+ * @param {number} g
+ * @param {number} t
+ * @param {number} cols
+ * @returns {boolean}
+ */
+function ironBarVert120EqualWidthCol(col, g, t, cols) {
+  var w = 0;
+  var s1 = -1;
+  var c;
+  var cx;
+  for (c = 0; c < cols; c++) {
+    cx = c + 0.5;
+    if (cx >= 2 * g + t && cx <= 2 * g + 2 * t) {
+      if (s1 < 0) {
+        s1 = c;
+      }
+      w++;
+    }
+  }
+  w = Math.max(1, w);
+  if (s1 < 0) {
+    s1 = Math.floor(2 * g + t);
+  }
+  var s0 = Math.floor(g);
+  var s2 = Math.floor(3 * g + 2 * t);
+  return (
+    (col >= s0 && col <= s0 + w - 1) ||
+    (col >= s1 && col <= s1 + w - 1) ||
+    (col >= s2 && col <= s2 + w - 1)
+  );
+}
+
+/**
+ * 格心是否在铁栅区域内（与 72 基准下的竖粗/横细比例一致，避免整格 overlap 在高分辨率把两向都撑满）。
+ * @param {number} col
+ * @param {number} row
+ * @param {*} spec `buildIronBarsSpec` 返回值
+ * @returns {boolean}
+ */
+function isIronBarMaskCellFromSpec(col, row, spec) {
+  var cx = col + 0.5;
+  var cy = row + 0.5;
+  var dH = spec.horizontalThicknessDeltaRows != null ? spec.horizontalThicknessDeltaRows : 0;
+  var tH = Math.max(1e-6, spec.tHorizontalInRows + dH);
+  /** 120 列：两条横条各加厚 1 字符行（行向单位 +1） */
+  if (spec.cols === 120) {
+    tH += 1;
+  }
+  if (tH >= 0.5) {
+    function horizCenterInBand(barIdx) {
+      var c = barIdx + 0.5;
+      return cy >= c - tH * 0.5 && cy <= c + tH * 0.5;
+    }
+    if (horizCenterInBand(spec.h1) || horizCenterInBand(spec.h2)) return true;
+  } else {
+    function horizOverlapThin(barIdx) {
+      var c = barIdx + 0.5;
+      return segmentsOverlapPx(row, row + 1, c - tH * 0.5, c + tH * 0.5);
+    }
+    if (horizOverlapThin(spec.h1) || horizOverlapThin(spec.h2)) return true;
+  }
+  var g = spec.gInCells;
+  var t = spec.tVerticalInCells;
+  if (spec.cols === 120) {
+    return ironBarVert120EqualWidthCol(col, g, t, spec.cols);
+  }
+  if (spec.cols === 48) {
+    return ironBarVert48EqualWidthCol(col, g, t);
+  }
+  var extra = spec.centerVerticalExtraCols != null ? spec.centerVerticalExtraCols : 0;
+  function vertCenterInBarAt(x0, tw) {
+    return cx >= x0 && cx <= x0 + tw;
+  }
+  if (vertCenterInBarAt(g, t)) return true;
+  var xMid = 2 * g + t - 0.5 * extra;
+  var wMid = t + extra;
+  if (vertCenterInBarAt(xMid, wMid)) return true;
+  if (vertCenterInBarAt(3 * g + 2 * t, t)) return true;
+  return false;
+}
+
+/**
+ * 1:1 铁栅：与取景 Canvas 共用 `buildIronBarsSpec`（可选传入与成片一致的 spec）。
+ * @param {Float32Array} luma 行优先
+ * @param {number} cols
+ * @param {number} rows
+ * @param {*} [specOrNull] `buildIronBarsSpec` 返回值；省略时按当前 metrics + 画幅比构建
+ * @returns {void}
+ */
+function applyIronBarsMaskToLuma(luma, cols, rows, specOrNull) {
+  if (!luma || cols < 1 || rows < 1) return;
+  var n = cols * rows;
+  if (luma.length < n) return;
+  var spec =
+    specOrNull != null
+      ? specOrNull
+      : buildIronBarsSpec(cols, rows, getAsciiCellMetrics().cellAspect, getAspectRatio());
+  var x;
+  var y;
+  for (y = 0; y < rows; y++) {
+    for (x = 0; x < cols; x++) {
+      if (isIronBarMaskCellFromSpec(x, y, spec)) {
+        luma[y * cols + x] = 0;
+      }
+    }
+  }
+}
+
+/**
  * 由每格亮度（0…1，与 `toAscii` 采样一致）与当前字符集生成 ASCII。
  * @param {Float32Array} luma 行优先，长度 `cols * rows`
  * @param {number} cols
@@ -2805,6 +3921,54 @@ function luminanceToAscii(luma, cols, rows, chars) {
     result += '\n';
   }
   return result;
+}
+
+/**
+ * Photo 预览：自 `lumaCanonical` 复制、按当前勾选施加帧遮罩并重算 ASCII（不修改规范亮度源）。
+ * @returns {void}
+ */
+function regeneratePhotoPreviewFromCanonical() {
+  var p = AsciiCameraPreview.pendingGalleryPayload;
+  if (!p || p.isPhotoPreview !== true || !p.lumaCanonical || !p.cols || !p.rows) return;
+  var cols = p.cols;
+  var rows = p.rows;
+  var n = cols * rows;
+  if (p.lumaCanonical.length < n) return;
+  if (!p.luma || p.luma.length !== n) {
+    p.luma = new Float32Array(n);
+  }
+  p.luma.set(p.lumaCanonical);
+  var metrics = getAsciiCellMetrics();
+  var ap = aspectPicker ? aspectPicker.value : '';
+  var maskKind = getPhotoFrameMaskKind();
+  var baked = false;
+  if (ap === '3:4' && maskKind === 'oval' && frameMaskCheckbox && frameMaskCheckbox.checked) {
+    applyPhotoFrameMaskToLuma(p.luma, cols, rows, 'oval', metrics.cellAspect);
+    baked = true;
+  } else if (ap === '1:1') {
+    if (frameMaskCheckbox && frameMaskCheckbox.checked) {
+      applyPhotoFrameMaskToLuma(p.luma, cols, rows, 'round', metrics.cellAspect);
+      baked = true;
+    }
+    if (frameMaskIronCheckbox && frameMaskIronCheckbox.checked) {
+      var ironSpec = p.ironBarsSpec;
+      if (
+        ironSpec == null ||
+        ironSpec.cols !== cols ||
+        ironSpec.rows !== rows
+      ) {
+        ironSpec = buildIronBarsSpec(cols, rows, metrics.cellAspect, getAspectRatio());
+      }
+      applyIronBarsMaskToLuma(p.luma, cols, rows, ironSpec);
+      baked = true;
+    }
+  }
+  p.bakedFrameMask = baked;
+  p.ascii = luminanceToAscii(p.luma, cols, rows, getChars());
+  out.textContent = p.ascii;
+  invalidateAsciiCellMetrics();
+  syncAsciiLayout();
+  syncPhotoFrameMaskOverlay();
 }
 
 /**
@@ -2923,29 +4087,6 @@ async function captureVideoAsciiFrames() {
  */
 async function persistPhotoToGallery(payload) {
   try {
-    // #region agent log
-    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
-      body: JSON.stringify({
-        sessionId: '67cfc6',
-        runId: 'gallery-save-debug',
-        hypothesisId: 'H1',
-        location: 'camera.html:persistPhotoToGallery:enter',
-        message: 'persist enter',
-        data: {
-          href: String(location && location.href),
-          origin: String(location && location.origin),
-          hasCloudSync: !!window.AsciiCameraGalleryCloudSync,
-          cloudEnabled: !!(window.AsciiCameraGalleryCloudSync && window.AsciiCameraGalleryCloudSync.isEnabled && window.AsciiCameraGalleryCloudSync.isEnabled()),
-          provider: (window.AsciiCameraGalleryCloudSync && window.AsciiCameraGalleryCloudSync.getProvider) ? window.AsciiCameraGalleryCloudSync.getProvider() : null,
-          isAnim: !!(payload && typeof payload === 'object' && payload.isAnimated === true),
-          payloadType: payload == null ? null : typeof payload
-        },
-        timestamp: Date.now()
-      })
-    }).catch(function () {});
-    // #endregion
     var isAnim =
       payload &&
       typeof payload === 'object' &&
@@ -3020,42 +4161,9 @@ async function persistPhotoToGallery(payload) {
         syncCam.pushFromLocal().catch(function () {});
       }
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
-      body: JSON.stringify({
-        sessionId: '67cfc6',
-        runId: 'gallery-save-debug',
-        hypothesisId: 'H2',
-        location: 'camera.html:persistPhotoToGallery:ok',
-        message: 'persist ok',
-        data: {
-          topPhotoId: (savedRow && savedRow.id) ? String(savedRow.id) : null,
-          userCount: (window.AsciiCameraGalleryStorage && window.AsciiCameraGalleryStorage.loadUserPhotos) ? window.AsciiCameraGalleryStorage.loadUserPhotos().length : null
-        },
-        timestamp: Date.now()
-      })
-    }).catch(function () {});
-    // #endregion
     return true;
   } catch (e) {
     console.error(e);
-    // #region agent log
-    fetch('http://127.0.0.1:7520/ingest/be823198-74c3-4055-9412-4c580ba8a956', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '67cfc6' },
-      body: JSON.stringify({
-        sessionId: '67cfc6',
-        runId: 'gallery-save-debug',
-        hypothesisId: 'H3',
-        location: 'camera.html:persistPhotoToGallery:catch',
-        message: 'persist threw',
-        data: { name: e && e.name, message: e && e.message },
-        timestamp: Date.now()
-      })
-    }).catch(function () {});
-    // #endregion
     return false;
   }
 }
@@ -3119,7 +4227,8 @@ AsciiCameraPreview.bindCore({
   loopCoverUi: loopCoverUi,
   loopCoverSlider: loopCoverSlider,
   loopCoverLabel: loopCoverLabel,
-  camSubmitStatusSlot: camSubmitStatusSlot
+  camSubmitStatusSlot: camSubmitStatusSlot,
+  regeneratePhotoPreviewFromCanonical: regeneratePhotoPreviewFromCanonical
 });
 
 startBtn.addEventListener('click', async () => {
@@ -3189,6 +4298,7 @@ startBtn.addEventListener('click', async () => {
       requestAnimationFrame(function () {
         syncAsciiLayout();
         stopRequestRainEffectFade();
+        syncPhotoFrameMaskOverlay();
       });
     });
   } catch (e) {
@@ -3255,12 +4365,44 @@ snapBtn.addEventListener('click', async () => {
       }
       playPhotoShutterSound();
       var photoPack = toAsciiWithLuminance(cols);
+      var bakedFrameMask = false;
+      var maskKind = getPhotoFrameMaskKind();
+      var nCell = photoPack.cols * photoPack.rows;
+      var lumaCanonical =
+        photoPack.luma && photoPack.luma.length === nCell
+          ? new Float32Array(photoPack.luma)
+          : new Float32Array(0);
+      var apShot = aspectPicker ? aspectPicker.value : '';
+      /** @type {null | { cols: number, rows: number, rows72: number, tVerticalInCells: number, gInCells: number, tHorizontalInRows: number, h1: number, h2: number }} */
+      var ironBarsSpecForPayload = null;
+      if (photoPack.luma && photoPack.luma.length === nCell) {
+        var cellM = getAsciiCellMetrics();
+        if (apShot === '3:4' && maskKind === 'oval' && frameMaskCheckbox && frameMaskCheckbox.checked) {
+          applyPhotoFrameMaskToLuma(photoPack.luma, photoPack.cols, photoPack.rows, 'oval', cellM.cellAspect);
+          bakedFrameMask = true;
+        } else if (apShot === '1:1') {
+          if (frameMaskCheckbox && frameMaskCheckbox.checked) {
+            applyPhotoFrameMaskToLuma(photoPack.luma, photoPack.cols, photoPack.rows, 'round', cellM.cellAspect);
+            bakedFrameMask = true;
+          }
+          if (frameMaskIronCheckbox && frameMaskIronCheckbox.checked) {
+            ironBarsSpecForPayload = buildIronBarsSpec(photoPack.cols, photoPack.rows, cellM.cellAspect, getAspectRatio());
+            applyIronBarsMaskToLuma(photoPack.luma, photoPack.cols, photoPack.rows, ironBarsSpecForPayload);
+            bakedFrameMask = true;
+          }
+        }
+      }
       persistArg = {
         isPhotoPreview: true,
-        ascii: photoPack.ascii,
+        ascii: bakedFrameMask
+          ? luminanceToAscii(photoPack.luma, photoPack.cols, photoPack.rows, getChars())
+          : photoPack.ascii,
         luma: photoPack.luma,
+        lumaCanonical: lumaCanonical,
         cols: photoPack.cols,
-        rows: photoPack.rows
+        rows: photoPack.rows,
+        bakedFrameMask: bakedFrameMask,
+        ironBarsSpec: ironBarsSpecForPayload
       };
     } else {
       if (videoProgressBar) videoProgressBar.style.width = '100%';
@@ -3349,6 +4491,12 @@ snapBtn.addEventListener('click', async () => {
 async function submitPreviewToGallery() {
   if (!AsciiCameraPreview.previewCaptureActive || AsciiCameraPreview.pendingGalleryPayload == null || !stream) return;
   var payload = AsciiCameraPreview.pendingGalleryPayload;
+  /**
+   * Photo：画廊保存串与当前预览一致（含取景框开/关）。仅拷贝 `out.textContent`，不重算亮度或二次烘焙遮罩。
+   */
+  if (payload && typeof payload === 'object' && payload.isPhotoPreview === true) {
+    payload.ascii = out.textContent;
+  }
   AsciiCameraPreview.hideLoopCoverUi();
   if (submitGalleryBtn) submitGalleryBtn.disabled = true;
   snapBtn.disabled = true;
