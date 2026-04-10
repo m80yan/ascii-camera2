@@ -488,10 +488,38 @@
   #confirm-yes:hover { background: rgba(255,68,68,0.1); }
   #upload-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 150; align-items: center; justify-content: center; padding: 16px; overflow: auto; }
   #upload-modal.open { display: flex; }
-  #upload-modal-inner { background: #0a0a0a; border: 1px solid rgba(0,255,65,0.35); border-radius: 6px; max-width: 720px; width: 100%; padding: 18px 20px 20px; box-sizing: border-box; }
+  #upload-modal-inner {
+    background: #0a0a0a;
+    border: 1px solid rgba(0,255,65,0.35);
+    border-radius: 6px;
+    max-width: 720px;
+    width: 100%;
+    padding: 18px 20px 20px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    height: min(92vh, 720px);
+    max-height: min(92vh, 720px);
+  }
   /* 设计稿 Frame 48091616：标题左上，预览区，下方单行四控件（标签在上、左对齐） */
-  #upload-modal-inner h2 { font-size: 12px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; opacity: 0.9; margin: 0 0 14px; text-align: left; color: #00ff41; }
-  #upload-modal-body { display: flex; flex-direction: column; gap: 12px; }
+  #upload-modal-inner h2 {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    opacity: 0.9;
+    margin: 0 0 14px;
+    text-align: left;
+    color: #00ff41;
+    flex-shrink: 0;
+  }
+  #upload-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1;
+    min-height: 0;
+  }
   /* 与 camera 取景区→底栏控件：略增预览框与控件区垂直节奏 */
   /**
    * 预览区固定外框：由容器定尺寸，内容缩放适配；禁止滚动条，溢出裁剪（16:9 等宽幅不再撑出横向滚动）。
@@ -503,14 +531,12 @@
     padding: 12px;
     width: 100%;
     box-sizing: border-box;
-    height: min(52vh, 460px);
-    max-height: min(52vh, 460px);
+    flex: 1 1 0;
+    min-height: 160px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    flex-shrink: 0;
-    margin-bottom: 10px;
-    min-height: 0;
+    min-width: 0;
   }
   #upload-preview-stage {
     flex: 1;
@@ -570,8 +596,61 @@
     z-index: 1;
     overflow: hidden;
   }
-  #upload-editor-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 16px; width: 100%; align-items: stretch; }
+  #upload-editor-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 16px; width: 100%; align-items: start; }
   .upload-ctl { display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: stretch; }
+  /**
+   * Aspect 列：与 camera 一致，避免 `.upload-ctl { gap:4px }` 在下拉与缓冲之间再叠 4px（否则与 `#uploadAspectFrameGroup` 的 8px 合成为 12px）。
+   * 「Aspect 字 → 下拉」仍 4px（`.upload-ctl-label { margin-bottom:4px }`）；「下拉底 → Monocular」仅 `#uploadAspectFrameBuffer` 的 8px（对齐 strip `row-gap:12` + slot `margin-top:-4`）。
+   */
+  .upload-ctl.upload-ctl--aspect {
+    align-self: start;
+    gap: 0;
+  }
+  .upload-ctl.upload-ctl--aspect > .upload-ctl-label {
+    margin-bottom: 4px;
+  }
+  /**
+   * 固定高度缓冲：换 Aspect 时高度不变；框线间距由 buffer 顶距 8px + `#uploadFrameIronRow` 的 margin 控制。
+   */
+  #uploadAspectFrameBuffer {
+    width: 100%;
+    height: 72px;
+    min-height: 72px;
+    max-height: 72px;
+    margin-top: 8px;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    overflow: visible;
+  }
+  /**
+   * frame-group：Monocular + Iron；顶距由 buffer `margin-top:8px` 承担，此处为 0 以免与 flex gap 叠加。
+   */
+  #uploadAspectFrameGroup.upload-aspect-frame-group {
+    margin-top: 0;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    box-sizing: border-box;
+  }
+  /** Iron Bars 行：`margin-top:4px` = Monocular → Iron（不对 Monocular 设 margin）。 */
+  #uploadFrameIronRow {
+    margin-top: 4px;
+  }
+  .upload-aspect-frame-slot {
+    min-height: 0;
+    width: 100%;
+    flex-shrink: 0;
+  }
+  .upload-aspect-frame-slot .upload-frame-mask-row {
+    min-height: 24px;
+    box-sizing: border-box;
+  }
   .upload-ctl-label { font-size: 11px; opacity: 0.55; letter-spacing: 1px; text-align: left; width: 100%; }
   .upload-ctl select { width: 100%; background: #111; border: 1px solid rgba(0,255,65,0.3); color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; padding: 6px 8px; cursor: pointer; box-sizing: border-box; }
   /**
@@ -616,42 +695,6 @@
     outline-offset: 2px;
   }
   #upload-modal-inner .flash-switch-label { line-height: 1; }
-  /**
-   * 与 camera `frame-mask-dual`：1:1 时左 Iron（对齐 Style 列）、右 Monocular（对齐 Aspect 列）；3:4 仅右格 Evil Queen。
-   */
-  .upload-frame-mask-dual {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 10px 16px;
-    width: 100%;
-    /**
-     * `#upload-modal-body` 使用 `gap: 12px`；本行需与相机页一致为 8px，
-     * 因此向上抵消 4px（12 - 4 = 8），且不影响本行下方间距（仍由下一段的 gap 控制）。
-     */
-    margin-top: -4px;
-    box-sizing: border-box;
-    align-items: start;
-  }
-  .upload-frame-mask-dual--oval-only .upload-frame-mask-cell--iron {
-    display: none !important;
-  }
-  .upload-frame-mask-dual--oval-only .upload-frame-mask-cell--primary {
-    grid-column: 4;
-  }
-  .upload-frame-mask-spacer {
-    min-height: 0;
-    pointer-events: none;
-  }
-  /**
-   * 与 camera `.frame-mask-slot`：`min-height` 与单行 Flash 对齐，行 hidden 时槽仍占位。
-   */
-  .upload-frame-mask-cell--iron .upload-frame-mask-slot,
-  .upload-frame-mask-cell--primary .upload-frame-mask-slot {
-    margin-top: 0;
-    padding-top: 0;
-    min-height: 24px;
-    box-sizing: border-box;
-  }
   .upload-frame-mask-row {
     min-height: 0;
   }
@@ -667,8 +710,18 @@
   @media (max-width: 640px) {
     #upload-editor-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
-  /* 与 camera 底栏控件→Submit 节奏（无 Loop 封面/状态槽） */
-  #upload-modal-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 16px; align-items: start; margin-top: 12px; padding-top: 0; width: 100%; box-sizing: border-box; }
+  /* 与 camera 底栏控件→Submit 节奏；margin-top:auto 把按钮锚在弹窗内容区底部，换 Aspect 时 Y 不变 */
+  #upload-modal-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px 16px;
+    align-items: start;
+    margin-top: auto;
+    padding-top: 0;
+    flex-shrink: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
   .upload-actions-placeholder { min-height: 0; pointer-events: none; }
   .upload-action-col-res { display: flex; justify-content: flex-end; align-items: stretch; min-width: 0; }
   .upload-action-col-aspect { min-width: 0; }
@@ -875,7 +928,7 @@
             <option value="120">120 (Ultra)</option>
           </select>
         </div>
-        <div class="upload-ctl">
+        <div class="upload-ctl upload-ctl--aspect">
           <span class="upload-ctl-label">Aspect</span>
           <select id="upload-aspect" aria-label="Aspect">
             <option value="free" selected>Free</option>
@@ -884,30 +937,26 @@
             <option value="4:3">4:3</option>
             <option value="3:4">3:4 (Portrait)</option>
           </select>
-        </div>
-      </div>
-      <div class="upload-frame-mask-dual" id="uploadFrameMaskDual">
-        <div class="upload-frame-mask-cell upload-frame-mask-cell--iron" id="uploadFrameIronCell" hidden>
-          <div class="upload-frame-mask-slot">
-            <div class="upload-frame-mask-row" id="uploadFrameIronRow" hidden>
-              <label class="flash-switch upload-frame-mask-flash-switch" id="uploadFrameIronFlashLabel">
-                <input type="checkbox" id="uploadFrameIronCheckbox" autocomplete="off" />
-                <span class="flash-switch-box" aria-hidden="true"></span>
-                <span class="flash-switch-label">Iron Bars</span>
-              </label>
-            </div>
-          </div>
-        </div>
-        <div class="upload-frame-mask-spacer" aria-hidden="true"></div>
-        <div class="upload-frame-mask-spacer" aria-hidden="true"></div>
-        <div class="upload-frame-mask-cell upload-frame-mask-cell--primary" id="uploadFramePrimaryCell">
-          <div class="upload-frame-mask-slot" id="upload-frame-mask-slot">
-            <div class="upload-frame-mask-row" id="upload-frame-mask-row" hidden>
-              <label class="flash-switch upload-frame-mask-flash-switch" id="uploadFrameMaskFlashLabel">
-                <input type="checkbox" id="uploadFrameMaskCheckbox" autocomplete="off" />
-                <span class="flash-switch-box" aria-hidden="true"></span>
-                <span class="flash-switch-label" id="uploadFrameMaskLabelText">Evil Queen (Oval)</span>
-              </label>
+          <div id="uploadAspectFrameBuffer">
+            <div id="uploadAspectFrameGroup" class="upload-aspect-frame-group">
+              <div id="uploadFramePrimaryCell" class="upload-aspect-frame-slot">
+                <div class="upload-frame-mask-row" id="upload-frame-mask-row" hidden>
+                  <label class="flash-switch upload-frame-mask-flash-switch" id="uploadFrameMaskFlashLabel">
+                    <input type="checkbox" id="uploadFrameMaskCheckbox" autocomplete="off" />
+                    <span class="flash-switch-box" aria-hidden="true"></span>
+                    <span class="flash-switch-label" id="uploadFrameMaskLabelText">Evil Queen (Oval)</span>
+                  </label>
+                </div>
+              </div>
+              <div id="uploadFrameIronCell" class="upload-aspect-frame-slot" hidden>
+                <div class="upload-frame-mask-row" id="uploadFrameIronRow" hidden>
+                  <label class="flash-switch upload-frame-mask-flash-switch" id="uploadFrameIronFlashLabel">
+                    <input type="checkbox" id="uploadFrameIronCheckbox" autocomplete="off" />
+                    <span class="flash-switch-box" aria-hidden="true"></span>
+                    <span class="flash-switch-label">Iron Bars</span>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1114,7 +1163,6 @@ const uploadAspect = document.getElementById('upload-aspect');
 const uploadFrameMaskCheckbox = document.getElementById('uploadFrameMaskCheckbox');
 const uploadFrameMaskLabelText = document.getElementById('uploadFrameMaskLabelText');
 const uploadFrameMaskRow = document.getElementById('upload-frame-mask-row');
-const uploadFrameMaskDual = document.getElementById('uploadFrameMaskDual');
 const uploadFrameIronCheckbox = document.getElementById('uploadFrameIronCheckbox');
 const uploadFrameIronRow = document.getElementById('uploadFrameIronRow');
 const uploadFrameIronCell = document.getElementById('uploadFrameIronCell');
@@ -1127,10 +1175,22 @@ let uploadPreviewGridCols = 0;
 let uploadPreviewGridRows = 0;
 /** @type {number} */
 let uploadPhotoFrameMaskEase = 0;
+/**
+ * Upload 1:1 Iron Bars 纵向揭示进度 0…1，与 Monocular 的 `uploadPhotoFrameMaskEase` 解耦，避免 Monocular 已满进度时铁栅被误判为已完全显示。
+ * @type {number}
+ */
+let uploadIronBarsRevealEase = 0;
 let uploadPhotoFrameMaskAnimRaf = null;
 let uploadPhotoFrameMaskAnimStartMs = 0;
 let uploadPhotoFrameMaskAnimFrom = 0;
 let uploadPhotoFrameMaskAnimTo = 0;
+/** @type {number} */
+let uploadPhotoFrameMaskAnimIronFrom = 0;
+/** @type {number} */
+let uploadPhotoFrameMaskAnimIronTo = 0;
+/** 上一帧 sync 时 1:1 Monocular / Iron 勾选，用于边沿检测 */
+let uploadPrevRound11 = false;
+let uploadPrevIron11 = false;
 /** 与 camera `PHOTO_FRAME_MASK_ANIM_MS` 一致 */
 const PHOTO_FRAME_MASK_ANIM_MS_UPLOAD = 400;
 /** @type {boolean} */
@@ -1276,14 +1336,92 @@ uploadInput.addEventListener('change', (e) => {
 uploadDensity.addEventListener('change', () => renderUploadPreview());
 uploadColor.addEventListener('change', () => renderUploadPreview());
 uploadCols.addEventListener('change', () => renderUploadPreview());
+
+/**
+ * Upload：切换前旧 Aspect 是否 **正在显示** 特殊框线（仅 Monocular / Evil Queen；不含 Iron Bars）。
+ * @param {string} ap
+ * @returns {boolean}
+ */
+function isUploadSpecialFrameCurrentlyVisible(ap) {
+  if (ap === '3:4') return !!(uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked);
+  if (ap === '1:1') return !!(uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked);
+  return false;
+}
+
+/**
+ * Upload：目标 Aspect 在切换后是否会 **立刻显示** 特殊框线（基于记忆勾选；仅 Monocular / Evil Queen；不含 Iron Bars）。
+ * @param {string} ap
+ * @returns {boolean}
+ */
+function willUploadAspectShowSpecialFrameImmediately(ap) {
+  if (ap === '3:4') return !!uploadFrameMaskCheckedOval;
+  if (ap === '1:1') return !!uploadFrameMaskCheckedRound;
+  return false;
+}
+
+/**
+ * Upload：如需先退出旧框线动画，则在动画完成后再提交新 Aspect，避免新预览提前 reflow（与 camera 的 pipeline 同思路）。
+ * @param {string} oldAp
+ * @param {string} newAp
+ * @returns {void}
+ */
+function runUploadAspectChangeWithFrameExitPipeline(oldAp, newAp) {
+  if (uploadAspect) uploadAspect.value = oldAp;
+  updateUploadFrameMaskUi();
+  renderUploadPreview();
+  cancelUploadPhotoFrameMaskAnimation();
+
+  function afterExit() {
+    if (uploadAspect) uploadAspect.value = newAp;
+    lastUploadAspectForFrameMask = newAp;
+    updateUploadFrameMaskUi();
+    renderUploadPreview();
+  }
+
+  function startMaskExitAfterLayout() {
+    if (!uploadUploadFrameMaskCanvas || !uploadUploadFrameMaskCtx) {
+      afterExit();
+      return;
+    }
+    var fromEase =
+      uploadPhotoFrameMaskEase > 0 && uploadPhotoFrameMaskEase < 0.999 ? uploadPhotoFrameMaskEase : 1;
+    if (fromEase <= 0) {
+      hideUploadUploadFrameMaskCanvas();
+      uploadPhotoFrameMaskEase = 0;
+      uploadIronBarsRevealEase = 0;
+      afterExit();
+      return;
+    }
+    showUploadUploadFrameMaskCanvas();
+    drawUploadPhotoFrameMaskAtEase(fromEase);
+    startUploadPhotoFrameMaskAnimation(fromEase, 0, afterExit, uploadIronBarsRevealEase, 0);
+  }
+
+  window.requestAnimationFrame(function () {
+    window.requestAnimationFrame(startMaskExitAfterLayout);
+  });
+}
+
 uploadAspect.addEventListener('change', () => {
-  if (lastUploadAspectForFrameMask === '3:4' && uploadFrameMaskCheckbox) {
+  var oldAp = lastUploadAspectForFrameMask;
+  var newAp = uploadAspect.value;
+
+  if (oldAp === '3:4' && uploadFrameMaskCheckbox) {
     uploadFrameMaskCheckedOval = uploadFrameMaskCheckbox.checked;
-  } else if (lastUploadAspectForFrameMask === '1:1') {
+  } else if (oldAp === '1:1') {
     if (uploadFrameMaskCheckbox) uploadFrameMaskCheckedRound = uploadFrameMaskCheckbox.checked;
     if (uploadFrameIronCheckbox) uploadFrameMaskCheckedIronBars = uploadFrameIronCheckbox.checked;
   }
-  lastUploadAspectForFrameMask = uploadAspect.value;
+
+  var oldVis = isUploadSpecialFrameCurrentlyVisible(oldAp);
+  var newVis = willUploadAspectShowSpecialFrameImmediately(newAp);
+  var needsExitFirst = oldVis && !newVis;
+  if (needsExitFirst) {
+    runUploadAspectChangeWithFrameExitPipeline(oldAp, newAp);
+    return;
+  }
+
+  lastUploadAspectForFrameMask = newAp;
   updateUploadFrameMaskUi();
   renderUploadPreview();
 });
@@ -1314,6 +1452,9 @@ document.getElementById('upload-save-btn').addEventListener('click', async () =>
 function closeUploadModal() {
   cancelUploadPhotoFrameMaskAnimation();
   uploadPhotoFrameMaskEase = 0;
+  uploadIronBarsRevealEase = 0;
+  uploadPrevRound11 = false;
+  uploadPrevIron11 = false;
   hideUploadUploadFrameMaskCanvas();
   uploadModal.classList.remove('open');
   uploadModal.setAttribute('aria-hidden', 'true');
@@ -1609,19 +1750,16 @@ function updateUploadFrameMaskUi() {
     uploadFrameMaskRow.hidden = true;
     if (uploadFrameIronRow) uploadFrameIronRow.hidden = true;
     if (uploadFrameIronCell) uploadFrameIronCell.hidden = true;
-    if (uploadFrameMaskDual) uploadFrameMaskDual.classList.remove('upload-frame-mask-dual--oval-only');
     syncUploadPhotoFrameMaskOverlay();
     return;
   }
   if (kind === 'oval') {
-    if (uploadFrameMaskDual) uploadFrameMaskDual.classList.add('upload-frame-mask-dual--oval-only');
     if (uploadFrameIronRow) uploadFrameIronRow.hidden = true;
     if (uploadFrameIronCell) uploadFrameIronCell.hidden = true;
     uploadFrameMaskRow.hidden = false;
     uploadFrameMaskLabelText.textContent = 'Evil Queen (Oval)';
     uploadFrameMaskCheckbox.checked = uploadFrameMaskCheckedOval;
   } else {
-    if (uploadFrameMaskDual) uploadFrameMaskDual.classList.remove('upload-frame-mask-dual--oval-only');
     if (uploadFrameIronCell) uploadFrameIronCell.hidden = false;
     if (uploadFrameIronRow) uploadFrameIronRow.hidden = false;
     uploadFrameMaskRow.hidden = false;
@@ -1903,14 +2041,23 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
     }
   }
 
-  if (showIron && t > 0) {
-    if (isUploadAsciiMaskLayoutValidForIron(layout)) {
+  /**
+   * Upload 1:1 Iron Bars：纵向揭示用独立 `uploadIronBarsRevealEase`，与 Monocular 椭圆 `t` 同帧、同 `PHOTO_FRAME_MASK_ANIM_MS_UPLOAD` 与 easing 驱动，避免复用 photo ease=1 导致铁栅瞬显。
+   */
+  var tIron = Math.min(1, Math.max(0, uploadIronBarsRevealEase));
+  if (showIron && tIron > 0) {
+    var yRevealIron = Math.max(0, Math.min(H, tIron * H));
+    if (yRevealIron > 0 && isUploadAsciiMaskLayoutValidForIron(layout)) {
       var specIron = buildIronBarsSpec(
         layout.cols,
         layout.rows,
         getGalleryAsciiCellMetrics().cellAspect,
         1
       );
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, yRevealIron);
+      ctx.clip();
       for (row = 0; row < layout.rows; row++) {
         y1 = y0 + row * rhCell;
         y2 = y0 + (row + 1) * rhCell;
@@ -1932,6 +2079,7 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
           );
         }
       }
+      ctx.restore();
     }
   }
 }
@@ -1940,16 +2088,21 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
  * @param {number} fromEase
  * @param {number} toEase
  * @param {() => void} [onComplete]
+ * @param {number} [ironFromOpt] 未传则 Iron 进度在动画全程保持不变
+ * @param {number} [ironToOpt]
  * @returns {void}
  */
-function startUploadPhotoFrameMaskAnimation(fromEase, toEase, onComplete) {
+function startUploadPhotoFrameMaskAnimation(fromEase, toEase, onComplete, ironFromOpt, ironToOpt) {
   if (!uploadUploadFrameMaskCanvas || !uploadUploadFrameMaskCtx) return;
   cancelUploadPhotoFrameMaskAnimation();
+  var ironFromV = ironFromOpt !== undefined ? ironFromOpt : uploadIronBarsRevealEase;
+  var ironToV = ironToOpt !== undefined ? ironToOpt : uploadIronBarsRevealEase;
   var reduceMotion =
     typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (reduceMotion) {
     uploadPhotoFrameMaskEase = toEase;
-    if (toEase <= 0) {
+    uploadIronBarsRevealEase = ironToV;
+    if (uploadPhotoFrameMaskEase <= 0 && uploadIronBarsRevealEase <= 0) {
       hideUploadUploadFrameMaskCanvas();
     } else {
       showUploadUploadFrameMaskCanvas();
@@ -1962,6 +2115,8 @@ function startUploadPhotoFrameMaskAnimation(fromEase, toEase, onComplete) {
   }
   uploadPhotoFrameMaskAnimFrom = fromEase;
   uploadPhotoFrameMaskAnimTo = toEase;
+  uploadPhotoFrameMaskAnimIronFrom = ironFromV;
+  uploadPhotoFrameMaskAnimIronTo = ironToV;
   uploadPhotoFrameMaskAnimStartMs =
     typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
   showUploadUploadFrameMaskCanvas();
@@ -1976,13 +2131,17 @@ function startUploadPhotoFrameMaskAnimation(fromEase, toEase, onComplete) {
     var eased = easeOutCubicUploadPhotoMask(u);
     uploadPhotoFrameMaskEase =
       uploadPhotoFrameMaskAnimFrom + (uploadPhotoFrameMaskAnimTo - uploadPhotoFrameMaskAnimFrom) * eased;
+    uploadIronBarsRevealEase =
+      uploadPhotoFrameMaskAnimIronFrom +
+      (uploadPhotoFrameMaskAnimIronTo - uploadPhotoFrameMaskAnimIronFrom) * eased;
     drawUploadPhotoFrameMaskAtEase(uploadPhotoFrameMaskEase);
     if (u < 1) {
       uploadPhotoFrameMaskAnimRaf = requestAnimationFrame(tick);
     } else {
       uploadPhotoFrameMaskAnimRaf = null;
       uploadPhotoFrameMaskEase = uploadPhotoFrameMaskAnimTo;
-      if (uploadPhotoFrameMaskEase <= 0) {
+      uploadIronBarsRevealEase = uploadPhotoFrameMaskAnimIronTo;
+      if (uploadPhotoFrameMaskEase <= 0 && uploadIronBarsRevealEase <= 0) {
         hideUploadUploadFrameMaskCanvas();
       } else {
         drawUploadPhotoFrameMaskAtEase(uploadPhotoFrameMaskEase);
@@ -2029,33 +2188,101 @@ function syncUploadPhotoFrameMaskLayoutRedraw() {
 function syncUploadPhotoFrameMaskOverlay() {
   if (!uploadUploadFrameMaskCanvas) return;
   if (!uploadFrameMaskCheckbox && !uploadFrameIronCheckbox) return;
+  var ap = uploadAspect ? uploadAspect.value : 'free';
+  var showOval = ap === '3:4' && uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked;
+  var showRound = ap === '1:1' && uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked;
+  var showIron = ap === '1:1' && uploadFrameIronCheckbox && uploadFrameIronCheckbox.checked;
   var should =
-    anyUploadPhotoFrameMaskControlActive() && uploadSrcImg && uploadSrcImg.naturalWidth > 0;
+    (showOval || showRound || showIron) && uploadSrcImg && uploadSrcImg.naturalWidth > 0;
 
   if (!should) {
     cancelUploadPhotoFrameMaskAnimation();
-    if (uploadPhotoFrameMaskEase > 0) {
-      startUploadPhotoFrameMaskAnimation(uploadPhotoFrameMaskEase, 0);
+    if (uploadPhotoFrameMaskEase > 0 || uploadIronBarsRevealEase > 0) {
+      startUploadPhotoFrameMaskAnimation(uploadPhotoFrameMaskEase, 0, null, uploadIronBarsRevealEase, 0);
     } else {
       uploadPhotoFrameMaskEase = 0;
+      uploadIronBarsRevealEase = 0;
       hideUploadUploadFrameMaskCanvas();
     }
+    uploadPrevRound11 = false;
+    uploadPrevIron11 = false;
     return;
   }
 
+  var round11 = showRound;
+  var iron11 = showIron;
+  var ironJustOn = iron11 && !uploadPrevIron11;
+  var ironJustOff = !iron11 && uploadPrevIron11;
+  var roundJustOff = !round11 && uploadPrevRound11;
+
   if (uploadPhotoFrameMaskAnimRaf != null) {
+    uploadPrevRound11 = round11;
+    uploadPrevIron11 = iron11;
     return;
   }
+
+  /** Monocular 关 + Iron 开同一操作：先退出圆遮罩，再铁栅自上而下进入（两段时间均为 Monocular 同款 400ms + easing） */
+  if (ironJustOn && roundJustOff) {
+    cancelUploadPhotoFrameMaskAnimation();
+    uploadIronBarsRevealEase = 0;
+    startUploadPhotoFrameMaskAnimation(
+      1,
+      0,
+      function () {
+        startUploadPhotoFrameMaskAnimation(0, 0, null, 0, 1);
+      },
+      0,
+      0
+    );
+    uploadPrevRound11 = round11;
+    uploadPrevIron11 = iron11;
+    return;
+  }
+
+  if (ironJustOn) {
+    cancelUploadPhotoFrameMaskAnimation();
+    uploadIronBarsRevealEase = 0;
+    var pTo = showOval || showRound ? 1 : 0;
+    startUploadPhotoFrameMaskAnimation(uploadPhotoFrameMaskEase, pTo, null, 0, 1);
+    uploadPrevRound11 = round11;
+    uploadPrevIron11 = iron11;
+    return;
+  }
+
+  if (ironJustOff && round11) {
+    cancelUploadPhotoFrameMaskAnimation();
+    startUploadPhotoFrameMaskAnimation(uploadPhotoFrameMaskEase, 1, null, uploadIronBarsRevealEase, 0);
+    uploadPrevRound11 = round11;
+    uploadPrevIron11 = iron11;
+    return;
+  }
+
+  var targetPhoto = showOval || showRound ? 1 : 0;
+  var targetIron = iron11 ? 1 : 0;
+  var eps = 0.001;
+  var atPhoto = Math.abs(uploadPhotoFrameMaskEase - targetPhoto) < eps;
+  var atIron = Math.abs(uploadIronBarsRevealEase - targetIron) < eps;
   if (
-    uploadPhotoFrameMaskEase >= 0.999 &&
+    atPhoto &&
+    atIron &&
     uploadUploadFrameMaskCanvas.classList.contains('upload-upload-frame-mask-canvas--visible')
   ) {
-    drawUploadPhotoFrameMaskAtEase(1);
+    drawUploadPhotoFrameMaskAtEase(uploadPhotoFrameMaskEase);
+    uploadPrevRound11 = round11;
+    uploadPrevIron11 = iron11;
     return;
   }
+
   cancelUploadPhotoFrameMaskAnimation();
-  var fromE = uploadPhotoFrameMaskEase > 0 && uploadPhotoFrameMaskEase < 0.999 ? uploadPhotoFrameMaskEase : 0;
-  startUploadPhotoFrameMaskAnimation(fromE, 1);
+  startUploadPhotoFrameMaskAnimation(
+    uploadPhotoFrameMaskEase,
+    targetPhoto,
+    null,
+    uploadIronBarsRevealEase,
+    targetIron
+  );
+  uploadPrevRound11 = round11;
+  uploadPrevIron11 = iron11;
 }
 
 /**
@@ -2139,6 +2366,9 @@ function renderUploadPreview() {
     uploadPreviewPre.textContent = '';
     cancelUploadPhotoFrameMaskAnimation();
     uploadPhotoFrameMaskEase = 0;
+    uploadIronBarsRevealEase = 0;
+    uploadPrevRound11 = false;
+    uploadPrevIron11 = false;
     hideUploadUploadFrameMaskCanvas();
     return '';
   }
