@@ -491,8 +491,11 @@
   #upload-modal-inner { background: #0a0a0a; border: 1px solid rgba(0,255,65,0.35); border-radius: 6px; max-width: 720px; width: 100%; padding: 18px 20px 20px; box-sizing: border-box; }
   /* 设计稿 Frame 48091616：标题左上，预览区，下方单行四控件（标签在上、左对齐） */
   #upload-modal-inner h2 { font-size: 12px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; opacity: 0.9; margin: 0 0 14px; text-align: left; color: #00ff41; }
-  #upload-modal-body { display: flex; flex-direction: column; gap: 14px; }
-  /* 固定高度：切换分辨率时外层高度不变，低分辨率在区内居中，过高则区内滚动 */
+  #upload-modal-body { display: flex; flex-direction: column; gap: 12px; }
+  /* 与 camera 取景区→底栏控件：略增预览框与控件区垂直节奏 */
+  /**
+   * 预览区固定外框：由容器定尺寸，内容缩放适配；禁止滚动条，溢出裁剪（16:9 等宽幅不再撑出横向滚动）。
+   */
   #upload-preview-wrap {
     background: #000;
     border: 1px solid rgba(0,255,65,0.25);
@@ -502,27 +505,170 @@
     box-sizing: border-box;
     height: min(52vh, 460px);
     max-height: min(52vh, 460px);
-    overflow: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     flex-shrink: 0;
+    margin-bottom: 10px;
+    min-height: 0;
   }
   #upload-preview-stage {
-    min-height: 100%;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
   }
-  /* inline-block + line-height:1 + 实测宽高缩放，避免块字符与「0」字宽假设不一致导致 1:1 被压扁 */
-  #upload-preview-pre { font-family: monospace, ui-monospace, "Courier New", monospace; white-space: pre; letter-spacing: 0; margin: 0; display: inline-block; width: max-content; max-width: 100%; vertical-align: middle; line-height: 1; flex-shrink: 0; }
+  /**
+   * 与 camera `.ascii-active-frame`：包住 ASCII 与遮罩画布；限制在 stage 内，与最终绘制尺寸一致。
+   */
+  .upload-preview-active-frame {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    vertical-align: middle;
+    box-sizing: border-box;
+  }
+  /**
+   * Photo 取景框遮罩：与 camera `.ascii-frame-mask-canvas` 一致（纯黑格、叠于 pre 之上）。
+   */
+  /* 宽高由 JS 按 `#upload-preview-pre` 的 offset 盒设置，与可见 ASCII 同参考盒（避免相对 frame 的 100% 与 pre 子像素不一致导致四边漏亮） */
+  #upload-modal-inner .upload-upload-frame-mask-canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 5;
+    pointer-events: none;
+    display: none;
+    opacity: 1;
+    box-sizing: border-box;
+  }
+  #upload-modal-inner .upload-upload-frame-mask-canvas.upload-upload-frame-mask-canvas--visible {
+    display: block;
+  }
+  /* 字号由 JS 按 stage 可用区缩放；max-width 防撑破，overflow 与父级 hidden 双保险 */
+  #upload-preview-pre {
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    white-space: pre;
+    letter-spacing: 0;
+    margin: 0;
+    display: inline-block;
+    width: max-content;
+    max-width: 100%;
+    max-height: 100%;
+    box-sizing: border-box;
+    vertical-align: middle;
+    line-height: 1;
+    flex-shrink: 1;
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+  }
   #upload-editor-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 16px; width: 100%; align-items: stretch; }
   .upload-ctl { display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: stretch; }
   .upload-ctl-label { font-size: 11px; opacity: 0.55; letter-spacing: 1px; text-align: left; width: 100%; }
   .upload-ctl select { width: 100%; background: #111; border: 1px solid rgba(0,255,65,0.3); color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; padding: 6px 8px; cursor: pointer; box-sizing: border-box; }
+  /**
+   * 与 camera.html Flash / frame 行同款 `.flash-switch`（仅作用于上传弹窗）。
+   */
+  #upload-modal-inner .flash-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: #2afd4f;
+    cursor: pointer;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  #upload-modal-inner .flash-switch input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+  }
+  #upload-modal-inner .flash-switch-box {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    border: 1px solid rgba(42, 253, 79, 0.55);
+    border-radius: 1px;
+    background: transparent;
+    box-sizing: border-box;
+  }
+  #upload-modal-inner .flash-switch input:checked + .flash-switch-box {
+    background: #2afd4f;
+    border-color: #2afd4f;
+    box-shadow: inset 0 0 0 2px #0a0a0a;
+  }
+  #upload-modal-inner .flash-switch input:focus-visible + .flash-switch-box {
+    outline: 1px solid #2afd4f;
+    outline-offset: 2px;
+  }
+  #upload-modal-inner .flash-switch-label { line-height: 1; }
+  /**
+   * 与 camera `frame-mask-dual`：1:1 时左 Iron（对齐 Style 列）、右 Monocular（对齐 Aspect 列）；3:4 仅右格 Evil Queen。
+   */
+  .upload-frame-mask-dual {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px 16px;
+    width: 100%;
+    /**
+     * `#upload-modal-body` 使用 `gap: 12px`；本行需与相机页一致为 8px，
+     * 因此向上抵消 4px（12 - 4 = 8），且不影响本行下方间距（仍由下一段的 gap 控制）。
+     */
+    margin-top: -4px;
+    box-sizing: border-box;
+    align-items: start;
+  }
+  .upload-frame-mask-dual--oval-only .upload-frame-mask-cell--iron {
+    display: none !important;
+  }
+  .upload-frame-mask-dual--oval-only .upload-frame-mask-cell--primary {
+    grid-column: 4;
+  }
+  .upload-frame-mask-spacer {
+    min-height: 0;
+    pointer-events: none;
+  }
+  /**
+   * 与 camera `.frame-mask-slot`：`min-height` 与单行 Flash 对齐，行 hidden 时槽仍占位。
+   */
+  .upload-frame-mask-cell--iron .upload-frame-mask-slot,
+  .upload-frame-mask-cell--primary .upload-frame-mask-slot {
+    margin-top: 0;
+    padding-top: 0;
+    min-height: 24px;
+    box-sizing: border-box;
+  }
+  .upload-frame-mask-row {
+    min-height: 0;
+  }
+  #upload-frame-mask-row[hidden],
+  #uploadFrameIronRow[hidden] {
+    display: none !important;
+    pointer-events: none !important;
+  }
+  .upload-frame-mask-row .upload-frame-mask-flash-switch {
+    width: 100%;
+    justify-content: flex-start;
+  }
   @media (max-width: 640px) {
     #upload-editor-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
-  /* 与上方四列同网格：Cancel 仅内容宽、右缘对齐 Resolution；Add 宽度=Aspect 下拉同列同宽（不超出该列） */
-  #upload-modal-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 16px; align-items: start; margin-top: 4px; padding-top: 4px; width: 100%; box-sizing: border-box; }
+  /* 与 camera 底栏控件→Submit 节奏（无 Loop 封面/状态槽） */
+  #upload-modal-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 16px; align-items: start; margin-top: 12px; padding-top: 0; width: 100%; box-sizing: border-box; }
   .upload-actions-placeholder { min-height: 0; pointer-events: none; }
   .upload-action-col-res { display: flex; justify-content: flex-end; align-items: stretch; min-width: 0; }
   .upload-action-col-aspect { min-width: 0; }
@@ -693,7 +839,10 @@
     <div id="upload-modal-body">
       <div id="upload-preview-wrap">
         <div id="upload-preview-stage">
-          <pre id="upload-preview-pre"></pre>
+          <div id="upload-preview-active-frame" class="upload-preview-active-frame">
+            <pre id="upload-preview-pre"></pre>
+            <canvas id="uploadUploadFrameMaskCanvas" class="upload-upload-frame-mask-canvas" width="1" height="1" aria-hidden="true"></canvas>
+          </div>
         </div>
       </div>
       <div id="upload-editor-controls">
@@ -735,6 +884,32 @@
             <option value="4:3">4:3</option>
             <option value="3:4">3:4 (Portrait)</option>
           </select>
+        </div>
+      </div>
+      <div class="upload-frame-mask-dual" id="uploadFrameMaskDual">
+        <div class="upload-frame-mask-cell upload-frame-mask-cell--iron" id="uploadFrameIronCell" hidden>
+          <div class="upload-frame-mask-slot">
+            <div class="upload-frame-mask-row" id="uploadFrameIronRow" hidden>
+              <label class="flash-switch upload-frame-mask-flash-switch" id="uploadFrameIronFlashLabel">
+                <input type="checkbox" id="uploadFrameIronCheckbox" autocomplete="off" />
+                <span class="flash-switch-box" aria-hidden="true"></span>
+                <span class="flash-switch-label">Iron Bars</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="upload-frame-mask-spacer" aria-hidden="true"></div>
+        <div class="upload-frame-mask-spacer" aria-hidden="true"></div>
+        <div class="upload-frame-mask-cell upload-frame-mask-cell--primary" id="uploadFramePrimaryCell">
+          <div class="upload-frame-mask-slot" id="upload-frame-mask-slot">
+            <div class="upload-frame-mask-row" id="upload-frame-mask-row" hidden>
+              <label class="flash-switch upload-frame-mask-flash-switch" id="uploadFrameMaskFlashLabel">
+                <input type="checkbox" id="uploadFrameMaskCheckbox" autocomplete="off" />
+                <span class="flash-switch-box" aria-hidden="true"></span>
+                <span class="flash-switch-label" id="uploadFrameMaskLabelText">Evil Queen (Oval)</span>
+              </label>
+            </div>
+          </div>
         </div>
       </div>
       <div id="upload-modal-actions">
@@ -936,6 +1111,38 @@ const uploadDensity = document.getElementById('upload-density');
 const uploadColor = document.getElementById('upload-color');
 const uploadCols = document.getElementById('upload-cols');
 const uploadAspect = document.getElementById('upload-aspect');
+const uploadFrameMaskCheckbox = document.getElementById('uploadFrameMaskCheckbox');
+const uploadFrameMaskLabelText = document.getElementById('uploadFrameMaskLabelText');
+const uploadFrameMaskRow = document.getElementById('upload-frame-mask-row');
+const uploadFrameMaskDual = document.getElementById('uploadFrameMaskDual');
+const uploadFrameIronCheckbox = document.getElementById('uploadFrameIronCheckbox');
+const uploadFrameIronRow = document.getElementById('uploadFrameIronRow');
+const uploadFrameIronCell = document.getElementById('uploadFrameIronCell');
+const uploadUploadFrameMaskCanvas = document.getElementById('uploadUploadFrameMaskCanvas');
+const uploadUploadFrameMaskCtx = uploadUploadFrameMaskCanvas
+  ? uploadUploadFrameMaskCanvas.getContext('2d')
+  : null;
+/** 与 `imageToAscii` 最近一次采样格一致，供遮罩格网对齐 */
+let uploadPreviewGridCols = 0;
+let uploadPreviewGridRows = 0;
+/** @type {number} */
+let uploadPhotoFrameMaskEase = 0;
+let uploadPhotoFrameMaskAnimRaf = null;
+let uploadPhotoFrameMaskAnimStartMs = 0;
+let uploadPhotoFrameMaskAnimFrom = 0;
+let uploadPhotoFrameMaskAnimTo = 0;
+/** 与 camera `PHOTO_FRAME_MASK_ANIM_MS` 一致 */
+const PHOTO_FRAME_MASK_ANIM_MS_UPLOAD = 400;
+/** @type {boolean} */
+let uploadFrameMaskCheckedOval = false;
+/** @type {boolean} */
+let uploadFrameMaskCheckedRound = false;
+/** 与 camera `frameMaskCheckedIronBars`：1:1 时 Iron Bars 勾选记忆 */
+let uploadFrameMaskCheckedIronBars = false;
+/** @type {string} 切换 Aspect 前一刻的值，用于写入 Evil Queen / Round Mirror 勾选记忆 */
+let lastUploadAspectForFrameMask = 'free';
+/** 与 camera `IRON_BARS_REF_RES_COLS`（72）一致，铁栅竖条厚度锚定列数 */
+const IRON_BARS_REF_RES_COLS = 72;
 let pendingDeleteIndex = null, photosCache = [];
 /** 灯箱内当前条目在 `photosCache`（当前可见 feed）中的下标；-1 表示未关联列表 */
 let lightboxFeedIndex = -1;
@@ -1033,11 +1240,17 @@ syncCuratorChrome();
 window.addEventListener('resize', function () {
   invalidateGalleryCellMetrics();
   if (photosCache && photosCache.length) renderGallery(photosCache);
+  if (uploadModal && uploadModal.classList.contains('open')) {
+    renderUploadPreview();
+  }
 });
 if (document.fonts && document.fonts.ready) {
   document.fonts.ready.then(function () {
     invalidateGalleryCellMetrics();
     if (photosCache && photosCache.length) renderGallery(photosCache);
+    if (uploadModal && uploadModal.classList.contains('open')) {
+      renderUploadPreview();
+    }
   });
 }
 
@@ -1050,6 +1263,8 @@ uploadInput.addEventListener('change', (e) => {
     uploadSrcImg.onload = () => {
       uploadModal.classList.add('open');
       uploadModal.setAttribute('aria-hidden', 'false');
+      lastUploadAspectForFrameMask = uploadAspect.value;
+      updateUploadFrameMaskUi();
       renderUploadPreview();
     };
     uploadSrcImg.src = /** @type {string} */ (ev.target.result);
@@ -1061,17 +1276,45 @@ uploadInput.addEventListener('change', (e) => {
 uploadDensity.addEventListener('change', () => renderUploadPreview());
 uploadColor.addEventListener('change', () => renderUploadPreview());
 uploadCols.addEventListener('change', () => renderUploadPreview());
-uploadAspect.addEventListener('change', () => renderUploadPreview());
+uploadAspect.addEventListener('change', () => {
+  if (lastUploadAspectForFrameMask === '3:4' && uploadFrameMaskCheckbox) {
+    uploadFrameMaskCheckedOval = uploadFrameMaskCheckbox.checked;
+  } else if (lastUploadAspectForFrameMask === '1:1') {
+    if (uploadFrameMaskCheckbox) uploadFrameMaskCheckedRound = uploadFrameMaskCheckbox.checked;
+    if (uploadFrameIronCheckbox) uploadFrameMaskCheckedIronBars = uploadFrameIronCheckbox.checked;
+  }
+  lastUploadAspectForFrameMask = uploadAspect.value;
+  updateUploadFrameMaskUi();
+  renderUploadPreview();
+});
+if (uploadFrameMaskCheckbox) {
+  uploadFrameMaskCheckbox.addEventListener('change', () => {
+    const k = getUploadPhotoFrameMaskKind();
+    if (k === 'oval') uploadFrameMaskCheckedOval = uploadFrameMaskCheckbox.checked;
+    else if (k === 'round') uploadFrameMaskCheckedRound = uploadFrameMaskCheckbox.checked;
+    renderUploadPreview();
+  });
+}
+if (uploadFrameIronCheckbox) {
+  uploadFrameIronCheckbox.addEventListener('change', () => {
+    uploadFrameMaskCheckedIronBars = uploadFrameIronCheckbox.checked;
+    renderUploadPreview();
+  });
+}
 
 document.getElementById('upload-cancel-btn').addEventListener('click', closeUploadModal);
 document.getElementById('upload-save-btn').addEventListener('click', async () => {
-  const ascii = renderUploadPreview();
+  renderUploadPreview();
+  const ascii = getUploadAsciiForSave();
   if (!ascii) return;
   await savePhoto(ascii, uploadColor.value);
   closeUploadModal();
 });
 
 function closeUploadModal() {
+  cancelUploadPhotoFrameMaskAnimation();
+  uploadPhotoFrameMaskEase = 0;
+  hideUploadUploadFrameMaskCanvas();
   uploadModal.classList.remove('open');
   uploadModal.setAttribute('aria-hidden', 'true');
   uploadSrcImg.removeAttribute('src');
@@ -1100,6 +1343,793 @@ function getUploadAspectNumber() {
 }
 
 /**
+ * 与 camera `getAsciiMaskRowCountForColsExplicit` 相同：铁栅 SSOT 用显式 cellAspect / 画幅比。
+ * @param {number} cols
+ * @param {number} cellAspect
+ * @param {number} aspectRatio 画幅 W/H
+ * @returns {number}
+ */
+function getAsciiMaskRowCountForColsExplicit(cols, cellAspect, aspectRatio) {
+  var ca = cellAspect != null && Number.isFinite(cellAspect) && cellAspect > 0 ? cellAspect : CELL_ASPECT_FALLBACK;
+  var ar = aspectRatio != null && Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 1;
+  return Math.max(1, Math.round((cols * ca) / ar));
+}
+
+/**
+ * 铁栅横线行号：与 camera `getIronBarHorizontalRowIndices` 一致。
+ * @param {number} rows
+ * @returns {{ h1: number, h2: number }}
+ */
+function getIronBarHorizontalRowIndices(rows) {
+  var h1 = Math.min(Math.max(0, rows - 1), Math.round((1 * rows) / 5));
+  var h2 = Math.min(Math.max(0, rows - 1), Math.round((4 * rows) / 5));
+  return { h1: h1, h2: h2 };
+}
+
+/**
+ * @param {number} contentWidthCells
+ * @param {number} barThicknessCells
+ * @returns {{ t: number, g: number, Wc: number }}
+ */
+function getIronVerticalThreeBarsLayoutCellUnits(contentWidthCells, barThicknessCells) {
+  var Wc = Math.max(0, contentWidthCells);
+  var t = Math.max(0, barThicknessCells);
+  var g = (Wc - 3 * t) / 4;
+  if (g < 0 && Wc > 0) {
+    t = Wc / 3;
+    g = 0;
+  }
+  return { t: t, g: g, Wc: Wc };
+}
+
+/**
+ * 与 camera `buildIronBarsSpec` 一致（Upload 1:1 画幅比为 1）。
+ * @param {number} cols
+ * @param {number} rows
+ * @param {number} cellAspect
+ * @param {number} aspectRatio
+ * @returns {*}
+ */
+function buildIronBarsSpec(cols, rows, cellAspect, aspectRatio) {
+  var rows72 = getAsciiMaskRowCountForColsExplicit(IRON_BARS_REF_RES_COLS, cellAspect, aspectRatio);
+  var Wc = Math.max(0, cols);
+  var tFloat = (4 * Wc) / IRON_BARS_REF_RES_COLS;
+  var tV = Math.max(1, Math.floor(tFloat));
+  var lay = getIronVerticalThreeBarsLayoutCellUnits(Wc, tV);
+  var tH = rows / Math.max(1, rows72);
+  var h = getIronBarHorizontalRowIndices(rows);
+  var IRON_BAR_HORIZ_REF_RES = 96;
+  var IRON_BAR_HORIZ_DELTA_AT_REF = -1;
+  var centerVerticalExtraCols = 0;
+  var horizontalThicknessDeltaRows = 0;
+  if (cols === IRON_BAR_HORIZ_REF_RES) {
+    horizontalThicknessDeltaRows = IRON_BAR_HORIZ_DELTA_AT_REF;
+  } else if (cols === 120) {
+    horizontalThicknessDeltaRows = IRON_BAR_HORIZ_DELTA_AT_REF * (cols / IRON_BAR_HORIZ_REF_RES);
+  }
+  return {
+    cols: cols,
+    rows: rows,
+    rows72: rows72,
+    tVerticalInCells: lay.t,
+    gInCells: lay.g,
+    tHorizontalInRows: tH,
+    h1: h.h1,
+    h2: h.h2,
+    centerVerticalExtraCols: centerVerticalExtraCols,
+    horizontalThicknessDeltaRows: horizontalThicknessDeltaRows
+  };
+}
+
+/**
+ * @param {number} a0
+ * @param {number} a1
+ * @param {number} b0
+ * @param {number} b1
+ * @returns {boolean}
+ */
+function segmentsOverlapPx(a0, a1, b0, b1) {
+  return Math.max(a0, b0) < Math.min(a1, b1);
+}
+
+/**
+ * @param {number} col
+ * @param {number} g
+ * @param {number} t
+ * @returns {boolean}
+ */
+function ironBarVert48EqualWidthCol(col, g, t) {
+  var w = Math.max(1, Math.floor(t) + 1);
+  var s0 = Math.floor(g);
+  var s1 = Math.floor(2 * g + t);
+  var s2 = Math.floor(3 * g + 2 * t);
+  return (
+    (col >= s0 && col <= s0 + w - 1) ||
+    (col >= s1 && col <= s1 + w - 1) ||
+    (col >= s2 && col <= s2 + w - 1)
+  );
+}
+
+/**
+ * @param {number} col
+ * @param {number} g
+ * @param {number} t
+ * @param {number} cols
+ * @returns {boolean}
+ */
+function ironBarVert120EqualWidthCol(col, g, t, cols) {
+  var w = 0;
+  var s1 = -1;
+  var c;
+  var cx;
+  for (c = 0; c < cols; c++) {
+    cx = c + 0.5;
+    if (cx >= 2 * g + t && cx <= 2 * g + 2 * t) {
+      if (s1 < 0) {
+        s1 = c;
+      }
+      w++;
+    }
+  }
+  w = Math.max(1, w);
+  if (s1 < 0) {
+    s1 = Math.floor(2 * g + t);
+  }
+  var s0 = Math.floor(g);
+  var s2 = Math.floor(3 * g + 2 * t);
+  return (
+    (col >= s0 && col <= s0 + w - 1) ||
+    (col >= s1 && col <= s1 + w - 1) ||
+    (col >= s2 && col <= s2 + w - 1)
+  );
+}
+
+/**
+ * @param {number} col
+ * @param {number} row
+ * @param {*} spec
+ * @returns {boolean}
+ */
+function isIronBarMaskCellFromSpec(col, row, spec) {
+  var cx = col + 0.5;
+  var cy = row + 0.5;
+  var dH = spec.horizontalThicknessDeltaRows != null ? spec.horizontalThicknessDeltaRows : 0;
+  var tH = Math.max(1e-6, spec.tHorizontalInRows + dH);
+  if (spec.cols === 120) {
+    tH += 1;
+  }
+  if (tH >= 0.5) {
+    function horizCenterInBand(barIdx) {
+      var c = barIdx + 0.5;
+      return cy >= c - tH * 0.5 && cy <= c + tH * 0.5;
+    }
+    if (horizCenterInBand(spec.h1) || horizCenterInBand(spec.h2)) return true;
+  } else {
+    function horizOverlapThin(barIdx) {
+      var c = barIdx + 0.5;
+      return segmentsOverlapPx(row, row + 1, c - tH * 0.5, c + tH * 0.5);
+    }
+    if (horizOverlapThin(spec.h1) || horizOverlapThin(spec.h2)) return true;
+  }
+  var g = spec.gInCells;
+  var t = spec.tVerticalInCells;
+  if (spec.cols === 120) {
+    return ironBarVert120EqualWidthCol(col, g, t, spec.cols);
+  }
+  if (spec.cols === 48) {
+    return ironBarVert48EqualWidthCol(col, g, t);
+  }
+  var extra = spec.centerVerticalExtraCols != null ? spec.centerVerticalExtraCols : 0;
+  function vertCenterInBarAt(x0, tw) {
+    return cx >= x0 && cx <= x0 + tw;
+  }
+  if (vertCenterInBarAt(g, t)) return true;
+  var xMid = 2 * g + t - 0.5 * extra;
+  var wMid = t + extra;
+  if (vertCenterInBarAt(xMid, wMid)) return true;
+  if (vertCenterInBarAt(3 * g + 2 * t, t)) return true;
+  return false;
+}
+
+/**
+ * 与 camera `applyIronBarsMaskToLuma` 一致。
+ * @param {Float32Array} luma
+ * @param {number} cols
+ * @param {number} rows
+ * @param {*} [specOrNull]
+ * @returns {void}
+ */
+function applyIronBarsMaskToLuma(luma, cols, rows, specOrNull) {
+  if (!luma || cols < 1 || rows < 1) return;
+  var n = cols * rows;
+  if (luma.length < n) return;
+  var spec =
+    specOrNull != null
+      ? specOrNull
+      : buildIronBarsSpec(cols, rows, getGalleryAsciiCellMetrics().cellAspect, 1);
+  var x;
+  var y;
+  for (y = 0; y < rows; y++) {
+    for (x = 0; x < cols; x++) {
+      if (isIronBarMaskCellFromSpec(x, y, spec)) {
+        luma[y * cols + x] = 0;
+      }
+    }
+  }
+}
+
+/**
+ * Upload 预览：Iron 叠加需 `#upload-preview-pre` 与格网就绪（与 camera `isLiveAsciiMaskLayoutValidForIron` 几何条件一致）。
+ * @param {{ originX: number, originY: number, contentRightX: number, contentBottomY: number }} layout
+ * @returns {boolean}
+ */
+function isUploadAsciiMaskLayoutValidForIron(layout) {
+  var Wc = layout.contentRightX - layout.originX;
+  var Hc = layout.contentBottomY - layout.originY;
+  return Wc >= 2 && Hc >= 2;
+}
+
+/**
+ * 上传比例是否支持框线（与 camera `getPhotoFrameMaskKind` 一致）。
+ * @returns {'oval' | 'round' | null}
+ */
+function getUploadPhotoFrameMaskKind() {
+  const v = uploadAspect.value;
+  if (v === '3:4') return 'oval';
+  if (v === '1:1') return 'round';
+  return null;
+}
+
+/**
+ * 与 camera `anyPhotoFrameMaskControlActive` 一致。
+ * @returns {boolean}
+ */
+function anyUploadPhotoFrameMaskControlActive() {
+  const v = uploadAspect.value;
+  if (v === '3:4') {
+    return !!(uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked);
+  }
+  if (v === '1:1') {
+    return !!(
+      (uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked) ||
+      (uploadFrameIronCheckbox && uploadFrameIronCheckbox.checked)
+    );
+  }
+  return false;
+}
+
+/**
+ * 显示/隐藏框线勾选，并从 `uploadFrameMaskChecked*` 恢复勾选（与 camera `updateFrameMaskUi` 对齐）。
+ * @returns {void}
+ */
+function updateUploadFrameMaskUi() {
+  if (!uploadFrameMaskRow || !uploadFrameMaskCheckbox || !uploadFrameMaskLabelText) return;
+  const kind = getUploadPhotoFrameMaskKind();
+  if (!kind) {
+    uploadFrameMaskRow.hidden = true;
+    if (uploadFrameIronRow) uploadFrameIronRow.hidden = true;
+    if (uploadFrameIronCell) uploadFrameIronCell.hidden = true;
+    if (uploadFrameMaskDual) uploadFrameMaskDual.classList.remove('upload-frame-mask-dual--oval-only');
+    syncUploadPhotoFrameMaskOverlay();
+    return;
+  }
+  if (kind === 'oval') {
+    if (uploadFrameMaskDual) uploadFrameMaskDual.classList.add('upload-frame-mask-dual--oval-only');
+    if (uploadFrameIronRow) uploadFrameIronRow.hidden = true;
+    if (uploadFrameIronCell) uploadFrameIronCell.hidden = true;
+    uploadFrameMaskRow.hidden = false;
+    uploadFrameMaskLabelText.textContent = 'Evil Queen (Oval)';
+    uploadFrameMaskCheckbox.checked = uploadFrameMaskCheckedOval;
+  } else {
+    if (uploadFrameMaskDual) uploadFrameMaskDual.classList.remove('upload-frame-mask-dual--oval-only');
+    if (uploadFrameIronCell) uploadFrameIronCell.hidden = false;
+    if (uploadFrameIronRow) uploadFrameIronRow.hidden = false;
+    uploadFrameMaskRow.hidden = false;
+    uploadFrameMaskLabelText.textContent = 'Monocular';
+    uploadFrameMaskCheckbox.checked = uploadFrameMaskCheckedRound;
+    if (uploadFrameIronCheckbox) uploadFrameIronCheckbox.checked = uploadFrameMaskCheckedIronBars;
+  }
+  syncUploadPhotoFrameMaskOverlay();
+}
+
+/**
+ * 上传预览遮罩与 camera 一致：`layout` 描述 **遮罩 canvas 本地坐标**（0…W × 0…H）。
+ * W/H 与 **渲染完成后** `#upload-preview-pre` 的 `offsetWidth`/`offsetHeight`（已按 `#upload-preview-stage` 缩放后的最终显示盒）一致，遮罩与所见 ASCII 同盒。
+ * 椭圆与格网均在 canvas 空间从 (0,0) 铺满至 (W,H)，与 camera 中 ascii-out 铺满活动画幅后再做字母框带（此处无字母框，content=整 canvas）同构。
+ * @returns {{
+ *   cols: number,
+ *   rows: number,
+ *   originX: number,
+ *   originY: number,
+ *   cellW: number,
+ *   cellH: number,
+ *   frameW: number,
+ *   frameH: number,
+ *   contentBottomY: number,
+ *   contentRightX: number
+ * }}
+ */
+function getUploadAsciiMaskGridLayout() {
+  var cols = uploadPreviewGridCols;
+  var rows = uploadPreviewGridRows;
+  var frameEl = document.getElementById('upload-preview-active-frame');
+  var pre = uploadPreviewPre;
+  if (!frameEl || !pre || cols < 1 || rows < 1) {
+    return {
+      cols: 1,
+      rows: 1,
+      originX: 0,
+      originY: 0,
+      cellW: 1,
+      cellH: 1,
+      frameW: 1,
+      frameH: 1,
+      contentBottomY: 1,
+      contentRightX: 1
+    };
+  }
+  var preW = pre.offsetWidth;
+  var preH = pre.offsetHeight;
+  if (preW < 1 || preH < 1) {
+    preW = 1;
+    preH = 1;
+  }
+  return {
+    cols: cols,
+    rows: rows,
+    originX: 0,
+    originY: 0,
+    cellW: preW / cols,
+    cellH: preH / rows,
+    frameW: preW,
+    frameH: preH,
+    contentBottomY: preH,
+    contentRightX: preW
+  };
+}
+
+/**
+ * @param {number} t 0…1
+ * @returns {number}
+ */
+function easeOutCubicUploadPhotoMask(t) {
+  var x = Math.min(1, Math.max(0, t));
+  return 1 - Math.pow(1 - x, 3);
+}
+
+/**
+ * @returns {void}
+ */
+function cancelUploadPhotoFrameMaskAnimation() {
+  if (uploadPhotoFrameMaskAnimRaf != null) {
+    cancelAnimationFrame(uploadPhotoFrameMaskAnimRaf);
+    uploadPhotoFrameMaskAnimRaf = null;
+  }
+}
+
+/**
+ * @returns {void}
+ */
+function showUploadUploadFrameMaskCanvas() {
+  if (!uploadUploadFrameMaskCanvas) return;
+  uploadUploadFrameMaskCanvas.classList.add('upload-upload-frame-mask-canvas--visible');
+  uploadUploadFrameMaskCanvas.setAttribute('aria-hidden', 'false');
+}
+
+/**
+ * @returns {void}
+ */
+function hideUploadUploadFrameMaskCanvas() {
+  if (!uploadUploadFrameMaskCanvas || !uploadUploadFrameMaskCtx) return;
+  uploadUploadFrameMaskCtx.clearRect(0, 0, uploadUploadFrameMaskCanvas.width, uploadUploadFrameMaskCanvas.height);
+  uploadUploadFrameMaskCanvas.classList.remove('upload-upload-frame-mask-canvas--visible');
+  uploadUploadFrameMaskCanvas.setAttribute('aria-hidden', 'true');
+}
+
+/**
+ * 按当前 ease 绘制（3:4 椭圆 / 1:1 Monocular 圆 / 1:1 Iron Bars）；不改变 `#upload-preview-pre` 文本（与 camera `drawPhotoFrameMaskAtEase` 一致）。
+ * @param {number} ease 0…1
+ * @returns {void}
+ */
+function drawUploadPhotoFrameMaskAtEase(ease) {
+  if (!uploadUploadFrameMaskCanvas || !uploadUploadFrameMaskCtx) return;
+  var ap = uploadAspect.value;
+  var showOval = ap === '3:4' && uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked;
+  var showRound = ap === '1:1' && uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked;
+  var showIron = ap === '1:1' && uploadFrameIronCheckbox && uploadFrameIronCheckbox.checked;
+  if (!showOval && !showRound && !showIron) return;
+
+  var layout = getUploadAsciiMaskGridLayout();
+  var frameEl = document.getElementById('upload-preview-active-frame');
+  var preEl = uploadPreviewPre;
+  var preLeft = 0;
+  var preTop = 0;
+  if (preEl && frameEl) {
+    if (preEl.offsetParent === frameEl) {
+      preLeft = preEl.offsetLeft;
+      preTop = preEl.offsetTop;
+    } else {
+      var frB = frameEl.getBoundingClientRect();
+      var orB = preEl.getBoundingClientRect();
+      preLeft = orB.left - frB.left;
+      preTop = orB.top - frB.top;
+    }
+  }
+  /** 遮罩 canvas 与可见 `#upload-preview-pre` 同一整数盒：与 camera「格网相对 ascii-out」等价，避免 frame 级 100% 与 pre 不等宽高的四边漏亮 */
+  uploadUploadFrameMaskCanvas.style.left = preLeft + 'px';
+  uploadUploadFrameMaskCanvas.style.top = preTop + 'px';
+  uploadUploadFrameMaskCanvas.style.width = layout.frameW + 'px';
+  uploadUploadFrameMaskCanvas.style.height = layout.frameH + 'px';
+  void uploadUploadFrameMaskCanvas.offsetWidth;
+  var W = uploadUploadFrameMaskCanvas.clientWidth || layout.frameW;
+  var H = uploadUploadFrameMaskCanvas.clientHeight || layout.frameH;
+  if (W < 2 || H < 2) return;
+
+  var dpr = typeof window.devicePixelRatio === 'number' ? window.devicePixelRatio : 1;
+  var cwPx = Math.max(1, Math.ceil(W * dpr));
+  var chPx = Math.max(1, Math.ceil(H * dpr));
+  uploadUploadFrameMaskCanvas.width = cwPx;
+  uploadUploadFrameMaskCanvas.height = chPx;
+  var ctx = uploadUploadFrameMaskCtx;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  var t = Math.min(1, Math.max(0, ease));
+  var cx0 = W * 0.5;
+  var cy0 = H * 0.5;
+  var big = Math.max(W, H) * 2;
+  var a1;
+  var b1;
+  var shapeKind = showOval ? 'oval' : showRound ? 'round' : null;
+  if (shapeKind === 'round') {
+    var rf = Math.min(W, H) * 0.5;
+    a1 = rf;
+    b1 = rf;
+  } else if (shapeKind === 'oval') {
+    a1 = W * 0.5;
+    b1 = H * 0.5;
+  }
+  var a;
+  var b;
+  var invA2;
+  var invB2;
+  if (showOval || showRound) {
+    a = big + (a1 - big) * t;
+    b = big + (b1 - big) * t;
+    invA2 = 1 / (a * a);
+    invB2 = 1 / (b * b);
+  }
+
+  /**
+   * @param {number} x1
+   * @param {number} y1
+   * @param {number} x2
+   * @param {number} y2
+   * @returns {void}
+   */
+  function fillMaskCellIfOutsideEllipse(x1, y1, x2, y2) {
+    var mcx = (x1 + x2) * 0.5;
+    var mcy = (y1 + y2) * 0.5;
+    var ddx = mcx - cx0;
+    var ddy = mcy - cy0;
+    if (ddx * ddx * invA2 + ddy * ddy * invB2 > 1) {
+      var fx = Math.floor(x1);
+      var fy = Math.floor(y1);
+      var fw = Math.max(1, Math.ceil(x2) - fx);
+      var fh = Math.max(1, Math.ceil(y2) - fy);
+      ctx.fillRect(fx, fy, fw, fh);
+    }
+  }
+
+  var col;
+  var row;
+  var x0 = layout.originX;
+  var y0 = layout.originY;
+  var cwCell = layout.cellW;
+  var rhCell = layout.cellH;
+  var contentBottomY = layout.contentBottomY;
+  var contentRightX = layout.contentRightX;
+  var x1;
+  var y1;
+  var x2;
+  var y2;
+  ctx.fillStyle = '#000000';
+
+  if (showOval || showRound) {
+    for (row = 0; row < layout.rows; row++) {
+      y1 = y0 + row * rhCell;
+      y2 = y0 + (row + 1) * rhCell;
+      if (row === layout.rows - 1) {
+        y2 = Math.min(y2, contentBottomY);
+      }
+      for (col = 0; col < layout.cols; col++) {
+        x1 = x0 + col * cwCell;
+        x2 = x0 + (col + 1) * cwCell;
+        if (col === layout.cols - 1) {
+          x2 = Math.min(x2, contentRightX);
+        }
+        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+      }
+    }
+    /**
+     * Upload 预览：pre 与 frame 的 `getBoundingClientRect` 常为子像素高；用固定步长 `+= rhCell` / `+= cwCell`
+     * 且 `y < y0 - eps` 会在最后一格与内容边界之间留下未覆盖条带，Evil Queen 椭圆外即现亮边泄漏。
+     * 按实际覆盖段推进（y1=y2 / x1=x2）直至贴齐边界，几何与 camera 一致，仅消除缝隙。
+     */
+    var edgeEps = 1e-6;
+    y1 = 0;
+    while (y1 < y0 - edgeEps) {
+      y2 = Math.min(y0, y1 + rhCell);
+      x1 = 0;
+      while (x1 < W - edgeEps) {
+        x2 = Math.min(W, x1 + cwCell);
+        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+        x1 = x2;
+      }
+      y1 = y2;
+    }
+    y1 = contentBottomY;
+    while (y1 < H - edgeEps) {
+      y2 = Math.min(H, y1 + rhCell);
+      x1 = 0;
+      while (x1 < W - edgeEps) {
+        x2 = Math.min(W, x1 + cwCell);
+        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+        x1 = x2;
+      }
+      y1 = y2;
+    }
+    x1 = 0;
+    while (x1 < x0 - edgeEps) {
+      x2 = Math.min(x0, x1 + cwCell);
+      y1 = 0;
+      while (y1 < H - edgeEps) {
+        y2 = Math.min(H, y1 + rhCell);
+        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+        y1 = y2;
+      }
+      x1 = x2;
+    }
+    x1 = contentRightX;
+    while (x1 < W - edgeEps) {
+      x2 = Math.min(W, x1 + cwCell);
+      y1 = 0;
+      while (y1 < H - edgeEps) {
+        y2 = Math.min(H, y1 + rhCell);
+        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+        y1 = y2;
+      }
+      x1 = x2;
+    }
+  }
+
+  if (showIron && t > 0) {
+    if (isUploadAsciiMaskLayoutValidForIron(layout)) {
+      var specIron = buildIronBarsSpec(
+        layout.cols,
+        layout.rows,
+        getGalleryAsciiCellMetrics().cellAspect,
+        1
+      );
+      for (row = 0; row < layout.rows; row++) {
+        y1 = y0 + row * rhCell;
+        y2 = y0 + (row + 1) * rhCell;
+        if (row === layout.rows - 1) {
+          y2 = Math.min(y2, contentBottomY);
+        }
+        for (col = 0; col < layout.cols; col++) {
+          if (!isIronBarMaskCellFromSpec(col, row, specIron)) continue;
+          x1 = x0 + col * cwCell;
+          x2 = x0 + (col + 1) * cwCell;
+          if (col === layout.cols - 1) {
+            x2 = Math.min(x2, contentRightX);
+          }
+          ctx.fillRect(
+            Math.floor(x1),
+            Math.floor(y1),
+            Math.max(1, Math.ceil(x2) - Math.floor(x1)),
+            Math.max(1, Math.ceil(y2) - Math.floor(y1))
+          );
+        }
+      }
+    }
+  }
+}
+
+/**
+ * @param {number} fromEase
+ * @param {number} toEase
+ * @param {() => void} [onComplete]
+ * @returns {void}
+ */
+function startUploadPhotoFrameMaskAnimation(fromEase, toEase, onComplete) {
+  if (!uploadUploadFrameMaskCanvas || !uploadUploadFrameMaskCtx) return;
+  cancelUploadPhotoFrameMaskAnimation();
+  var reduceMotion =
+    typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) {
+    uploadPhotoFrameMaskEase = toEase;
+    if (toEase <= 0) {
+      hideUploadUploadFrameMaskCanvas();
+    } else {
+      showUploadUploadFrameMaskCanvas();
+      drawUploadPhotoFrameMaskAtEase(toEase);
+    }
+    if (typeof onComplete === 'function') {
+      onComplete();
+    }
+    return;
+  }
+  uploadPhotoFrameMaskAnimFrom = fromEase;
+  uploadPhotoFrameMaskAnimTo = toEase;
+  uploadPhotoFrameMaskAnimStartMs =
+    typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+  showUploadUploadFrameMaskCanvas();
+
+  /**
+   * @param {number} now
+   * @returns {void}
+   */
+  function tick(now) {
+    var elapsed = now - uploadPhotoFrameMaskAnimStartMs;
+    var u = Math.min(1, elapsed / PHOTO_FRAME_MASK_ANIM_MS_UPLOAD);
+    var eased = easeOutCubicUploadPhotoMask(u);
+    uploadPhotoFrameMaskEase =
+      uploadPhotoFrameMaskAnimFrom + (uploadPhotoFrameMaskAnimTo - uploadPhotoFrameMaskAnimFrom) * eased;
+    drawUploadPhotoFrameMaskAtEase(uploadPhotoFrameMaskEase);
+    if (u < 1) {
+      uploadPhotoFrameMaskAnimRaf = requestAnimationFrame(tick);
+    } else {
+      uploadPhotoFrameMaskAnimRaf = null;
+      uploadPhotoFrameMaskEase = uploadPhotoFrameMaskAnimTo;
+      if (uploadPhotoFrameMaskEase <= 0) {
+        hideUploadUploadFrameMaskCanvas();
+      } else {
+        drawUploadPhotoFrameMaskAtEase(uploadPhotoFrameMaskEase);
+      }
+      if (typeof onComplete === 'function') {
+        onComplete();
+      }
+    }
+  }
+  uploadPhotoFrameMaskAnimRaf = requestAnimationFrame(tick);
+}
+
+/**
+ * 字号/缩放后双 rAF 重绘遮罩（与 camera `syncPhotoFrameMaskLayoutRedraw` 一致）。
+ * @returns {void}
+ */
+function syncUploadPhotoFrameMaskLayoutRedraw() {
+  var should =
+    anyUploadPhotoFrameMaskControlActive() && uploadSrcImg && uploadSrcImg.naturalWidth > 0;
+  if (!should) return;
+  if (
+    !uploadUploadFrameMaskCanvas ||
+    !uploadUploadFrameMaskCanvas.classList.contains('upload-upload-frame-mask-canvas--visible')
+  ) {
+    return;
+  }
+  window.requestAnimationFrame(function () {
+    window.requestAnimationFrame(function () {
+      if (
+        !uploadUploadFrameMaskCanvas ||
+        !uploadUploadFrameMaskCanvas.classList.contains('upload-upload-frame-mask-canvas--visible')
+      ) {
+        return;
+      }
+      drawUploadPhotoFrameMaskAtEase(uploadPhotoFrameMaskEase);
+    });
+  });
+}
+
+/**
+ * 根据勾选驱动 Canvas 遮罩动画；预览 ASCII 不烘焙框线（与 camera `syncPhotoFrameMaskOverlay` 一致）。
+ * @returns {void}
+ */
+function syncUploadPhotoFrameMaskOverlay() {
+  if (!uploadUploadFrameMaskCanvas) return;
+  if (!uploadFrameMaskCheckbox && !uploadFrameIronCheckbox) return;
+  var should =
+    anyUploadPhotoFrameMaskControlActive() && uploadSrcImg && uploadSrcImg.naturalWidth > 0;
+
+  if (!should) {
+    cancelUploadPhotoFrameMaskAnimation();
+    if (uploadPhotoFrameMaskEase > 0) {
+      startUploadPhotoFrameMaskAnimation(uploadPhotoFrameMaskEase, 0);
+    } else {
+      uploadPhotoFrameMaskEase = 0;
+      hideUploadUploadFrameMaskCanvas();
+    }
+    return;
+  }
+
+  if (uploadPhotoFrameMaskAnimRaf != null) {
+    return;
+  }
+  if (
+    uploadPhotoFrameMaskEase >= 0.999 &&
+    uploadUploadFrameMaskCanvas.classList.contains('upload-upload-frame-mask-canvas--visible')
+  ) {
+    drawUploadPhotoFrameMaskAtEase(1);
+    return;
+  }
+  cancelUploadPhotoFrameMaskAnimation();
+  var fromE = uploadPhotoFrameMaskEase > 0 && uploadPhotoFrameMaskEase < 0.999 ? uploadPhotoFrameMaskEase : 0;
+  startUploadPhotoFrameMaskAnimation(fromE, 1);
+}
+
+/**
+ * 与 camera `applyPhotoFrameMaskToLuma` 相同：椭圆/圆外亮度置 0。
+ * @param {Float32Array} luma
+ * @param {number} cols
+ * @param {number} rows
+ * @param {'oval' | 'round'} kind
+ * @param {number} cellAspect
+ * @returns {void}
+ */
+function applyPhotoFrameMaskToLumaUpload(luma, cols, rows, kind, cellAspect) {
+  if (!luma || cols < 1 || rows < 1) return;
+  const n = cols * rows;
+  if (luma.length < n) return;
+  const ca =
+    cellAspect != null && Number.isFinite(cellAspect) && cellAspect > 0 ? cellAspect : 1;
+  const cx = cols * ca * 0.5;
+  const cy = rows * 0.5;
+  var x;
+  var y;
+  var dx;
+  var dy;
+  if (kind === 'round') {
+    const r = Math.min(cols * ca, rows) * 0.5;
+    const r2 = r * r;
+    for (y = 0; y < rows; y++) {
+      for (x = 0; x < cols; x++) {
+        dx = (x + 0.5) * ca - cx;
+        dy = (y + 0.5) - cy;
+        if (dx * dx + dy * dy > r2) {
+          luma[y * cols + x] = 0;
+        }
+      }
+    }
+    return;
+  }
+  const a = cols * ca * 0.5;
+  const b = rows * 0.5;
+  if (a <= 0 || b <= 0) return;
+  const invA2 = 1 / (a * a);
+  const invB2 = 1 / (b * b);
+  for (y = 0; y < rows; y++) {
+    for (x = 0; x < cols; x++) {
+      dx = (x + 0.5) * ca - cx;
+      dy = (y + 0.5) - cy;
+      if (dx * dx * invA2 + dy * dy * invB2 > 1) {
+        luma[y * cols + x] = 0;
+      }
+    }
+  }
+}
+
+/**
+ * @param {Float32Array} luma
+ * @param {number} cols
+ * @param {number} rows
+ * @param {string} chars
+ * @returns {string}
+ */
+function galleryLuminanceToAscii(luma, cols, rows, chars) {
+  const n = Math.max(1, chars.length - 1);
+  let result = '';
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const b = luma[y * cols + x];
+      result += chars[Math.max(0, Math.min(Math.floor((1 - b) * n), n))];
+    }
+    result += '\n';
+  }
+  return result;
+}
+
+/**
  * 根据当前选项从上传图生成 ASCII，并写入预览；返回生成的字符串。
  * 缩放：用基准字号下 pre 的实测宽高比计算字号，避免块字符与探测字符字宽不一致导致比例失真。
  * @returns {string}
@@ -1107,31 +2137,91 @@ function getUploadAspectNumber() {
 function renderUploadPreview() {
   if (!uploadSrcImg.naturalWidth) {
     uploadPreviewPre.textContent = '';
+    cancelUploadPhotoFrameMaskAnimation();
+    uploadPhotoFrameMaskEase = 0;
+    hideUploadUploadFrameMaskCanvas();
     return '';
   }
   const cols = parseInt(uploadCols.value, 10) || 96;
-  const ascii = imageToAscii(uploadSrcImg, cols, getUploadAspectNumber(), getUploadCharSet());
+  /** 预览不烘焙框线，由 Canvas 遮罩动画（与 camera 实时取景一致） */
+  const ascii = imageToAscii(
+    uploadSrcImg,
+    cols,
+    getUploadAspectNumber(),
+    getUploadCharSet(),
+    null
+  );
   uploadPreviewPre.textContent = ascii;
   uploadPreviewPre.style.color = uploadColor.value;
   const wrap = document.getElementById('upload-preview-wrap');
-  const pad = wrap ? parseFloat(getComputedStyle(wrap).paddingLeft) + parseFloat(getComputedStyle(wrap).paddingRight) : 24;
-  const padY = wrap ? parseFloat(getComputedStyle(wrap).paddingTop) + parseFloat(getComputedStyle(wrap).paddingBottom) : 24;
-  const boxW = wrap ? wrap.clientWidth : Math.min(640, typeof window !== 'undefined' ? window.innerWidth - 48 : 640);
-  const boxH = wrap ? wrap.clientHeight : Math.min(400, typeof window !== 'undefined' ? window.innerHeight * 0.42 : 400);
-  const availW = Math.max(40, boxW - pad);
-  const availH = Math.max(40, boxH - padY);
+  const stage = document.getElementById('upload-preview-stage');
+  var availW = stage && stage.clientWidth > 4 ? stage.clientWidth : 200;
+  var availH = stage && stage.clientHeight > 4 ? stage.clientHeight : 200;
+  if (wrap && (availW < 8 || availH < 8)) {
+    var padX =
+      parseFloat(getComputedStyle(wrap).paddingLeft) + parseFloat(getComputedStyle(wrap).paddingRight);
+    var padY2 =
+      parseFloat(getComputedStyle(wrap).paddingTop) + parseFloat(getComputedStyle(wrap).paddingBottom);
+    availW = Math.max(32, wrap.clientWidth - padX);
+    availH = Math.max(32, wrap.clientHeight - padY2);
+  }
+  availW = Math.max(32, availW);
+  availH = Math.max(32, availH);
+  /** 基准字号下测 intrinsic 尺寸，再缩放到落在 stage 内；必要时循环减小字号，避免 16:9 等仍超出（不再依赖容器滚动） */
   const BASE = 10;
   uploadPreviewPre.style.fontSize = BASE + 'px';
   uploadPreviewPre.style.lineHeight = '1';
   uploadPreviewPre.style.display = 'inline-block';
   void uploadPreviewPre.offsetWidth;
-  const w = uploadPreviewPre.offsetWidth;
-  const h = uploadPreviewPre.offsetHeight;
-  const scale = Math.min(availW / Math.max(1, w), availH / Math.max(1, h));
-  let fs = Math.max(2, Math.min(10, Math.round(BASE * scale * 100) / 100));
+  var w = uploadPreviewPre.offsetWidth;
+  var h = uploadPreviewPre.offsetHeight;
+  var scale = Math.min(availW / Math.max(1, w), availH / Math.max(1, h));
+  var fs = Math.max(0.5, Math.min(10, Math.round(BASE * scale * 100) / 100));
   uploadPreviewPre.style.fontSize = fs + 'px';
   uploadPreviewPre.style.lineHeight = '1';
+  void uploadPreviewPre.offsetWidth;
+  var guard = 0;
+  while (
+    guard < 56 &&
+    fs > 0.35 &&
+    (uploadPreviewPre.offsetWidth > availW + 0.5 || uploadPreviewPre.offsetHeight > availH + 0.5)
+  ) {
+    fs *= 0.9;
+    uploadPreviewPre.style.fontSize = fs + 'px';
+    void uploadPreviewPre.offsetWidth;
+    guard++;
+  }
+  window.requestAnimationFrame(function () {
+    window.requestAnimationFrame(function () {
+      syncUploadPhotoFrameMaskOverlay();
+    });
+  });
   return ascii;
+}
+
+/**
+ * 生成「加入画廊」用 ASCII：在勾选框线时对亮度烘焙（与 camera 成片一致）。
+ * @returns {string}
+ */
+function getUploadAsciiForSave() {
+  if (!uploadSrcImg.naturalWidth) return '';
+  const cols = parseInt(uploadCols.value, 10) || 96;
+  const ap = uploadAspect.value;
+  const maskKind = getUploadPhotoFrameMaskKind();
+  const monocularOn = !!(uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked);
+  const ovalOrRound = maskKind && monocularOn ? maskKind : null;
+  const ironOn = ap === '1:1' && uploadFrameIronCheckbox && uploadFrameIronCheckbox.checked;
+  if (!ovalOrRound && !ironOn) {
+    return imageToAscii(uploadSrcImg, cols, getUploadAspectNumber(), getUploadCharSet(), null, false);
+  }
+  return imageToAscii(
+    uploadSrcImg,
+    cols,
+    getUploadAspectNumber(),
+    getUploadCharSet(),
+    ovalOrRound,
+    ironOn
+  );
 }
 
 /**
@@ -1140,12 +2230,18 @@ function renderUploadPreview() {
  * @param {number} cols 列数
  * @param {number|null} forcedAspect 目标宽高比，null 表示跟随原图
  * @param {string} chars 字符集
+ * @param {'oval' | 'round' | null} [frameMaskKind] 与 camera Photo 框线一致；省略或 null 不施加
+ * @param {boolean} [bakeIronBars] 1:1 时与 camera 一致：在 Monocular 之后施加 `applyIronBarsMaskToLuma`
  * @returns {string}
  */
-function imageToAscii(img, cols, forcedAspect, chars) {
+function imageToAscii(img, cols, forcedAspect, chars, frameMaskKind, bakeIronBars) {
   const iw = img.naturalWidth;
   const ih = img.naturalHeight;
-  if (!iw || !ih) return '';
+  if (!iw || !ih) {
+    uploadPreviewGridCols = 0;
+    uploadPreviewGridRows = 0;
+    return '';
+  }
   const { cellAspect } = getGalleryAsciiCellMetrics();
   const nativeAspect = iw / ih;
   const aspect = forcedAspect || nativeAspect;
@@ -1154,8 +2250,15 @@ function imageToAscii(img, cols, forcedAspect, chars) {
   canvas.width = cols;
   canvas.height = rows;
   const c = canvas.getContext('2d');
-  if (!c) return '';
-  let sx = 0, sy = 0, sw = iw, sh = ih;
+  if (!c) {
+    uploadPreviewGridCols = 0;
+    uploadPreviewGridRows = 0;
+    return '';
+  }
+  let sx = 0,
+    sy = 0,
+    sw = iw,
+    sh = ih;
   if (forcedAspect) {
     if (nativeAspect > forcedAspect) {
       sw = Math.round(ih * forcedAspect);
@@ -1167,16 +2270,25 @@ function imageToAscii(img, cols, forcedAspect, chars) {
   }
   c.drawImage(img, sx, sy, sw, sh, 0, 0, cols, rows);
   const pixels = c.getImageData(0, 0, cols, rows).data;
-  let out = '';
+  const luma = new Float32Array(cols * rows);
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = (y * cols + x) * 4;
-      const b = (0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2]) / 255;
-      out += chars[Math.max(0, Math.min(Math.floor((1 - b) * (chars.length - 1)), chars.length - 1))];
+      const b =
+        (0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2]) / 255;
+      luma[y * cols + x] = b;
     }
-    out += '\n';
   }
-  return out;
+  if (frameMaskKind === 'oval' || frameMaskKind === 'round') {
+    applyPhotoFrameMaskToLumaUpload(luma, cols, rows, frameMaskKind, cellAspect);
+  }
+  if (bakeIronBars && forcedAspect === 1) {
+    var ironSpec = buildIronBarsSpec(cols, rows, cellAspect, 1);
+    applyIronBarsMaskToLuma(luma, cols, rows, ironSpec);
+  }
+  uploadPreviewGridCols = cols;
+  uploadPreviewGridRows = rows;
+  return galleryLuminanceToAscii(luma, cols, rows, chars);
 }
 
 /**

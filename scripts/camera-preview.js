@@ -345,6 +345,13 @@
     if (!P.previewCaptureActive || !P.pendingGalleryPayload) return;
     var chars = /** @type {() => string} */ (C().getChars)();
     var p = P.pendingGalleryPayload;
+    if (p && typeof p === 'object' && p.isPhotoPreview === true && p.lumaCanonical && p.cols && p.rows) {
+      var regen = /** @type {unknown} */ (C().regeneratePhotoPreviewFromCanonical);
+      if (typeof regen === 'function') {
+        /** @type {() => void} */ (regen)();
+        return;
+      }
+    }
     if (p && typeof p === 'object' && p.isPhotoPreview === true && p.luma && p.cols && p.rows) {
       var l2a0 = /** @type {(l: Float32Array, c: number, r: number, ch: string) => string} */ (C().luminanceToAscii);
       var ascii = l2a0(p.luma, p.cols, p.rows, chars);
