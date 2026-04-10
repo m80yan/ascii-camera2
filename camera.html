@@ -291,6 +291,10 @@
    * Submit 区域：不改变控件/按钮间距，只把原本按钮的 `margin-top` 间隔“容器化”，
    * 让 SAVING/SAVED 文案显示在该间隔中间。
    */
+  /**
+   * `z-index` 高于 `.cam-controls-grid`（40），避免 `#frameMaskSlot` 负 `margin-bottom` 与 Submit 区重叠时，
+   * 整格控件层盖住 `#loop-cover-ui` / `#submitGalleryBtn` 导致 Loop 封面滑块无法点击。
+   */
   .cam-submit-wrap {
     width: 100%;
     max-width: var(--cam-actions-row-w);
@@ -298,6 +302,7 @@
     margin-right: auto;
     padding-top: calc(2 * var(--cam-ctl-select-h)); /* 与旧 Submit margin-top 等效 */
     position: relative;
+    z-index: 45;
     box-sizing: border-box;
   }
   .cam-submit-status-slot {
@@ -694,13 +699,16 @@
     row-gap: 12px;
   }
   /**
-   * 与锁定行同宽：1:1 时左右两格对齐 Style / Aspect 列；3:4 时仅右格占满（见 `.frame-mask-dual--oval-only`）。
+   * 与锁定行同宽：1:1 左格占位、右列 Monocular + Iron（Aspect 列）；3:4 仅右格 Evil Queen。
+   * `min-height` 固定为双行框线 + 4px gap，使 1:1/3:4/宽比例下槽高不变；`margin-bottom` 负值抵消多出来的一行+gap，
+   * 与原先单行槽 + `-4px` 顶距相比，不抬高 `#cam-submit-wrap`（Submit 锚点不变）。
    */
   .frame-mask-slot {
     grid-column: 1 / -1;
     margin-top: -4px;
+    margin-bottom: calc(-1 * (var(--cam-ctl-select-h) + 4px));
     padding-top: 0;
-    min-height: 24px;
+    min-height: calc(2 * var(--cam-ctl-select-h) + 4px);
     box-sizing: border-box;
   }
   .frame-mask-dual {
@@ -716,6 +724,16 @@
   /** 3:4 Evil Queen：仅占 Aspect 列，左缘与 Aspect 控件对齐（不跨整行网格漂移） */
   .frame-mask-dual.frame-mask-dual--oval-only .frame-mask-cell--primary {
     grid-column: 2;
+  }
+  /**
+   * 1:1：Monocular 与 Iron Bars 纵向叠在 Aspect 列下；`gap` 与 `.ctl-stack` 的 4px 一致。
+   */
+  .frame-mask-cell--primary {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: stretch;
+    min-width: 0;
   }
   .frame-mask-row {
     min-height: 0;
@@ -1044,24 +1062,23 @@
       <option value="3:4" selected>3:4 (Portrait)</option>
     </select>
   </label>
-  <!-- 1:1：左 Iron Bars（与 Style 列对齐）、右 Monocular（与 Aspect 列对齐）；3:4 仅右格 Evil Queen -->
+  <!-- 1:1：左格占位（Style 列宽）；右列 Monocular + Iron Bars（Aspect 列，纵向）；3:4 仅右格 Evil Queen -->
   <div class="frame-mask-slot" id="frameMaskSlot">
     <div class="frame-mask-dual" id="frameMaskDual">
-      <div class="frame-mask-cell frame-mask-cell--iron" id="frameMaskIronCell" hidden>
-        <div class="frame-mask-row ctl-stack cc-left" id="frameMaskIronRow" hidden>
-          <label class="flash-switch frame-mask-flash-switch" id="frameMaskIronFlashLabel">
-            <input type="checkbox" id="frameMaskIronCheckbox" autocomplete="off" />
-            <span class="flash-switch-box" aria-hidden="true"></span>
-            <span class="flash-switch-label">Iron Bars</span>
-          </label>
-        </div>
-      </div>
+      <div class="frame-mask-cell frame-mask-cell--iron" aria-hidden="true"></div>
       <div class="frame-mask-cell frame-mask-cell--primary" id="frameMaskPrimaryCell">
         <div class="frame-mask-row ctl-stack cc-left" id="frameMaskRow" hidden>
           <label class="flash-switch frame-mask-flash-switch" id="frameMaskFlashLabel">
             <input type="checkbox" id="frameMaskCheckbox" autocomplete="off" />
             <span class="flash-switch-box" aria-hidden="true"></span>
             <span class="flash-switch-label" id="frameMaskLabelText">Evil Queen (Oval)</span>
+          </label>
+        </div>
+        <div class="frame-mask-row ctl-stack cc-left" id="frameMaskIronRow" hidden>
+          <label class="flash-switch frame-mask-flash-switch" id="frameMaskIronFlashLabel">
+            <input type="checkbox" id="frameMaskIronCheckbox" autocomplete="off" />
+            <span class="flash-switch-box" aria-hidden="true"></span>
+            <span class="flash-switch-label">Iron Bars</span>
           </label>
         </div>
       </div>
@@ -1368,7 +1385,6 @@ const frameMaskLabelText = document.getElementById('frameMaskLabelText');
 const frameMaskIronCheckbox = document.getElementById('frameMaskIronCheckbox');
 const frameMaskDual = document.getElementById('frameMaskDual');
 const frameMaskIronRow = document.getElementById('frameMaskIronRow');
-const frameMaskIronCell = document.getElementById('frameMaskIronCell');
 const asciiFrameMaskCanvas = document.getElementById('asciiFrameMaskCanvas');
 /** @type {CanvasRenderingContext2D | null} */
 const asciiFrameMaskCtx = asciiFrameMaskCanvas ? asciiFrameMaskCanvas.getContext('2d') : null;
@@ -1394,6 +1410,12 @@ var frameMaskMemorySuppress = false;
 /** 遮罩动画进度 0…1（1 = 内接圆/椭圆最终态，格角为纯黑）。 */
 var photoFrameMaskEase = 0;
 
+/**
+ * 1:1 Iron Bars 自上而下揭示进度 0…1；与 `photoFrameMaskEase` 同一次 `requestAnimationFrame` tick 插值，时长与 easing 与 Monocular 一致。
+ * @type {number}
+ */
+var photoFrameMaskIronRevealEase = 0;
+
 /** @type {number | null} */
 var photoFrameMaskAnimRaf = null;
 
@@ -1405,6 +1427,18 @@ var photoFrameMaskAnimFrom = 0;
 
 /** @type {number} */
 var photoFrameMaskAnimTo = 0;
+
+/** @type {number} */
+var photoFrameMaskAnimIronFrom = 0;
+
+/** @type {number} */
+var photoFrameMaskAnimIronTo = 0;
+
+/** 与 `syncPhotoFrameMaskOverlay` 上一帧对比，检测 Monocular↔Iron 切换（与 gallery 上传预览一致）。 */
+var photoPrevRound11 = false;
+
+/** @type {boolean} */
+var photoPrevIron11 = false;
 
 /** 与旧 box-shadow 过渡同量级，略短 ease-out。 */
 var PHOTO_FRAME_MASK_ANIM_MS = 400;
@@ -1696,9 +1730,18 @@ function drawPhotoFrameMaskAtEase(ease) {
     }
   }
 
-  if (showIron && t > 0) {
-    if (isLiveAsciiMaskLayoutValidForIron(layout)) {
+  /**
+   * 1:1 Iron Bars：纵向揭示用独立 `photoFrameMaskIronRevealEase`，与 Monocular 椭圆 `t` 同帧、`PHOTO_FRAME_MASK_ANIM_MS` 与 `easeOutCubicPhotoMask` 驱动，避免椭圆已 ease=1 时铁栅瞬显。
+   */
+  var tIron = Math.min(1, Math.max(0, photoFrameMaskIronRevealEase));
+  if (showIron && tIron > 0) {
+    var yRevealIron = Math.max(0, Math.min(H, tIron * H));
+    if (yRevealIron > 0 && isLiveAsciiMaskLayoutValidForIron(layout)) {
       var specIron = buildIronBarsSpec(layout.cols, layout.rows, getAsciiCellMetrics().cellAspect, getAspectRatio());
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, yRevealIron);
+      ctx.clip();
       /** 与 `applyIronBarsMaskToLuma` / `isIronBarMaskCellFromSpec` 一致：按格填充，避免整条 fillRect 与离散 luma 厚度漂移 */
       for (row = 0; row < layout.rows; row++) {
         y1 = y0 + row * rhCell;
@@ -1716,6 +1759,7 @@ function drawPhotoFrameMaskAtEase(ease) {
           ctx.fillRect(Math.floor(x1), Math.floor(y1), Math.max(1, Math.ceil(x2) - Math.floor(x1)), Math.max(1, Math.ceil(y2) - Math.floor(y1)));
         }
       }
+      ctx.restore();
     }
   }
 }
@@ -1742,22 +1786,22 @@ function hidePhotoFrameMaskCanvas() {
 /**
  * @param {number} fromEase
  * @param {number} toEase
- * @returns {void}
- */
-/**
- * @param {number} fromEase
- * @param {number} toEase
  * @param {() => void} [onComplete] 动画正常结束（含 reduced-motion 即时完成）时调用；取消动画则不调用
+ * @param {number} [ironFromOpt] 未传则 Iron 揭示进度在动画全程保持不变
+ * @param {number} [ironToOpt]
  * @returns {void}
  */
-function startPhotoFrameMaskAnimation(fromEase, toEase, onComplete) {
+function startPhotoFrameMaskAnimation(fromEase, toEase, onComplete, ironFromOpt, ironToOpt) {
   if (!asciiFrameMaskCanvas || !asciiFrameMaskCtx) return;
   cancelPhotoFrameMaskAnimation();
+  var ironFromV = ironFromOpt !== undefined ? ironFromOpt : photoFrameMaskIronRevealEase;
+  var ironToV = ironToOpt !== undefined ? ironToOpt : photoFrameMaskIronRevealEase;
   var reduceMotion =
     typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (reduceMotion) {
     photoFrameMaskEase = toEase;
-    if (toEase <= 0) {
+    photoFrameMaskIronRevealEase = ironToV;
+    if (photoFrameMaskEase <= 0 && photoFrameMaskIronRevealEase <= 0) {
       hidePhotoFrameMaskCanvas();
     } else {
       showPhotoFrameMaskCanvas();
@@ -1770,6 +1814,8 @@ function startPhotoFrameMaskAnimation(fromEase, toEase, onComplete) {
   }
   photoFrameMaskAnimFrom = fromEase;
   photoFrameMaskAnimTo = toEase;
+  photoFrameMaskAnimIronFrom = ironFromV;
+  photoFrameMaskAnimIronTo = ironToV;
   photoFrameMaskAnimStartMs =
     typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
   showPhotoFrameMaskCanvas();
@@ -1783,13 +1829,16 @@ function startPhotoFrameMaskAnimation(fromEase, toEase, onComplete) {
     var u = Math.min(1, elapsed / PHOTO_FRAME_MASK_ANIM_MS);
     var eased = easeOutCubicPhotoMask(u);
     photoFrameMaskEase = photoFrameMaskAnimFrom + (photoFrameMaskAnimTo - photoFrameMaskAnimFrom) * eased;
+    photoFrameMaskIronRevealEase =
+      photoFrameMaskAnimIronFrom + (photoFrameMaskAnimIronTo - photoFrameMaskAnimIronFrom) * eased;
     drawPhotoFrameMaskAtEase(photoFrameMaskEase);
     if (u < 1) {
       photoFrameMaskAnimRaf = requestAnimationFrame(tick);
     } else {
       photoFrameMaskAnimRaf = null;
       photoFrameMaskEase = photoFrameMaskAnimTo;
-      if (photoFrameMaskEase <= 0) {
+      photoFrameMaskIronRevealEase = photoFrameMaskAnimIronTo;
+      if (photoFrameMaskEase <= 0 && photoFrameMaskIronRevealEase <= 0) {
         hidePhotoFrameMaskCanvas();
       } else {
         drawPhotoFrameMaskAtEase(photoFrameMaskEase);
@@ -1860,7 +1909,6 @@ function updateFrameMaskUi() {
       frameMaskFlashLabel.setAttribute('aria-disabled', 'true');
     }
     if (frameMaskIronRow) frameMaskIronRow.hidden = true;
-    if (frameMaskIronCell) frameMaskIronCell.hidden = true;
     if (frameMaskIronCheckbox) {
       frameMaskIronCheckbox.disabled = true;
       frameMaskIronCheckbox.setAttribute('aria-hidden', 'true');
@@ -1873,7 +1921,6 @@ function updateFrameMaskUi() {
   if (kind === 'oval') {
     if (frameMaskDual) frameMaskDual.classList.add('frame-mask-dual--oval-only');
     if (frameMaskIronRow) frameMaskIronRow.hidden = true;
-    if (frameMaskIronCell) frameMaskIronCell.hidden = true;
     frameMaskRow.hidden = false;
     frameMaskCheckbox.disabled = false;
     frameMaskCheckbox.removeAttribute('aria-hidden');
@@ -1885,7 +1932,6 @@ function updateFrameMaskUi() {
     if (frameMaskLabelText) frameMaskLabelText.textContent = 'Evil Queen (Oval)';
   } else {
     if (frameMaskDual) frameMaskDual.classList.remove('frame-mask-dual--oval-only');
-    if (frameMaskIronCell) frameMaskIronCell.hidden = false;
     if (frameMaskIronRow) frameMaskIronRow.hidden = false;
     frameMaskRow.hidden = false;
     frameMaskCheckbox.disabled = false;
@@ -1928,28 +1974,96 @@ function syncPhotoFrameMaskOverlay() {
 
   if (!should) {
     cancelPhotoFrameMaskAnimation();
-    if (photoFrameMaskEase > 0) {
-      startPhotoFrameMaskAnimation(photoFrameMaskEase, 0);
+    if (photoFrameMaskEase > 0 || photoFrameMaskIronRevealEase > 0) {
+      startPhotoFrameMaskAnimation(photoFrameMaskEase, 0, null, photoFrameMaskIronRevealEase, 0);
     } else {
       photoFrameMaskEase = 0;
+      photoFrameMaskIronRevealEase = 0;
       hidePhotoFrameMaskCanvas();
     }
+    photoPrevRound11 = false;
+    photoPrevIron11 = false;
     return;
   }
 
+  var ap = aspectPicker ? aspectPicker.value : '';
+  var showOval = ap === '3:4' && frameMaskCheckbox && frameMaskCheckbox.checked;
+  var showRound = ap === '1:1' && frameMaskCheckbox && frameMaskCheckbox.checked;
+  var showIron = ap === '1:1' && frameMaskIronCheckbox && frameMaskIronCheckbox.checked;
+  var round11 = showRound;
+  var iron11 = showIron;
+  var ironJustOn = iron11 && !photoPrevIron11;
+  var ironJustOff = !iron11 && photoPrevIron11;
+  var roundJustOff = !round11 && photoPrevRound11;
+
   if (photoFrameMaskAnimRaf != null) {
+    photoPrevRound11 = round11;
+    photoPrevIron11 = iron11;
     return;
   }
+
+  /** Monocular 关 + Iron 开同一操作：先收起圆遮罩，再铁栅自上而下（两段各 400ms + easing，与 gallery 上传一致） */
+  if (ironJustOn && roundJustOff) {
+    cancelPhotoFrameMaskAnimation();
+    photoFrameMaskIronRevealEase = 0;
+    startPhotoFrameMaskAnimation(
+      1,
+      0,
+      function () {
+        startPhotoFrameMaskAnimation(0, 0, null, 0, 1);
+      },
+      0,
+      0
+    );
+    photoPrevRound11 = round11;
+    photoPrevIron11 = iron11;
+    return;
+  }
+
+  if (ironJustOn) {
+    cancelPhotoFrameMaskAnimation();
+    photoFrameMaskIronRevealEase = 0;
+    var pTo = showOval || showRound ? 1 : 0;
+    startPhotoFrameMaskAnimation(photoFrameMaskEase, pTo, null, 0, 1);
+    photoPrevRound11 = round11;
+    photoPrevIron11 = iron11;
+    return;
+  }
+
+  if (ironJustOff && round11) {
+    cancelPhotoFrameMaskAnimation();
+    startPhotoFrameMaskAnimation(photoFrameMaskEase, 1, null, photoFrameMaskIronRevealEase, 0);
+    photoPrevRound11 = round11;
+    photoPrevIron11 = iron11;
+    return;
+  }
+
+  var targetPhoto = showOval || showRound ? 1 : 0;
+  var targetIron = iron11 ? 1 : 0;
+  var eps = 0.001;
+  var atPhoto = Math.abs(photoFrameMaskEase - targetPhoto) < eps;
+  var atIron = Math.abs(photoFrameMaskIronRevealEase - targetIron) < eps;
   if (
-    photoFrameMaskEase >= 0.999 &&
+    atPhoto &&
+    atIron &&
     asciiFrameMaskCanvas.classList.contains('ascii-frame-mask-canvas--visible')
   ) {
-    drawPhotoFrameMaskAtEase(1);
+    drawPhotoFrameMaskAtEase(photoFrameMaskEase);
+    photoPrevRound11 = round11;
+    photoPrevIron11 = iron11;
     return;
   }
+
   cancelPhotoFrameMaskAnimation();
-  var fromE = photoFrameMaskEase > 0 && photoFrameMaskEase < 0.999 ? photoFrameMaskEase : 0;
-  startPhotoFrameMaskAnimation(fromE, 1);
+  startPhotoFrameMaskAnimation(
+    photoFrameMaskEase,
+    targetPhoto,
+    null,
+    photoFrameMaskIronRevealEase,
+    targetIron
+  );
+  photoPrevRound11 = round11;
+  photoPrevIron11 = iron11;
 }
 
 /**
@@ -2148,11 +2262,11 @@ function runPhotoFrameMaskExitThenToLoop() {
     setCaptureVideoMode(true, true);
     return;
   }
-  if (photoFrameMaskEase > 0) {
+  if (photoFrameMaskEase > 0 || photoFrameMaskIronRevealEase > 0) {
     startPhotoFrameMaskAnimation(photoFrameMaskEase, 0, function () {
       frameMaskMemorySuppress = false;
       setCaptureVideoMode(true, true);
-    });
+    }, photoFrameMaskIronRevealEase, 0);
   } else {
     hidePhotoFrameMaskCanvas();
     frameMaskMemorySuppress = false;
@@ -2246,18 +2360,20 @@ function runAspectChangeWithFrameExitPipeline(oldAp, newAp) {
       afterExit();
       return;
     }
-    /** 与 `syncPhotoFrameMaskOverlay` 一致：从当前 ease 或满遮罩起收 */
+    /** 与 `syncPhotoFrameMaskOverlay` 一致：从当前 ease 或满遮罩起收；Iron 揭示同步收至 0 */
     var fromEase =
       photoFrameMaskEase > 0 && photoFrameMaskEase < 0.999 ? photoFrameMaskEase : 1;
+    var fromIronExit = photoFrameMaskIronRevealEase;
     if (fromEase <= 0) {
       hidePhotoFrameMaskCanvas();
       photoFrameMaskEase = 0;
+      photoFrameMaskIronRevealEase = 0;
       afterExit();
       return;
     }
     showPhotoFrameMaskCanvas();
     drawPhotoFrameMaskAtEase(fromEase);
-    startPhotoFrameMaskAnimation(fromEase, 0, afterExit);
+    startPhotoFrameMaskAnimation(fromEase, 0, afterExit, fromIronExit, 0);
   }
 
   window.requestAnimationFrame(function () {
