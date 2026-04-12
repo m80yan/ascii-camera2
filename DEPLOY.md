@@ -17,6 +17,7 @@
 create table if not exists public.ascii_photos (
   id uuid primary key default gen_random_uuid(),
   ascii text not null,
+  preview_ascii text,
   color text not null default '#00ff41',
   created_at timestamptz not null default now(),
   owner_id text,
@@ -63,6 +64,8 @@ create policy "ascii_photo_likes_delete" on public.ascii_photo_likes
 ```
 
 **已有 `ascii_photos` 表、尚无 `owner_id` 时** 在 SQL Editor 执行：`alter table public.ascii_photos add column if not exists owner_id text;` 旧行 `owner_id` 为空时前端不视为本人作品，无法自助删除（策展模式仍可删）。
+
+**列表预览短文本 `preview_ascii`（可选列，建议与新版前端一起加）：** 在 SQL Editor 执行：`alter table public.ascii_photos add column if not exists preview_ascii text;` 可为空；新上传会由完整 `ascii` 截断写入，旧行无该列或为空时前端仍用完整 `ascii`。
 
 **轻量动画（ASCII 多帧，非 GIF 文件存储）** 在 SQL Editor 执行：
 

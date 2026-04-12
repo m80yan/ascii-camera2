@@ -112,11 +112,11 @@
   }
 
   /**
-   * @param {{ascii:string,color?:string,time?:number,mine?:boolean,id?:string,isAnimated?:boolean,frameCount?:number,fps?:number,durationMs?:number}} photo 单条用户作品；默认 `mine: true`；无 `id` 时生成新 id。动画帧仅存云端，本地仅存元数据。
+   * @param {{ascii:string,color?:string,preview_ascii?:string,time?:number,mine?:boolean,id?:string,isAnimated?:boolean,frameCount?:number,fps?:number,durationMs?:number}} photo 单条用户作品；默认 `mine: true`；无 `id` 时生成新 id。动画帧仅存云端，本地仅存元数据。
    */
   function prependUserPhoto(photo) {
     var list = loadUserPhotos();
-    /** @type {{ascii:string,color:string,time:number,mine:boolean,id:string,isAnimated?:boolean,frameCount?:number,fps?:number,durationMs?:number}} */
+    /** @type {{ascii:string,color:string,time:number,mine:boolean,id:string,preview_ascii?:string,isAnimated?:boolean,frameCount?:number,fps?:number,durationMs?:number}} */
     var row = {
       ascii: String(photo.ascii || ''),
       color: photo.color || '#00ff41',
@@ -124,6 +124,9 @@
       mine: typeof photo.mine === 'boolean' ? photo.mine : true,
       id: typeof photo.id === 'string' && photo.id ? photo.id : generatePhotoId()
     };
+    if (typeof photo.preview_ascii === 'string' && photo.preview_ascii.length > 0) {
+      row.preview_ascii = photo.preview_ascii;
+    }
     if (photo.isAnimated === true) {
       row.isAnimated = true;
       if (typeof photo.frameCount === 'number' && Number.isFinite(photo.frameCount)) {

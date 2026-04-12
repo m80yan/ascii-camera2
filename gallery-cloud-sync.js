@@ -54,6 +54,23 @@
    * 仅用于 Supabase `ascii_photos` 列表 GET 的 `limit` / 画廊分页每批条数。
    */
   var SUPABASE_ASCII_PHOTOS_FETCH_LIMIT = 60;
+  /**
+   * `ascii_photos.preview_ascii` 最大长度（由完整 `ascii` 截断生成；与插入逻辑一致）。
+   * @type {number}
+   */
+  var PREVIEW_ASCII_MAX_LENGTH = 8192;
+
+  /**
+   * 由完整 ASCII 生成列表/预览用短文本（不修改 `ascii` 字段本身）。
+   * @param {string} full
+   * @returns {string}
+   */
+  function derivePreviewAsciiFromAscii(full) {
+    if (typeof full !== 'string') return '';
+    if (full.length <= PREVIEW_ASCII_MAX_LENGTH) return full;
+    return full.slice(0, PREVIEW_ASCII_MAX_LENGTH);
+  }
+
   /** @type {boolean} 与 `gallery.html` 当前标签同步：Loop 为 true（轮询首屏用 `is_animated=eq.true`） */
   var galleryFeedLoopOnly = false;
   /** @type {number} 下一批 range 请求的 offset（由画廊写入，供日志/未来扩展） */
@@ -425,6 +442,7 @@
 
   /**
    * 将 `ascii_photos` 行转为画廊 UI 用条目：`time` 来自 `created_at`；列表拉取不含 `frames`（悬停时再取）。
+   * 列表请求不 select `preview_ascii`，仅用完整 `ascii` 渲染，与灯箱一致。
    * `owner_id` 缺失或空时 `mine` 为 false（不猜测历史行归属）。
    * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown, is_animated?: unknown, frame_count?: unknown, fps?: unknown, duration_ms?: unknown }} row
    * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number } | null}
@@ -659,7 +677,7 @@
   /**
    * 向 `ascii_photos` 插入一行（不整包覆盖）；`id` 为 UUID 时与本地 `prependUserPhoto` 对齐。
    * 写入前从 `window.__ASCII_GALLERY_SUPABASE__` 取 session，设置 `Authorization: Bearer <access_token>` 与 body `user_id`；无会话则返回 false（静默）。
-   * @param {{ ascii: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} photo
+   * @param {{ ascii: string, preview_ascii?: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} photo
    * @returns {Promise<boolean>}
    */
   function insertPhotoRowSupabase(photo) {
@@ -679,9 +697,15 @@
             ? new Date(photo.time).toISOString()
             : new Date().toISOString();
         var isAnim = photo.isAnimated === true;
-        /** @type {{ ascii: string, color: string, created_at: string, owner_id: string, user_id: string, id?: string, is_animated: boolean, frames: string[] | null, frame_count: number | null, fps: number | null, duration_ms: number | null }} */
+        var previewAscii = derivePreviewAsciiFromAscii(
+          typeof photo.preview_ascii === 'string' && photo.preview_ascii.length > 0
+            ? photo.preview_ascii
+            : photo.ascii
+        );
+        /** @type {{ ascii: string, preview_ascii: string, color: string, created_at: string, owner_id: string, user_id: string, id?: string, is_animated: boolean, frames: string[] | null, frame_count: number | null, fps: number | null, duration_ms: number | null }} */
         var body = {
           ascii: photo.ascii,
+          preview_ascii: previewAscii,
           color: typeof photo.color === 'string' ? photo.color : '#00ff41',
           created_at: createdIso,
           owner_id: getOrCreateDeviceId(),
@@ -1155,7 +1179,7 @@
 
   /**
    * 新增一幅作品到 Supabase（单行 insert）；非 Supabase 或未启用时视为成功。
-   * @param {{ ascii: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} photo
+   * @param {{ ascii: string, preview_ascii?: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} photo
    * @returns {Promise<boolean>}
    */
   function insertPhotoRow(photo) {
@@ -1494,6 +1518,8 @@
   }
 
   global.AsciiCameraGalleryCloudSync = {
+    /** 与 `PREVIEW_ASCII_MAX_LENGTH` 一致：由 `ascii` 生成 `preview_ascii`（供本页保存与插入共用）。 */
+    derivePreviewAscii: derivePreviewAsciiFromAscii,
     isEnabled: isEnabled,
     getProvider: getProvider,
     getSyncStatus: getSyncStatus,

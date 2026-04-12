@@ -1193,6 +1193,22 @@ let uploadPrevRound11 = false;
 let uploadPrevIron11 = false;
 /** 与 camera `PHOTO_FRAME_MASK_ANIM_MS` 一致 */
 const PHOTO_FRAME_MASK_ANIM_MS_UPLOAD = 400;
+/** Iron Bars 与 Monocular / Upload 遮罩同帧长（与 `PHOTO_FRAME_MASK_ANIM_MS_UPLOAD` 同值） */
+const IRON_BARS_ANIM_MS = PHOTO_FRAME_MASK_ANIM_MS_UPLOAD;
+/** @type {boolean} */
+const IRON_BARS_OVERSHOOT_ENABLED = true;
+/** Iron Bars `easeOutBack` 过冲强度，与 camera `IRON_BARS_OVERSHOOT_STRENGTH` 一致 */
+const IRON_BARS_OVERSHOOT_STRENGTH = 1.2;
+/**
+ * @param {number} t
+ * @param {number} [s]
+ * @returns {number}
+ */
+function easeOutBack(t, s) {
+  const c1 = s != null ? s : IRON_BARS_OVERSHOOT_STRENGTH;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
 /** @type {boolean} */
 let uploadFrameMaskCheckedOval = false;
 /** @type {boolean} */
@@ -1673,6 +1689,34 @@ function isIronBarMaskCellFromSpec(col, row, spec) {
 }
 
 /**
+ * 是否落在三条竖条之一（仅列几何）；与 camera `isIronBarVerticalColumnFromSpec` 一致。
+ * @param {number} col
+ * @param {*} spec
+ * @returns {boolean}
+ */
+function isIronBarVerticalColumnFromSpec(col, spec) {
+  const g = spec.gInCells;
+  const t = spec.tVerticalInCells;
+  if (spec.cols === 120) {
+    return ironBarVert120EqualWidthCol(col, g, t, spec.cols);
+  }
+  if (spec.cols === 48) {
+    return ironBarVert48EqualWidthCol(col, g, t);
+  }
+  const extra = spec.centerVerticalExtraCols != null ? spec.centerVerticalExtraCols : 0;
+  const cx = col + 0.5;
+  function vertCenterInBarAt(x0, tw) {
+    return cx >= x0 && cx <= x0 + tw;
+  }
+  if (vertCenterInBarAt(g, t)) return true;
+  const xMid = 2 * g + t - 0.5 * extra;
+  const wMid = t + extra;
+  if (vertCenterInBarAt(xMid, wMid)) return true;
+  if (vertCenterInBarAt(3 * g + 2 * t, t)) return true;
+  return false;
+}
+
+/**
  * 与 camera `applyIronBarsMaskToLuma` 一致。
  * @param {Float32Array} luma
  * @param {number} cols
@@ -1875,7 +1919,9 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
   var showOval = ap === '3:4' && uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked;
   var showRound = ap === '1:1' && uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked;
   var showIron = ap === '1:1' && uploadFrameIronCheckbox && uploadFrameIronCheckbox.checked;
-  if (!showOval && !showRound && !showIron) return;
+  /** 1:1：勾选关闭后仍播 Iron 向上退出，`uploadIronBarsRevealEase`→0 前须继续绘制（勿与 `showIron` 绑定）。 */
+  var drawIronBarsLayer = ap === '1:1' && (showIron || uploadIronBarsRevealEase > 0.0005);
+  if (!showOval && !showRound && !drawIronBarsLayer) return;
 
   var layout = getUploadAsciiMaskGridLayout();
   var frameEl = document.getElementById('upload-preview-active-frame');
@@ -2042,12 +2088,17 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
   }
 
   /**
-   * Upload 1:1 Iron Bars：纵向揭示用独立 `uploadIronBarsRevealEase`，与 Monocular 椭圆 `t` 同帧、同 `PHOTO_FRAME_MASK_ANIM_MS_UPLOAD` 与 easing 驱动，避免复用 photo ease=1 导致铁栅瞬显。
+   * Upload 1:1 Iron Bars：整层 `translateY`（非 clip）；`easeOutBack` 作用于进度；时长与 Monocular 共用同一 tick 的 `easeOutCubic` 插值（`IRON_BARS_ANIM_MS === PHOTO_FRAME_MASK_ANIM_MS_UPLOAD`）。
    */
-  var tIron = Math.min(1, Math.max(0, uploadIronBarsRevealEase));
-  if (showIron && tIron > 0) {
-    var yRevealIron = Math.max(0, Math.min(H, tIron * H));
-    if (yRevealIron > 0 && isUploadAsciiMaskLayoutValidForIron(layout)) {
+  var progress = uploadIronBarsRevealEase;
+  var tIron = Math.min(1, Math.max(0, progress));
+  if (drawIronBarsLayer && tIron > 0) {
+    var frameH = layout.frameH;
+    if (frameH > 0 && isUploadAsciiMaskLayoutValidForIron(layout)) {
+      var eased = IRON_BARS_OVERSHOOT_ENABLED
+        ? easeOutBack(tIron, IRON_BARS_OVERSHOOT_STRENGTH)
+        : tIron;
+      var offsetY = (1 - eased) * -frameH;
       var specIron = buildIronBarsSpec(
         layout.cols,
         layout.rows,
@@ -2055,9 +2106,29 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
         1
       );
       ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, W, yRevealIron);
-      ctx.clip();
+      ctx.translate(0, offsetY);
+      /** 仅三条竖条向上多画若干格，避免 `easeOutBack` 过冲时顶缘漏亮；高度含 `|offsetY|` 与 `frameH` */
+      var ironTopExtendPx = frameH + Math.ceil(rhCell * 2) + Math.ceil(Math.abs(offsetY));
+      var nUp = Math.max(1, Math.ceil(ironTopExtendPx / rhCell));
+      var k;
+      for (k = nUp; k >= 1; k--) {
+        y1 = y0 - k * rhCell;
+        y2 = y0 - (k - 1) * rhCell;
+        for (col = 0; col < layout.cols; col++) {
+          if (!isIronBarVerticalColumnFromSpec(col, specIron)) continue;
+          x1 = x0 + col * cwCell;
+          x2 = x0 + (col + 1) * cwCell;
+          if (col === layout.cols - 1) {
+            x2 = Math.min(x2, contentRightX);
+          }
+          ctx.fillRect(
+            Math.floor(x1),
+            Math.floor(y1),
+            Math.max(1, Math.ceil(x2) - Math.floor(x1)),
+            Math.max(1, Math.ceil(y2) - Math.floor(y1))
+          );
+        }
+      }
       for (row = 0; row < layout.rows; row++) {
         y1 = y0 + row * rhCell;
         y2 = y0 + (row + 1) * rhCell;
@@ -2127,7 +2198,7 @@ function startUploadPhotoFrameMaskAnimation(fromEase, toEase, onComplete, ironFr
    */
   function tick(now) {
     var elapsed = now - uploadPhotoFrameMaskAnimStartMs;
-    var u = Math.min(1, elapsed / PHOTO_FRAME_MASK_ANIM_MS_UPLOAD);
+    var u = Math.min(1, elapsed / IRON_BARS_ANIM_MS);
     var eased = easeOutCubicUploadPhotoMask(u);
     uploadPhotoFrameMaskEase =
       uploadPhotoFrameMaskAnimFrom + (uploadPhotoFrameMaskAnimTo - uploadPhotoFrameMaskAnimFrom) * eased;
@@ -2160,7 +2231,9 @@ function startUploadPhotoFrameMaskAnimation(fromEase, toEase, onComplete, ironFr
  */
 function syncUploadPhotoFrameMaskLayoutRedraw() {
   var should =
-    anyUploadPhotoFrameMaskControlActive() && uploadSrcImg && uploadSrcImg.naturalWidth > 0;
+    (anyUploadPhotoFrameMaskControlActive() || uploadIronBarsRevealEase > 0) &&
+    uploadSrcImg &&
+    uploadSrcImg.naturalWidth > 0;
   if (!should) return;
   if (
     !uploadUploadFrameMaskCanvas ||
@@ -2196,6 +2269,12 @@ function syncUploadPhotoFrameMaskOverlay() {
     (showOval || showRound || showIron) && uploadSrcImg && uploadSrcImg.naturalWidth > 0;
 
   if (!should) {
+    /** 无勾选但 ease 仍在退出中：勿每帧 `cancel`+重启，否则 Iron 向上退出被反复打断 */
+    if (uploadPhotoFrameMaskAnimRaf != null) {
+      uploadPrevRound11 = false;
+      uploadPrevIron11 = false;
+      return;
+    }
     cancelUploadPhotoFrameMaskAnimation();
     if (uploadPhotoFrameMaskEase > 0 || uploadIronBarsRevealEase > 0) {
       startUploadPhotoFrameMaskAnimation(uploadPhotoFrameMaskEase, 0, null, uploadIronBarsRevealEase, 0);
@@ -2249,9 +2328,10 @@ function syncUploadPhotoFrameMaskOverlay() {
     return;
   }
 
-  if (ironJustOff && round11) {
+  if (ironJustOff) {
     cancelUploadPhotoFrameMaskAnimation();
-    startUploadPhotoFrameMaskAnimation(uploadPhotoFrameMaskEase, 1, null, uploadIronBarsRevealEase, 0);
+    const pToIronOff = showOval || showRound ? 1 : 0;
+    startUploadPhotoFrameMaskAnimation(uploadPhotoFrameMaskEase, pToIronOff, null, uploadIronBarsRevealEase, 0);
     uploadPrevRound11 = round11;
     uploadPrevIron11 = iron11;
     return;
@@ -3317,12 +3397,25 @@ function mirrorUserPhotoToFirstPartyTab(photo) {
 }
 
 /**
+ * 保存到本机并可选写入 Supabase；`preview_ascii` 为 `ascii` 截断副本，与 `ascii_photos.preview_ascii` 对齐。
  * @param {string} ascii ASCII 内容
  * @param {string} [color] 颜色
  */
 async function savePhoto(ascii, color) {
   try {
-    const photo = { ascii: ascii, color: color || '#00ff41', time: Date.now() };
+    var previewAscii =
+      window.AsciiCameraGalleryCloudSync &&
+      typeof window.AsciiCameraGalleryCloudSync.derivePreviewAscii === 'function'
+        ? window.AsciiCameraGalleryCloudSync.derivePreviewAscii(ascii)
+        : typeof ascii === 'string' && ascii.length > 8192
+          ? ascii.slice(0, 8192)
+          : String(ascii || '');
+    const photo = {
+      ascii: ascii,
+      preview_ascii: previewAscii,
+      color: color || '#00ff41',
+      time: Date.now()
+    };
     AsciiCameraGalleryStorage.prependUserPhoto(photo);
     const saved = AsciiCameraGalleryStorage.loadUserPhotos()[0];
     refreshGallery();
