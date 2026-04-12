@@ -75,6 +75,8 @@
   var galleryFeedLoopOnly = false;
   /** @type {number} 下一批 range 请求的 offset（由画廊写入，供日志/未来扩展） */
   var galleryFeedNextOffset = 0;
+  /** @type {boolean} 策展模式：列表含已软删行（`is_deleted=true`） */
+  var galleryCuratorIncludeDeleted = false;
 
   /** @type {((s: object) => void) | null} */
   var statusListener = null;
@@ -185,6 +187,109 @@
   var CLIENT_ID_STORAGE_KEY = 'ascii_gallery_client_id_v1';
   /** 作品归属 `owner_id` 专用；与点赞 `client_id` 分离。 */
   var DEVICE_ID_STORAGE_KEY = 'ascii_camera_device_id_v1';
+  /**
+   * 埋点用：当前浏览器稳定 visitor_id（长期保留在 localStorage）。
+   * @returns {string}
+   */
+  function getOrCreateVisitorId() {
+    var key = 'ascii_camera_visitor_id';
+    try {
+      var ls = global.localStorage;
+      var existing = ls && ls.getItem(key);
+      if (existing && typeof existing === 'string' && existing.length > 4) return existing;
+      var id =
+        global.crypto && typeof global.crypto.randomUUID === 'function'
+          ? global.crypto.randomUUID()
+          : 'vid_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 14);
+      if (ls) ls.setItem(key, id);
+      return id;
+    } catch (e) {
+      return 'vid_volatile_' + Date.now();
+    }
+  }
+
+  /**
+   * 埋点用：当前标签页 session_id（保留在 sessionStorage）。
+   * @returns {string}
+   */
+  function getOrCreateSessionId() {
+    var key = 'ascii_camera_session_id';
+    try {
+      var ss = global.sessionStorage;
+      var existing = ss && ss.getItem(key);
+      if (existing && typeof existing === 'string' && existing.length > 4) return existing;
+      var id =
+        global.crypto && typeof global.crypto.randomUUID === 'function'
+          ? global.crypto.randomUUID()
+          : 'sid_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 14);
+      if (ss) ss.setItem(key, id);
+      return id;
+    } catch (e) {
+      return 'sid_volatile_' + Date.now();
+    }
+  }
+  /**
+   * 写入一条产品行为埋点到 analytics_events。
+   * @param {string} eventName
+   * @param {{
+   *   photoId?: string,
+   *   meta?: Record<string, unknown>
+   * }} [extra]
+   * @returns {Promise<boolean>}
+   */
+  function trackEvent(eventName, extra) {
+    extra = extra || {};
+    if (!eventName || typeof eventName !== 'string') {
+      return Promise.resolve(false);
+    }
+    if (!isEnabled() || getProvider() !== 'supabase') {
+      return Promise.resolve(false);
+    }
+
+    var c = getSupabaseConfig();
+    var url = c.url + '/rest/v1/analytics_events';
+
+    var payload = {
+      event_name: eventName,
+      photo_id: typeof extra.photoId === 'string' ? extra.photoId : null,
+      visitor_id: getOrCreateVisitorId(),
+      session_id: getOrCreateSessionId(),
+      page_path: global.location && global.location.pathname ? String(global.location.pathname) : null,
+      referrer:
+        global.document && typeof global.document.referrer === 'string' && global.document.referrer
+          ? global.document.referrer
+          : null,
+      user_agent:
+        global.navigator && typeof global.navigator.userAgent === 'string'
+          ? global.navigator.userAgent
+          : null,
+      meta: extra.meta && typeof extra.meta === 'object' ? extra.meta : {}
+    };
+
+    return fetch(url, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        apikey: c.anonKey,
+        Authorization: 'Bearer ' + c.anonKey,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify(payload)
+    })
+      .then(function (res) {
+        if (res.ok) return true;
+        return readFetchErrorText(res).then(function (detail) {
+          throw new Error('analytics_events insert ' + res.status + (detail ? ': ' + detail : ''));
+        });
+      })
+      .catch(function (err) {
+        if (typeof global.console !== 'undefined' && global.console.warn) {
+          global.console.warn('[gallery-sync] trackEvent failed', eventName, err);
+        }
+        return false;
+      });
+  }
 
   /**
    * 本机稳定设备 id，写入 `ascii_photos.owner_id`；与 `mine` 判定同源。
@@ -444,8 +549,8 @@
    * 将 `ascii_photos` 行转为画廊 UI 用条目：`time` 来自 `created_at`；列表拉取不含 `frames`（悬停时再取）。
    * 列表请求不 select `preview_ascii`，仅用完整 `ascii` 渲染，与灯箱一致。
    * `owner_id` 缺失或空时 `mine` 为 false（不猜测历史行归属）。
-   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown, is_animated?: unknown, frame_count?: unknown, fps?: unknown, duration_ms?: unknown }} row
-   * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number } | null}
+   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown, is_animated?: unknown, frame_count?: unknown, fps?: unknown, duration_ms?: unknown, is_deleted?: unknown }} row
+   * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number } | null}
    */
   function mapAsciiPhotoRow(row) {
     if (!row || typeof row.ascii !== 'string') return null;
@@ -459,7 +564,8 @@
     var cur = getOrCreateDeviceId();
     var mine = owner.length > 0 && owner === cur;
     var isAnimated = row.is_animated === true;
-    /** @type {{ id: string, ascii: string, color: string, time: number, mine: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }} */
+    var isDel = row.is_deleted === true;
+    /** @type {{ id: string, ascii: string, color: string, time: number, mine: boolean, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }} */
     var out = {
       id: id,
       ascii: row.ascii,
@@ -467,6 +573,9 @@
       time: t,
       mine: mine
     };
+    if (isDel) {
+      out.isDeleted = true;
+    }
     if (isAnimated) {
       out.isAnimated = true;
       var fc = row.frame_count;
@@ -485,9 +594,9 @@
    * @param {number} limit
    * @param {number} [offset]
    * @param {boolean} [loopOnly]
-   * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }>>}
+   * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }>>}
    */
-  function fetchAsciiPhotosPageFromSupabase(limit, offset, loopOnly) {
+  function fetchAsciiPhotosPageFromSupabase(limit, offset, loopOnly, includeDeleted) {
     var c = getSupabaseConfig();
     var table = getSupabasePhotosTable();
     var lim = Math.max(
@@ -496,7 +605,7 @@
     );
     var off = Math.max(0, typeof offset === 'number' && Number.isFinite(offset) ? offset : 0);
     var cols =
-      'id,ascii,color,created_at,owner_id,is_animated,frame_count,fps,duration_ms';
+      'id,ascii,color,created_at,owner_id,is_animated,frame_count,fps,duration_ms,is_deleted';
     var url =
       c.url +
       '/rest/v1/' +
@@ -507,6 +616,9 @@
       encodeURIComponent(String(lim)) +
       '&offset=' +
       encodeURIComponent(String(off));
+    if (includeDeleted !== true) {
+      url += '&or=(is_deleted.is.null,is_deleted.eq.false)';
+    }
     if (loopOnly === true) {
       url += '&is_animated=eq.true';
     }
@@ -557,7 +669,39 @@
    * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }>>}
    */
   function fetchGalleryPage(offset, limit, loopOnly) {
-    return fetchAsciiPhotosPageFromSupabase(limit, offset, loopOnly === true);
+    return fetchAsciiPhotosPageFromSupabase(
+      limit,
+      offset,
+      loopOnly === true,
+      galleryCuratorIncludeDeleted === true
+    );
+  }
+
+  /**
+   * 策展模式：是否拉取含 `is_deleted=true` 的行（与 `gallery.html` 策展开关同步）。
+   * @param {boolean} include
+   * @returns {void}
+   */
+  function setGalleryCuratorIncludeDeleted(include) {
+    galleryCuratorIncludeDeleted = include === true;
+  }
+
+  /**
+   * 从内存缓存与 localStorage 移除一条（软删成功后立即更新 UI）。
+   * @param {string} photoId
+   * @returns {void}
+   */
+  function removePhotoFromGalleryCacheById(photoId) {
+    if (!photoId || typeof photoId !== 'string') return;
+    var next = [];
+    for (var i = 0; i < supabaseGalleryUserCache.length; i++) {
+      var r = supabaseGalleryUserCache[i];
+      if (r && String(r.id) !== photoId) next.push(r);
+    }
+    supabaseGalleryUserCache = next;
+    if (global.AsciiCameraGalleryStorage && typeof global.AsciiCameraGalleryStorage.saveUserPhotos === 'function') {
+      global.AsciiCameraGalleryStorage.saveUserPhotos(supabaseGalleryUserCache);
+    }
   }
 
   /**
@@ -895,6 +1039,185 @@
   }
 
   /**
+   * PATCH `ascii_photos` 单行（软删 / 恢复等）。
+   * @param {string} photoId
+   * @param {Record<string, unknown>} body
+   * @param {{ accessToken: string, userId: string } | null} [authOpt]
+   * @returns {Promise<boolean>}
+   */
+  function patchAsciiPhotoRowSupabase(photoId, body, authOpt) {
+    if (!photoId || typeof photoId !== 'string' || !isUuidString(photoId)) {
+      return Promise.resolve(false);
+    }
+    var c = getSupabaseConfig();
+    var table = getSupabasePhotosTable();
+    var url =
+      c.url +
+      '/rest/v1/' +
+      encodeURIComponent(table) +
+      '?id=eq.' +
+      encodeURIComponent(photoId);
+    var useJwt = !!(authOpt && authOpt.accessToken);
+    var bearer = useJwt ? authOpt.accessToken : c.anonKey;
+    pushInFlight = true;
+    return fetch(url, {
+      method: 'PATCH',
+      cache: 'no-store',
+      headers: {
+        apikey: c.anonKey,
+        Authorization: 'Bearer ' + bearer,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify(body)
+    })
+      .then(function (res) {
+        if (res.ok || res.status === 204) {
+          if (typeof global.console !== 'undefined' && global.console.info) {
+            global.console.info(
+              '[gallery-sync] ascii_photos PATCH success id=' + photoId + ' http=' + res.status
+            );
+          }
+          syncStatus.lastPushAt = Date.now();
+          syncStatus.lastPushOk = true;
+          syncStatus.lastPushError = '';
+          emitStatus();
+          return true;
+        }
+        return readFetchErrorText(res).then(function (detail) {
+          return Promise.reject(
+            new Error('ascii_photos PATCH ' + res.status + (detail ? ': ' + detail : ''))
+          );
+        });
+      })
+      .catch(function (err) {
+        if (typeof global.console !== 'undefined' && global.console.warn) {
+          global.console.warn('[gallery-sync] ascii_photos PATCH failed id=' + photoId, err);
+        }
+        syncStatus.lastPushAt = Date.now();
+        syncStatus.lastPushOk = false;
+        syncStatus.lastPushError = err && err.message ? String(err.message) : String(err);
+        emitStatus();
+        return false;
+      })
+      .finally(function () {
+        pushInFlight = false;
+      });
+  }
+
+  /**
+   * 合并更新内存与 localStorage 中的某条缓存（恢复后刷新 UI）。
+   * @param {string} photoId
+   * @param {Record<string, unknown>} fields
+   * @returns {void}
+   */
+  function mergePhotoFieldsInGalleryCache(photoId, fields) {
+    if (!photoId || typeof photoId !== 'string' || !fields || typeof fields !== 'object') return;
+    var changed = false;
+    for (var i = 0; i < supabaseGalleryUserCache.length; i++) {
+      var r = supabaseGalleryUserCache[i];
+      if (r && String(r.id) === photoId) {
+        var k;
+        for (k in fields) {
+          if (Object.prototype.hasOwnProperty.call(fields, k)) {
+            if (k === 'isDeleted' && fields[k] === false) {
+              delete r.isDeleted;
+            } else {
+              r[k] = fields[k];
+            }
+          }
+        }
+        changed = true;
+        break;
+      }
+    }
+    if (changed && global.AsciiCameraGalleryStorage && typeof global.AsciiCameraGalleryStorage.saveUserPhotos === 'function') {
+      global.AsciiCameraGalleryStorage.saveUserPhotos(supabaseGalleryUserCache);
+    }
+  }
+
+  /**
+   * 软删：仅 PATCH，不从点赞表删行。
+   * @param {string} photoId
+   * @param {{ bypassOwnershipCheck?: boolean, deleteReason?: string }} [opts]
+   * @returns {Promise<boolean>}
+   */
+  function softDeletePhotoRow(photoId, opts) {
+    opts = opts || {};
+    var bypass = opts.bypassOwnershipCheck === true;
+    var reason =
+      typeof opts.deleteReason === 'string' && opts.deleteReason.trim()
+        ? opts.deleteReason.trim()
+        : 'owner_remove';
+    if (!isEnabled() || getProvider() !== 'supabase') {
+      return Promise.resolve(true);
+    }
+    return getGallerySupabaseAuthForRest().then(function (auth) {
+      if (isUuidString(photoId) && !bypass) {
+        if (!isSupabasePhotoMineById(photoId)) {
+          if (typeof global.console !== 'undefined' && global.console.warn) {
+            global.console.warn(
+              '[gallery-sync] ascii_photos soft delete skipped (not owner) id=' + photoId
+            );
+          }
+          return Promise.resolve(false);
+        }
+      }
+      var deletedBy = auth && auth.userId ? auth.userId : getOrCreateDeviceId();
+      /** @type {Record<string, unknown>} */
+      var body = {
+        is_deleted: true,
+        deleted_at: new Date().toISOString(),
+        deleted_by: deletedBy,
+        delete_reason: reason,
+        delete_mode: 'soft'
+      };
+      return patchAsciiPhotoRowSupabase(photoId, body, auth).then(function (ok) {
+        if (!ok) return false;
+        removePhotoFromGalleryCacheById(photoId);
+        return true;
+      });
+    });
+  }
+
+  /**
+   * 恢复软删行（策展/管理员；由页面用 `bypassOwnershipCheck` 控制）。
+   * @param {string} photoId
+   * @param {{ bypassOwnershipCheck?: boolean }} [opts]
+   * @returns {Promise<boolean>}
+   */
+  function restorePhotoRow(photoId, opts) {
+    opts = opts || {};
+    var bypass = opts.bypassOwnershipCheck === true;
+    if (!isEnabled() || getProvider() !== 'supabase') {
+      return Promise.resolve(true);
+    }
+    return getGallerySupabaseAuthForRest().then(function (auth) {
+      if (isUuidString(photoId) && !bypass && !isSupabasePhotoMineById(photoId)) {
+        if (typeof global.console !== 'undefined' && global.console.warn) {
+          global.console.warn(
+            '[gallery-sync] ascii_photos restore skipped (not owner) id=' + photoId
+          );
+        }
+        return Promise.resolve(false);
+      }
+      /** @type {Record<string, unknown>} */
+      var body = {
+        is_deleted: false,
+        deleted_at: null,
+        deleted_by: null,
+        delete_reason: 'restore',
+        delete_mode: 'soft'
+      };
+      return patchAsciiPhotoRowSupabase(photoId, body, auth).then(function (ok) {
+        if (!ok) return false;
+        mergePhotoFieldsInGalleryCache(photoId, { isDeleted: false });
+        return true;
+      });
+    });
+  }
+
+  /**
    * @returns {Promise<{ schema: number, updatedAt: number, photos: Array<{ascii:string,color?:string,time?:number}> }>}
    */
   function fetchRemotePayloadJsonBin() {
@@ -1003,7 +1326,8 @@
     return fetchAsciiPhotosPageFromSupabase(
       SUPABASE_ASCII_PHOTOS_FETCH_LIMIT,
       0,
-      galleryFeedLoopOnly
+      galleryFeedLoopOnly,
+      galleryCuratorIncludeDeleted === true
     )
       .then(function (remotePhotos) {
         if (pushInFlight) {
@@ -1188,6 +1512,22 @@
     }
     return insertPhotoRowSupabase(photo).then(function (ok) {
       if (!ok) return false;
+      var photoId = '';
+      if (
+        global.AsciiCameraGalleryStorage &&
+        typeof global.AsciiCameraGalleryStorage.loadUserPhotos === 'function'
+      ) {
+        var list = global.AsciiCameraGalleryStorage.loadUserPhotos();
+        if (list && list[0] && typeof list[0].id === 'string' && list[0].id) {
+          photoId = list[0].id;
+        }
+      }
+      if (!photoId && photo && typeof photo.id === 'string') {
+        photoId = photo.id;
+      }
+      if (photoId) {
+        trackEvent('upload_photo', { photoId: photoId });
+      }
       return pullOnce().then(function () {
         return true;
       });
@@ -1228,17 +1568,21 @@
   }
 
   /**
-   * 从 Supabase 按 UUID 删除一行；非 UUID 或未启用时视为成功。
-   * 默认仅当缓存中该条 `mine === true` 时发 DELETE；策展模式由调用方传 `bypassOwnershipCheck`。
+   * 从 Supabase 删除一行：`hardDelete` 默认 `true` 为物理 DELETE；`hardDelete=false` 为软删 PATCH。
+   * 物理删除前先从缓存移除该行，避免分页 tail 残留旧 id。
    * @param {string} photoId
-   * @param {{ bypassOwnershipCheck?: boolean }} [opts]
+   * @param {{ bypassOwnershipCheck?: boolean, hardDelete?: boolean, deleteReason?: string }} [opts]
    * @returns {Promise<boolean>}
    */
   function deletePhotoRow(photoId, opts) {
+    opts = opts || {};
     if (!isEnabled() || getProvider() !== 'supabase') {
       return Promise.resolve(true);
     }
-    var bypass = opts && opts.bypassOwnershipCheck === true;
+    if (opts.hardDelete === false) {
+      return softDeletePhotoRow(photoId, opts);
+    }
+    var bypass = opts.bypassOwnershipCheck === true;
     return getGallerySupabaseAuthForRest()
       .then(function (auth) {
         // #region agent log
@@ -1289,6 +1633,7 @@
       })
       .then(function (ok) {
         if (!ok) return false;
+        removePhotoFromGalleryCacheById(photoId);
         return pullOnce().then(function () {
           return true;
         });
@@ -1528,6 +1873,9 @@
     pushFromLocal: pushFromLocal,
     insertPhotoRow: insertPhotoRow,
     deletePhotoRow: deletePhotoRow,
+    restorePhotoRow: restorePhotoRow,
+    setGalleryCuratorIncludeDeleted: setGalleryCuratorIncludeDeleted,
+    removePhotoFromGalleryCacheById: removePhotoFromGalleryCacheById,
     getPhotosForGalleryRender: getPhotosForGalleryRender,
     /** 画廊分页每批条数（与内部 `SUPABASE_ASCII_PHOTOS_FETCH_LIMIT` 相同） */
     GALLERY_PAGE_SIZE: SUPABASE_ASCII_PHOTOS_FETCH_LIMIT,
@@ -1545,6 +1893,9 @@
     likesApiEnabled: likesApiEnabled,
     getOrCreateClientId: getOrCreateClientId,
     getOrCreateDeviceId: getOrCreateDeviceId,
+    getOrCreateVisitorId: getOrCreateVisitorId,
+    getOrCreateSessionId: getOrCreateSessionId,
+    trackEvent: trackEvent,
     fetchPhotoLikeState: fetchPhotoLikeState,
     addPhotoLike: addPhotoLike,
     removePhotoLike: removePhotoLike,

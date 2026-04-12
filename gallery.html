@@ -109,26 +109,16 @@
     width: var(--hdr-action-btn-w);
     max-width: 100%;
   }
-  #curate-mode-btn {
-    width: auto;
-    min-width: min(12.5rem, 100%);
-    padding: 0 16px;
-  }
-  #curate-mode-btn[hidden] {
-    display: none !important;
-  }
   /**
-   * 主行动：Open Camera、Exit Curate — 绿框/绿字/悬停（与原 `#upload-btn` 规则相同）。
+   * 主行动：Open Camera — 绿框/绿字/悬停（与原 `#upload-btn` 规则相同）。
    * 次行动：Upload Image — 琥珀色（与原 `#live-btn` 规则相同）。
    */
   #live-btn,
-  #live-btn:visited,
-  #curate-mode-btn {
+  #live-btn:visited {
     border: 1px solid #00ff41;
     color: #00ff41;
   }
-  #live-btn:hover,
-  #curate-mode-btn:hover {
+  #live-btn:hover {
     background: rgba(0, 255, 65, 0.1);
   }
   #upload-btn,
@@ -188,6 +178,8 @@
     align-items: center;
     gap: 8px;
     min-height: 36px;
+    position: relative;
+    z-index: 1;
   }
   /** 用户卡：左时间 | 中 .gif（仅动画）| 右 Remove */
   .photo-meta--3col {
@@ -219,6 +211,12 @@
     text-align: right;
     min-width: 0;
   }
+  /**
+   * 删后双按钮：第三列用 min-content 下限，避免 `minmax(0,1fr)` 把右侧列压到 0 导致难点击。
+   */
+  .photo-card--deleted .photo-meta--3col {
+    grid-template-columns: minmax(0, 1fr) auto minmax(min-content, 1fr);
+  }
   .photo-meta--3col .photo-meta-right .delete-btn {
     margin: 0;
   }
@@ -232,6 +230,51 @@
   }
   body.gallery-curator-mode .photo-card .delete-btn:hover {
     opacity: 1;
+  }
+  .photo-card--deleted .photo-thumb {
+    opacity: 0.48;
+  }
+  .photo-meta-deleted-tag {
+    font-size: 9px;
+    opacity: 0.75;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .restore-btn {
+    background: transparent;
+    border: none;
+    color: #e6c200;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 10px;
+    cursor: pointer;
+    opacity: 0.75;
+    letter-spacing: 1px;
+    padding: 0;
+    text-transform: uppercase;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-right: 8px;
+  }
+  .restore-btn:hover { opacity: 1; }
+  .purge-btn {
+    background: transparent;
+    border: none;
+    color: #ff4444;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 10px;
+    cursor: pointer;
+    opacity: 0.55;
+    letter-spacing: 1px;
+    padding: 0;
+    text-transform: uppercase;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .purge-btn:hover { opacity: 1; }
+  body.gallery-curator-mode .photo-card .restore-btn,
+  body.gallery-curator-mode .photo-card .purge-btn {
+    opacity: 0.75;
   }
   #lightbox {
     display: none;
@@ -782,22 +825,78 @@
   #cloud-sync-status { display: none; font-size: 10px; line-height: 1.55; letter-spacing: 0.35px; max-width: 760px; margin: 0 auto 14px; padding: 8px 12px; border-radius: 4px; box-sizing: border-box; width: 100%; }
   #cloud-sync-status.cloud-sync-err { color: #ff9999; border: 1px solid rgba(255,100,100,0.35); background: rgba(255,68,68,0.06); }
   /**
-   * Supabase 画廊：标签在 `#header` 内第二行，与 `h1`「Gallery」左缘对齐（共用 header padding）。
+   * 画廊第二行：左侧 All / Loop（仅 Supabase 时显示容器）；右侧「Exit Curate」链式链接（策展态）。
    * 活动项：64px×4px 下划线在标签文字下水平居中；标签文案在自身命中区内居中。
    */
-  #gallery-feed-tabs {
+  .gallery-feed-bar {
     display: flex;
     flex-wrap: wrap;
-    align-items: stretch;
-    /** 与 `#header-actions`（Upload / Open Camera）同一 `gap`，见 `#header` 上的 `--hdr-action-gap` */
+    align-items: center;
     gap: var(--hdr-action-gap);
     margin: 10px 0 0 0;
     padding: 0;
     box-sizing: border-box;
     width: 100%;
+    /** 与 `.gallery-feed-tab` 一致，供 `.exit-curate-link` 通过 `inherit` 对齐字阶与字距 */
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    line-height: 1.2;
+  }
+  #gallery-feed-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
   }
   #gallery-feed-tabs[hidden] {
     display: none !important;
+  }
+  .gallery-feed-tabs-left {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: var(--hdr-action-gap);
+    min-width: 0;
+  }
+  #curate-mode-btn.exit-curate-link[hidden] {
+    display: none !important;
+  }
+  .exit-curate-link {
+    color: #00ff41;
+    text-decoration: underline;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    margin-left: auto;
+    font: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    font-weight: inherit;
+    font-family: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .exit-curate-link:hover {
+    opacity: 0.8;
+  }
+  #gallery-feed-bar #curate-mode-btn.exit-curate-link {
+    width: auto;
+    min-width: 0;
   }
   /**
    * 命中高度与 `.hdr-btn` 一致（36px）；文字保持较轻，由内部 label 控制透明度。
@@ -862,20 +961,31 @@
   <div class="header-row">
     <h1><span>Gallery</span><span id="gallery-cloud-dot-wrap" aria-hidden="true"><span class="gallery-cloud-dot"></span></span></h1>
     <div id="header-actions">
-      <button type="button" class="hdr-btn" id="curate-mode-btn" hidden aria-hidden="true" title="Curator mode is on — click to exit">
-        Exit Curate
-      </button>
       <button class="hdr-btn" id="upload-btn" type="button">Upload Image</button>
       <input type="file" id="upload-input" accept="image/*">
       <a class="hdr-btn" id="live-btn" href="camera.html">OPEN CAMERA ➤</a>
     </div>
   </div>
-  <div id="gallery-feed-tabs" role="tablist" aria-label="Gallery feed" hidden>
-    <button type="button" class="gallery-feed-tab" id="gallery-tab-all" role="tab" aria-selected="true" aria-controls="gallery">
-      <span class="gallery-feed-tab-label">All</span>
-    </button>
-    <button type="button" class="gallery-feed-tab" id="gallery-tab-loop" role="tab" aria-selected="false" aria-controls="gallery">
-      <span class="gallery-feed-tab-label">Loop</span>
+  <div class="gallery-feed-bar">
+    <div id="gallery-feed-tabs" hidden>
+      <div class="gallery-feed-tabs-left" role="tablist" aria-label="Gallery feed">
+        <button type="button" class="gallery-feed-tab" id="gallery-tab-all" role="tab" aria-selected="true" aria-controls="gallery">
+          <span class="gallery-feed-tab-label">All</span>
+        </button>
+        <button type="button" class="gallery-feed-tab" id="gallery-tab-loop" role="tab" aria-selected="false" aria-controls="gallery">
+          <span class="gallery-feed-tab-label">Loop</span>
+        </button>
+      </div>
+    </div>
+    <button
+      type="button"
+      id="curate-mode-btn"
+      class="exit-curate-link"
+      hidden
+      aria-hidden="true"
+      title="Curator mode is on — click to exit"
+    >
+      Exit Curate
     </button>
   </div>
 </div>
@@ -998,7 +1108,7 @@
 </div>
 <div id="confirm-modal">
   <div id="confirm-box">
-    <p>Remove this photo?<br>This cannot be undone.</p>
+    <p id="confirm-message">Remove this photo?<br>This cannot be undone.</p>
     <div id="confirm-actions">
       <button type="button" class="modal-btn" id="confirm-cancel">Cancel</button>
       <button type="button" class="modal-btn" id="confirm-yes">Remove</button>
@@ -1153,7 +1263,11 @@ let lightboxLikeSessionGen = 0;
 let lightboxLikeUiState = { liked: false, count: 0 };
 const confirmModal = document.getElementById('confirm-modal');
 const uploadInput = document.getElementById('upload-input');
+const uploadBtn = document.getElementById('upload-btn');
+const liveBtn = document.getElementById('live-btn');
 const uploadModal = document.getElementById('upload-modal');
+/** @type {HTMLElement | null} 打开上传弹层时的焦点来源，关闭时优先恢复 */
+let uploadModalOpenerEl = null;
 const uploadSrcImg = document.getElementById('upload-src-img');
 const uploadPreviewPre = document.getElementById('upload-preview-pre');
 const uploadDensity = document.getElementById('upload-density');
@@ -1219,7 +1333,10 @@ let uploadFrameMaskCheckedIronBars = false;
 let lastUploadAspectForFrameMask = 'free';
 /** 与 camera `IRON_BARS_REF_RES_COLS`（72）一致，铁栅竖条厚度锚定列数 */
 const IRON_BARS_REF_RES_COLS = 72;
-let pendingDeleteIndex = null, photosCache = [];
+let pendingDeleteIndex = null;
+/** 策展物理删：与 {@link pendingDeleteIndex} 互斥，仅其一非 null 时确认框有效 */
+let pendingPurgeIndex = null;
+let photosCache = [];
 /** 灯箱内当前条目在 `photosCache`（当前可见 feed）中的下标；-1 表示未关联列表 */
 let lightboxFeedIndex = -1;
 /** Supabase 画廊：当前标签是否为 Loop（仅 `is_animated=true` 的查询） */
@@ -1280,10 +1397,14 @@ function initCuratorModeFromUrl() {
 let curatorModeActive = initCuratorModeFromUrl();
 
 /**
- * 顶栏「Exit Curate」显隐与 `body.gallery-curator-mode`（悬停显删）。
+ * 筛选行「Exit Curate」显隐与 `body.gallery-curator-mode`（悬停显删）。
  * @returns {void}
  */
 function syncCuratorChrome() {
+  var gsync = window.AsciiCameraGalleryCloudSync;
+  if (gsync && typeof gsync.setGalleryCuratorIncludeDeleted === 'function') {
+    gsync.setGalleryCuratorIncludeDeleted(curatorModeActive);
+  }
   var btn = document.getElementById('curate-mode-btn');
   if (btn) {
     if (curatorModeActive) {
@@ -1309,7 +1430,13 @@ syncCuratorChrome();
     curatorModeActive = false;
     writeCuratorModeToStorage(false);
     syncCuratorChrome();
-    refreshGallery();
+    if (isSupabaseGalleryCloudEnabled()) {
+      loadFirstGalleryFeedPage().catch(function () {
+        refreshGallery();
+      });
+    } else {
+      refreshGallery();
+    }
   });
 })();
 
@@ -1330,7 +1457,14 @@ if (document.fonts && document.fonts.ready) {
   });
 }
 
-document.getElementById('upload-btn').addEventListener('click', () => uploadInput.click());
+if (uploadBtn) {
+  uploadBtn.addEventListener('click', function () {
+    var ae = document.activeElement;
+    uploadModalOpenerEl =
+      ae instanceof HTMLElement && ae !== uploadInput ? ae : uploadBtn;
+    uploadInput.click();
+  });
+}
 uploadInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -1465,7 +1599,40 @@ document.getElementById('upload-save-btn').addEventListener('click', async () =>
   closeUploadModal();
 });
 
+/**
+ * 关闭上传弹层前将焦点移出，避免 `aria-hidden` 仍含焦点；优先回到 opener，否则回到页眉可见控件。
+ * @returns {void}
+ */
+function moveFocusOutOfUploadModalBeforeHide() {
+  if (!uploadModal) return;
+  var active = document.activeElement;
+  if (!(active instanceof HTMLElement) || !uploadModal.contains(active)) return;
+  var target = null;
+  if (
+    uploadModalOpenerEl &&
+    uploadModalOpenerEl.isConnected &&
+    !uploadModal.contains(uploadModalOpenerEl) &&
+    !uploadModalOpenerEl.hasAttribute('disabled')
+  ) {
+    target = uploadModalOpenerEl;
+  }
+  if (!target && uploadBtn && uploadBtn.isConnected) {
+    target = uploadBtn;
+  }
+  if (!target && liveBtn && liveBtn.isConnected) {
+    target = liveBtn;
+  }
+  if (target && typeof target.focus === 'function') {
+    try {
+      target.focus({ preventScroll: true });
+    } catch (e) {
+      /* ignore */
+    }
+  }
+}
+
 function closeUploadModal() {
+  moveFocusOutOfUploadModalBeforeHide();
   cancelUploadPhotoFrameMaskAnimation();
   uploadPhotoFrameMaskEase = 0;
   uploadIronBarsRevealEase = 0;
@@ -2692,6 +2859,9 @@ function updateLightboxNavButtons() {
  */
 function openLightbox(photo, feedIndexOpt) {
   stopLightboxAsciiAnim();
+  if (window.AsciiCameraGalleryCloudSync && typeof AsciiCameraGalleryCloudSync.trackEvent === 'function' && photo) {
+    AsciiCameraGalleryCloudSync.trackEvent('photo_view', { photoId: photo.id });
+  }
   lightboxOpenPhoto = photo || null;
   if (typeof feedIndexOpt === 'number' && feedIndexOpt >= 0 && feedIndexOpt < photosCache.length) {
     lightboxFeedIndex = feedIndexOpt;
@@ -2803,6 +2973,9 @@ if (lightboxLikeBtn) {
       lightboxLikeUiState = { liked: true, count: prev.count + 1 };
       applyLightboxLikeButton();
       sync.addPhotoLike(pid).then(function () {
+        if (typeof sync.trackEvent === 'function') {
+          sync.trackEvent('like_photo', { photoId: pid });
+        }
         return sync.fetchPhotoLikeState(pid);
       }).then(function (st) {
         if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
@@ -3170,6 +3343,15 @@ function downloadLightboxGif() {
       console.warn('[gallery-export] download ignored: button disabled');
       return;
     }
+    if (window.AsciiCameraGalleryCloudSync && typeof AsciiCameraGalleryCloudSync.trackEvent === 'function') {
+      var trackPid =
+        typeof lightboxPhotoId === 'string' && lightboxPhotoId
+          ? lightboxPhotoId
+          : lightboxOpenPhoto && typeof lightboxOpenPhoto.id === 'string'
+            ? lightboxOpenPhoto.id
+            : undefined;
+      AsciiCameraGalleryCloudSync.trackEvent(animated ? 'download_gif' : 'download_png', { photoId: trackPid });
+    }
     if (animated) {
       downloadLightboxGif();
     } else {
@@ -3201,10 +3383,51 @@ function downloadLightboxGif() {
 
 syncLightboxDownloadButtonsVisibility();
 
-function promptDelete(i) { pendingDeleteIndex = i; confirmModal.classList.add('open'); }
-document.getElementById('confirm-cancel').addEventListener('click', () => { confirmModal.classList.remove('open'); pendingDeleteIndex = null; });
+/**
+ * 打开共用确认框：`delete` 为本地/软删 Remove，`purge` 为数据库物理删除。
+ * @param {'delete' | 'purge'} mode
+ * @param {number} index `photosCache` 下标
+ * @returns {void}
+ */
+function openConfirmModal(mode, index) {
+  var msg = document.getElementById('confirm-message');
+  var yesBtn = document.getElementById('confirm-yes');
+  if (mode === 'purge') {
+    pendingDeleteIndex = null;
+    pendingPurgeIndex = index;
+    if (msg) {
+      msg.innerHTML =
+        'Permanently delete this photo from the database?<br>This cannot be undone.';
+    }
+    if (yesBtn) yesBtn.textContent = 'Delete permanently';
+  } else {
+    pendingPurgeIndex = null;
+    pendingDeleteIndex = index;
+    if (msg) {
+      msg.innerHTML = 'Remove this photo?<br>This cannot be undone.';
+    }
+    if (yesBtn) yesBtn.textContent = 'Remove';
+  }
+  confirmModal.classList.add('open');
+}
+
+function promptDelete(i) {
+  openConfirmModal('delete', i);
+}
+document.getElementById('confirm-cancel').addEventListener('click', () => {
+  confirmModal.classList.remove('open');
+  pendingDeleteIndex = null;
+  pendingPurgeIndex = null;
+});
 document.getElementById('confirm-yes').addEventListener('click', () => {
   confirmModal.classList.remove('open');
+  if (pendingPurgeIndex !== null) {
+    var pi = pendingPurgeIndex;
+    pendingPurgeIndex = null;
+    pendingDeleteIndex = null;
+    void executePurgeGalleryPhoto(pi);
+    return;
+  }
   var idx = pendingDeleteIndex;
   pendingDeleteIndex = null;
   if (idx !== null) void deletePhoto(idx);
@@ -3480,8 +3703,12 @@ async function deletePhoto(userIndex) {
       sync.isUuidPhotoId(photoIdForLikes);
 
     if (useSupabaseRow) {
+      var delReason =
+        curatorModeActive && row.mine === false ? 'curator_remove' : 'owner_remove';
       var delOk = await sync.deletePhotoRow(photoIdForLikes, {
-        bypassOwnershipCheck: curatorModeActive
+        hardDelete: false,
+        bypassOwnershipCheck: curatorModeActive,
+        deleteReason: delReason
       });
       if (!delOk) {
         var st2 = typeof sync.getSyncStatus === 'function' ? sync.getSyncStatus() : null;
@@ -3493,13 +3720,6 @@ async function deletePhoto(userIndex) {
         return;
       }
       refreshGallery();
-      if (photoIdForLikes && typeof sync.deleteAllLikesForPhotoId === 'function') {
-        try {
-          await sync.deleteAllLikesForPhotoId(photoIdForLikes);
-        } catch (eL) {
-          console.warn('[gallery] cloud likes cleanup failed', eL);
-        }
-      }
       return;
     }
 
@@ -3511,7 +3731,10 @@ async function deletePhoto(userIndex) {
     var cloudOk = true;
     if (sync.getProvider() === 'supabase' && typeof sync.deletePhotoRow === 'function') {
       cloudOk = await sync.deletePhotoRow(photoIdForLikes, {
-        bypassOwnershipCheck: curatorModeActive
+        hardDelete: false,
+        bypassOwnershipCheck: curatorModeActive,
+        deleteReason:
+          curatorModeActive && removed && removed.mine === false ? 'curator_remove' : 'owner_remove'
       });
     } else {
       cloudOk = await sync.pushFromLocal();
@@ -3541,6 +3764,108 @@ async function deletePhoto(userIndex) {
   } catch (e) {
     console.error(e);
   }
+}
+
+/**
+ * 策展模式：将软删行恢复为可见（PATCH `is_deleted` 等）。
+ * @param {number} userIndex 当前 `photosCache` / 网格下标
+ * @returns {Promise<void>}
+ */
+async function restoreGalleryPhoto(userIndex) {
+  try {
+    if (!curatorModeActive) return;
+    var sync = window.AsciiCameraGalleryCloudSync;
+    if (
+      !sync ||
+      !sync.isEnabled() ||
+      sync.getProvider() !== 'supabase' ||
+      typeof sync.restorePhotoRow !== 'function'
+    ) {
+      return;
+    }
+    var row = photosCache && photosCache[userIndex];
+    if (!row) return;
+    var photoId = '';
+    if (typeof row.id === 'string' && row.id) {
+      photoId = row.id;
+    } else if (AsciiCameraGalleryStorage.stableLegacyPhotoId) {
+      photoId = AsciiCameraGalleryStorage.stableLegacyPhotoId(row) || '';
+    }
+    if (!photoId || (typeof sync.isUuidPhotoId === 'function' && !sync.isUuidPhotoId(photoId))) {
+      return;
+    }
+    var ok = await sync.restorePhotoRow(photoId, { bypassOwnershipCheck: true });
+    if (!ok) {
+      var st = typeof sync.getSyncStatus === 'function' ? sync.getSyncStatus() : null;
+      var detail = st && st.lastPushError ? String(st.lastPushError) : '';
+      window.alert('Could not restore photo.\n\n' + (detail ? 'Error: ' + detail : ''));
+      return;
+    }
+    refreshGallery();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+/**
+ * 用户在确认框中确认后执行：物理删行 + 点赞清理（与 `window.confirm` 无关）。
+ * @param {number} userIndex 当前 `photosCache` / 网格下标
+ * @returns {Promise<void>}
+ */
+async function executePurgeGalleryPhoto(userIndex) {
+  try {
+    if (!curatorModeActive) return;
+    var sync = window.AsciiCameraGalleryCloudSync;
+    if (
+      !sync ||
+      !sync.isEnabled() ||
+      sync.getProvider() !== 'supabase' ||
+      typeof sync.deletePhotoRow !== 'function'
+    ) {
+      return;
+    }
+    var row = photosCache && photosCache[userIndex];
+    if (!row) return;
+    var photoId = '';
+    if (typeof row.id === 'string' && row.id) {
+      photoId = row.id;
+    } else if (AsciiCameraGalleryStorage.stableLegacyPhotoId) {
+      photoId = AsciiCameraGalleryStorage.stableLegacyPhotoId(row) || '';
+    }
+    if (!photoId || (typeof sync.isUuidPhotoId === 'function' && !sync.isUuidPhotoId(photoId))) {
+      return;
+    }
+    var delOk = await sync.deletePhotoRow(photoId, {
+      hardDelete: true,
+      bypassOwnershipCheck: true
+    });
+    if (!delOk) {
+      var st = typeof sync.getSyncStatus === 'function' ? sync.getSyncStatus() : null;
+      var detail = st && st.lastPushError ? String(st.lastPushError) : '';
+      window.alert('Could not delete photo.\n\n' + (detail ? 'Error: ' + detail : ''));
+      return;
+    }
+    if (photoId && typeof sync.deleteAllLikesForPhotoId === 'function') {
+      try {
+        await sync.deleteAllLikesForPhotoId(photoId);
+      } catch (eL) {
+        console.warn('[gallery] cloud likes cleanup failed', eL);
+      }
+    }
+    refreshGallery();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+/**
+ * 策展模式：打开共用确认框，确认后由 {@link executePurgeGalleryPhoto} 执行物理删除。
+ * @param {number} userIndex 当前 `photosCache` / 网格下标
+ * @returns {void}
+ */
+function purgeGalleryPhoto(userIndex) {
+  if (!curatorModeActive) return;
+  openConfirmModal('purge', userIndex);
 }
 
 /**
@@ -3831,7 +4156,7 @@ function startGalleryThumbAsciiAnim(card, photo, cacheIndex) {
 }
 
 /**
- * @param {Array<{ascii:string,color?:string,time?:number,mine?:boolean,isDefault?:boolean,isAnimated?:boolean,frames?:string[],fps?:number,id?:string}>} photos 列表
+ * @param {Array<{ascii:string,color?:string,time?:number,mine?:boolean,isDefault?:boolean,isAnimated?:boolean,frames?:string[],fps?:number,id?:string,isDeleted?:boolean}>} photos 列表
  * @param {number} [userCountOverride] 用户区张数；省略时按 `isDefault` 推断或读 localStorage
  */
 function renderGallery(photos, userCountOverride) {
@@ -3846,8 +4171,12 @@ function renderGallery(photos, userCountOverride) {
   gallery.innerHTML = photos.map((p, i) => {
     const isUser = i < userCount;
     const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
+    const isDeleted = p.isDeleted === true;
     const isAnimUser = isUser && isLightboxPhotoAnimatedForDownload(p);
-    const canRemoveUser = isUser && (p.mine === true || curatorModeActive);
+    const canRemoveUser =
+      isUser && !isDeleted && (p.mine === true || curatorModeActive);
+    const showCuratorRestore =
+      isUser && isDeleted && curatorModeActive;
     const canShowBuiltinRemove = curatorModeActive && !isUser && p.isDefault;
     let metaHtml = '';
     if (isUser) {
@@ -3855,7 +4184,16 @@ function renderGallery(photos, userCountOverride) {
         ? '<span class="photo-meta-center photo-meta-gif">.gif</span>'
         : '<span class="photo-meta-center" aria-hidden="true"></span>';
       let rightCell = '';
-      if (canRemoveUser) {
+      if (showCuratorRestore) {
+        rightCell =
+          '<div class="photo-meta-right">' +
+          '<button type="button" class="restore-btn" data-user-index="' +
+          i +
+          '">Restore</button>' +
+          '<button type="button" class="purge-btn" data-user-index="' +
+          i +
+          '">Delete permanently</button></div>';
+      } else if (canRemoveUser) {
         rightCell =
           '<div class="photo-meta-right">' +
           '<button type="button" class="delete-btn" data-user-index="' +
@@ -3864,10 +4202,14 @@ function renderGallery(photos, userCountOverride) {
       } else {
         rightCell = '<div class="photo-meta-right"><span class="photo-time" style="opacity:0.2">—</span></div>';
       }
+      const leftInner =
+        isDeleted && curatorModeActive
+          ? escapeHtml(timeLabel) + ' <span class="photo-meta-deleted-tag">Deleted</span>'
+          : escapeHtml(timeLabel);
       metaHtml =
         '<div class="photo-meta photo-meta--3col">' +
         '<span class="photo-meta-left">' +
-        escapeHtml(timeLabel) +
+        leftInner +
         '</span>' +
         centerGif +
         rightCell +
@@ -3884,7 +4226,9 @@ function renderGallery(photos, userCountOverride) {
         '</div>';
     }
     return (
-      '<div class="photo-card" data-index="' +
+      '<div class="photo-card' +
+        (isDeleted ? ' photo-card--deleted' : '') +
+        '" data-index="' +
         i +
         '"' +
         (isAnimUser ? ' data-ascii-animated="1"' : '') +
@@ -3906,8 +4250,9 @@ function renderGallery(photos, userCountOverride) {
   });
   gallery.querySelectorAll('.photo-card').forEach(card => {
     card.addEventListener('click', (e) => {
-      const t = /** @type {HTMLElement} */ (e.target);
-      if (t.classList.contains('delete-btn')) return;
+      var raw = e.target;
+      var el = raw instanceof Element ? raw : raw && /** @type {Node} */ (raw).parentElement;
+      if (el && el.closest('.delete-btn, .restore-btn, .purge-btn')) return;
       var ix = parseInt(card.dataset.index, 10);
       openLightbox(photosCache[ix], ix);
     });
@@ -3936,6 +4281,22 @@ function renderGallery(photos, userCountOverride) {
       promptDelete(ui);
     });
   });
+  gallery.querySelectorAll('.restore-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      var ui = parseInt(btn.getAttribute('data-user-index'), 10);
+      if (Number.isNaN(ui)) return;
+      void restoreGalleryPhoto(ui);
+    });
+  });
+  gallery.querySelectorAll('.purge-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      var ui = parseInt(btn.getAttribute('data-user-index'), 10);
+      if (Number.isNaN(ui)) return;
+      void purgeGalleryPhoto(ui);
+    });
+  });
   tryConsumeGalleryOpenQuery();
 }
 
@@ -3950,6 +4311,9 @@ function renderGallery(photos, userCountOverride) {
   var winName = AsciiCameraGalleryStorage.CAMERA_POPUP_WINDOW_NAME || 'ascii_camera_notion_embed';
   liveBtn.addEventListener('click', function (e) {
     e.preventDefault();
+    if (window.AsciiCameraGalleryCloudSync && typeof AsciiCameraGalleryCloudSync.trackEvent === 'function') {
+      AsciiCameraGalleryCloudSync.trackEvent('open_camera');
+    }
     var w = window.open(camUrl, winName);
     if (!w) {
       window.alert(
@@ -4033,6 +4397,9 @@ window.addEventListener('message', function (ev) {
  * 未配置 Supabase/JSONBin 时提示；已配置则先拉取远端再渲染，便于多人共享同一作品墙。
  */
 (function setupCloudBannerAndBoot() {
+  if (window.AsciiCameraGalleryCloudSync && typeof AsciiCameraGalleryCloudSync.trackEvent === 'function') {
+    AsciiCameraGalleryCloudSync.trackEvent('gallery_view');
+  }
   var banner = document.getElementById('cloud-status-banner');
   var syncLine = document.getElementById('cloud-sync-status');
   var dotWrap = document.getElementById('gallery-cloud-dot-wrap');
