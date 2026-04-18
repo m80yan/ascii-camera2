@@ -426,6 +426,88 @@
   #loopCoverSlider::-moz-focus-outer {
     border: 0;
   }
+  /** Distorting Mirror（Photo）：与 Loop 封面轨同视觉；十二档；无副文案；`[hidden]` 不占位 */
+  #distortMirrorSliderWrap[hidden] {
+    display: none !important;
+  }
+  /**
+   * 与右侧 `#frameMaskRow` 首行 `.flash-switch` 同带：range 总高 20px、轨在盒内垂直居中，
+   * 顶对齐时轨心略低于 12px 高的复选框行；小幅负 margin 仅上提本包，不改 `#frameMaskSlot` 外尺寸。
+   */
+  #distortMirrorSliderWrap {
+    width: 100%;
+    max-width: 100%;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    padding: 0 2px;
+    margin-top: -4px;
+  }
+  #distortMirrorSlider {
+    width: 100%;
+    max-width: 100%;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    cursor: pointer;
+    background: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    --loop-cover-n: 12;
+  }
+  #distortMirrorSlider:focus {
+    outline: 1px solid rgba(0, 255, 65, 0.45);
+    outline-offset: 1px;
+  }
+  #distortMirrorSlider:focus:not(:focus-visible) {
+    outline: none;
+  }
+  #distortMirrorSlider::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 6px;
+    border-radius: 0;
+    border: none;
+    background-color: #ffffff;
+    background-image: repeating-linear-gradient(
+      to right,
+      #0a0a0a 0 1px,
+      transparent 1px calc(100% / max(1, calc(var(--loop-cover-n) - 1)))
+    );
+  }
+  #distortMirrorSlider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -3px;
+    background: #00ff41;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  #distortMirrorSlider::-moz-range-track {
+    width: 100%;
+    height: 6px;
+    border-radius: 0;
+    border: none;
+    background-color: #ffffff;
+    background-image: repeating-linear-gradient(
+      to right,
+      #0a0a0a 0 1px,
+      transparent 1px calc(100% / max(1, calc(var(--loop-cover-n) - 1)))
+    );
+  }
+  #distortMirrorSlider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: #00ff41;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  #distortMirrorSlider::-moz-focus-outer {
+    border: 0;
+  }
   .loop-cover-label-track {
     position: relative;
     width: 100%;
@@ -720,6 +802,16 @@
   }
   .frame-mask-dual.frame-mask-dual--oval-only .frame-mask-cell--iron {
     display: none !important;
+  }
+  /** 3:4 Evil Queen：左格默认隐藏；畸变镜滑块开启时需露出左格（与 Style 列同宽） */
+  .frame-mask-dual.frame-mask-dual--oval-only .frame-mask-cell--iron.frame-mask-cell--iron--dm-visible {
+    display: flex !important;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+  }
+  .frame-mask-cell--iron {
+    min-width: 0;
   }
   /** 3:4 Evil Queen：仅占 Aspect 列，左缘与 Aspect 控件对齐（不跨整行网格漂移） */
   .frame-mask-dual.frame-mask-dual--oval-only .frame-mask-cell--primary {
@@ -1051,6 +1143,7 @@
       <option value="simple">Simple</option>
       <option value="blocks">Blocks</option>
       <option value="binary">Binary</option>
+      <option value="distortingMirror">Distorting Mirror</option>
     </select>
   </label>
   <label class="ctl-stack cc-left" id="aspectPickerStack">
@@ -1062,10 +1155,22 @@
       <option value="3:4" selected>3:4 (Portrait)</option>
     </select>
   </label>
-  <!-- 1:1：左格占位（Style 列宽）；右列 Monocular + Iron Bars（Aspect 列，纵向）；3:4 仅右格 Evil Queen -->
+  <!-- 1:1：左格占位（Style 列宽）；右列 Monocular + Iron Bars（Aspect 列，纵向）；3:4 仅右格 Evil Queen。畸变镜滑块占左格，与右侧框线同行，不撑高 Style/Aspect 行 -->
   <div class="frame-mask-slot" id="frameMaskSlot">
     <div class="frame-mask-dual" id="frameMaskDual">
-      <div class="frame-mask-cell frame-mask-cell--iron" aria-hidden="true"></div>
+      <div class="frame-mask-cell frame-mask-cell--iron" id="frameMaskIronCell" aria-hidden="true">
+        <div id="distortMirrorSliderWrap" hidden aria-hidden="true">
+          <input
+            type="range"
+            id="distortMirrorSlider"
+            min="0"
+            max="11"
+            step="1"
+            value="0"
+            aria-label="Distorting mirror intensity"
+          />
+        </div>
+      </div>
       <div class="frame-mask-cell frame-mask-cell--primary" id="frameMaskPrimaryCell">
         <div class="frame-mask-row ctl-stack cc-left" id="frameMaskRow" hidden>
           <label class="flash-switch frame-mask-flash-switch" id="frameMaskFlashLabel">
@@ -1140,6 +1245,8 @@ const CHAR_SETS = {
   blocks:   '\u2588\u2593\u2592\u2591 ',
   binary:   '\u2588\u2591 '
 };
+/** Style 下拉取值：畸变镜（非 `CHAR_SETS` 键；字集映射见 `getChars`） */
+const STYLE_DISTORTING_MIRROR = 'distortingMirror';
 let stream = null, animId = null;
 var U = AsciiCameraUi;
 const video    = U.video;
@@ -1160,6 +1267,12 @@ const loopCoverSlider = U.loopCoverSlider;
 const loopCoverLabel = U.loopCoverLabel;
 const colorPicker    = U.colorPicker;
 const densityPicker  = U.densityPicker;
+/** @type {HTMLDivElement | null} */
+const distortMirrorSliderWrap = /** @type {HTMLDivElement | null} */ (document.getElementById('distortMirrorSliderWrap'));
+/** @type {HTMLInputElement | null} */
+const distortMirrorSlider = /** @type {HTMLInputElement | null} */ (document.getElementById('distortMirrorSlider'));
+/** @type {HTMLDivElement | null} */
+const frameMaskIronCell = /** @type {HTMLDivElement | null} */ (document.getElementById('frameMaskIronCell'));
 const resPicker      = U.resPicker;
 const aspectPicker   = U.aspectPicker;
 const flashOutsideRoot = U.flashOutsideRoot;
@@ -1971,6 +2084,7 @@ function updateFrameMaskUi() {
     }
     if (frameMaskDual) frameMaskDual.classList.remove('frame-mask-dual--oval-only');
     syncPhotoFrameMaskOverlay();
+    syncDistortMirrorSliderVisibility();
     return;
   }
 
@@ -2005,6 +2119,7 @@ function updateFrameMaskUi() {
     if (frameMaskIronCheckbox) frameMaskIronCheckbox.checked = frameMaskCheckedIronBars;
   }
   syncPhotoFrameMaskOverlay();
+  syncDistortMirrorSliderVisibility();
 }
 
 /**
@@ -2190,7 +2305,16 @@ function applyCaptureModeUi() {
     }
     snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
   } else if (AsciiCameraPreview.previewCaptureActive) {
-    if (densityPicker) densityPicker.disabled = false;
+    var pPrev = AsciiCameraPreview.pendingGalleryPayload;
+    var lockDm = pPrev && pPrev.usedDistortingMirror === true;
+    if (densityPicker) {
+      densityPicker.disabled = !!lockDm;
+      if (lockDm) {
+        densityPicker.classList.add('select-strong-disabled');
+      } else {
+        densityPicker.classList.remove('select-strong-disabled');
+      }
+    }
     if (colorPicker) colorPicker.disabled = false;
     /** 预览为非实时态：禁止 Flash（避免误触） */
     if (flashToggle) flashToggle.disabled = true;
@@ -2205,7 +2329,10 @@ function applyCaptureModeUi() {
     if (resPickerStack) resPickerStack.classList.add('select-locked');
     if (aspectPickerStack) aspectPickerStack.classList.add('select-locked');
   } else {
-    if (densityPicker) densityPicker.disabled = false;
+    if (densityPicker) {
+      densityPicker.disabled = false;
+      densityPicker.classList.remove('select-strong-disabled');
+    }
     if (colorPicker) colorPicker.disabled = false;
     if (flashToggle) flashToggle.disabled = false;
     if (flashSwitchLabel) {
@@ -2258,6 +2385,7 @@ function applyCaptureModeUi() {
   window.requestAnimationFrame(function () {
     updateFrameMaskUi();
   });
+  syncDistortMirrorSliderVisibility();
 }
 
 /**
@@ -2664,6 +2792,7 @@ AsciiCameraUi.wireEventBindings({
       syncAsciiLayout();
     }
     syncPhotoFrameMaskLayoutRedraw();
+    syncDistortMirrorSliderVisibility();
   },
   onCamTabPhotoClick: function () {
     if (snapCountdownActive || AsciiCameraPreview.previewCaptureActive) return;
@@ -2737,6 +2866,18 @@ syncAsciiLayout();
 AsciiCameraUi.syncVideoProgressBarColor();
 out.style.color = colorPicker.value;
 if (!stream && asciiOffHelper) asciiOffHelper.style.color = colorPicker.value;
+if (distortMirrorSlider) {
+  distortMirrorSlider.addEventListener('input', function () {
+    invalidateAsciiCellMetrics();
+    if (AsciiCameraPreview.previewCaptureActive) {
+      applyPreviewStyleFromDensity();
+    } else {
+      syncAsciiLayout();
+    }
+    syncPhotoFrameMaskLayoutRedraw();
+  });
+}
+syncDistortMirrorSliderVisibility();
 
 /**
  * @param {number} ms
@@ -2747,7 +2888,11 @@ function sleep(ms) {
 }
 
 function getChars() {
-  return CHAR_SETS[densityPicker.value] || CHAR_SETS.detailed;
+  var v = densityPicker.value;
+  if (v === STYLE_DISTORTING_MIRROR) {
+    return CHAR_SETS.detailed;
+  }
+  return CHAR_SETS[v] || CHAR_SETS.detailed;
 }
 
 /** @type {number | null} */
@@ -4174,6 +4319,199 @@ function regeneratePhotoPreviewFromCanonical() {
 }
 
 /**
+ * 畸变镜强度 0…11（Photo / Loop 取景共用 `#distortMirrorSlider`）。
+ * @returns {number}
+ */
+function getDistortMirrorLevel() {
+  if (!distortMirrorSlider) return 0;
+  var v = parseInt(distortMirrorSlider.value, 10);
+  if (!Number.isFinite(v)) return 0;
+  return Math.min(11, Math.max(0, v));
+}
+
+/**
+ * 水平方向镜面反射，将任意实数 x 映射到 [0, width-1]（三角折返，非截断、非取模环绕）。
+ * @param {number} x 采样横坐标（可非整数）
+ * @param {number} width 像素宽度（列数）
+ * @returns {number}
+ */
+function mirrorSampleXIntoRange(x, width) {
+  if (width <= 1) return 0;
+  var max = width - 1;
+  var t = x;
+  var i = 0;
+  while ((t < 0 || t > max) && i < 64) {
+    if (t < 0) {
+      t = -t;
+    } else {
+      t = 2 * max - t;
+    }
+    i++;
+  }
+  if (t < 0) t = 0;
+  if (t > max) t = max;
+  return t;
+}
+
+/**
+ * @param {Uint8ClampedArray} d
+ * @param {number} w
+ * @param {number} h
+ * @param {number} sx
+ * @param {number} sy
+ * @param {number} cOff
+ * @returns {number}
+ */
+function sampleBilinearDistort(d, w, h, sx, sy, cOff) {
+  if (sx < 0 || sy < 0 || sx >= w - 1e-6 || sy >= h - 1e-6) return 0;
+  var x0 = Math.floor(sx);
+  var y0 = Math.floor(sy);
+  var x1 = Math.min(x0 + 1, w - 1);
+  var y1 = Math.min(y0 + 1, h - 1);
+  var fx = sx - x0;
+  var fy = sy - y0;
+  var i00 = (y0 * w + x0) * 4 + cOff;
+  var i10 = (y0 * w + x1) * 4 + cOff;
+  var i01 = (y1 * w + x0) * 4 + cOff;
+  var i11 = (y1 * w + x1) * 4 + cOff;
+  return (
+    d[i00] * (1 - fx) * (1 - fy) +
+    d[i10] * fx * (1 - fy) +
+    d[i01] * (1 - fx) * fy +
+    d[i11] * fx * fy
+  );
+}
+
+/**
+ * 纵向镜面波纹：各行水平位移 `offsetX(y)=amplitude*sin(freq*y+phase)`，无径向/桶形。
+ * 采样横坐标经 `mirrorSampleXIntoRange` 做水平镜面折返，避免越界变黑。
+ * 固定整幅高度内约 `DISTORT_MIRROR_WAVE_CYCLES` 个周期；振幅由滑块 1…11 映射（0 档跳过）。
+ *
+ * 振幅映射（相对列宽 `cols` 的峰值水平位移比例，再乘以 `cols` 得像素）：
+ * `u = (lv - 1) / 10`，`ampRel = AMP_MIN_REL + (AMP_MAX_REL - AMP_MIN_REL) * u^AMP_CURVE_EXP`。
+ * - 旧版 6 档满档（及此前 12 档顶档）约 `0.10 * cols`，现故意落在约 **第 8 档** 附近，第 9–11 档再明显加强。
+ * - 第 11 档峰值约 `AMP_MAX_REL * cols`（高于旧版最大值）。
+ *
+ * 近似表（`ampRel`，即 `ampPx/cols`）：1→0.012，2→0.016，3→0.023，4→0.034，5→0.047，6→0.062，
+ * 7→0.080，8→0.100，9→0.121，10→0.145，11→0.170。
+ *
+ * @param {CanvasRenderingContext2D} c2d
+ * @param {number} cols
+ * @param {number} rows
+ * @param {number} level 0…11
+ * @returns {void}
+ */
+function applyDistortingMirrorToCanvas2d(c2d, cols, rows, level) {
+  if (level <= 0) return;
+  var lv = Math.min(11, Math.max(1, level));
+  /** 整幅高度内正弦周期数（固定，不调 UI） */
+  var DISTORT_MIRROR_WAVE_CYCLES = 2;
+  var phase = 0;
+  var freq = (DISTORT_MIRROR_WAVE_CYCLES * 2 * Math.PI) / Math.max(rows - 1, 1);
+  /**
+   * 相对列宽的最小/最大峰值位移（第 1 / 第 11 档）；`AMP_MAX_REL` 高于旧版 `0.10` 以使顶档明显更强。
+   * @type {number}
+   */
+  var AMP_MAX_REL = 0.17;
+  /** @type {number} */
+  var AMP_MIN_REL = 0.012;
+  var ampMinPx = cols * AMP_MIN_REL;
+  var ampMaxPx = cols * AMP_MAX_REL;
+  /** @type {number} */
+  var u = (lv - 1) / 10;
+  /**
+   * 幂次 > 1：低档 u 小、相邻档差别细；高档 u 大、增幅更陡。与 `AMP_MAX_REL` 一起标定使旧版满档约在第 8 档。
+   * @type {number}
+   */
+  var AMP_CURVE_EXP = 1.65;
+  var ampPx = ampMinPx + (ampMaxPx - ampMinPx) * Math.pow(u, AMP_CURVE_EXP);
+  var img = c2d.getImageData(0, 0, cols, rows);
+  var d = img.data;
+  var out = new Uint8ClampedArray(d.length);
+  var y;
+  var x;
+  for (y = 0; y < rows; y++) {
+    var offsetX = ampPx * Math.sin(freq * y + phase);
+    for (x = 0; x < cols; x++) {
+      var sx = mirrorSampleXIntoRange(x + offsetX, cols);
+      var sy = y;
+      var o = (y * cols + x) * 4;
+      out[o] = sampleBilinearDistort(d, cols, rows, sx, sy, 0);
+      out[o + 1] = sampleBilinearDistort(d, cols, rows, sx, sy, 1);
+      out[o + 2] = sampleBilinearDistort(d, cols, rows, sx, sy, 2);
+      out[o + 3] = sampleBilinearDistort(d, cols, rows, sx, sy, 3);
+    }
+  }
+  img.data.set(out);
+  c2d.putImageData(img, 0, 0);
+}
+
+/**
+ * Stop Camera / 回到 matrix rain idle：Style→Detailed、清畸变强度、去掉预览锁定样式类。
+ * @returns {void}
+ */
+function resetDistortingMirrorForIdle() {
+  if (densityPicker) {
+    densityPicker.value = 'detailed';
+    densityPicker.classList.remove('select-strong-disabled');
+  }
+  if (distortMirrorSlider) {
+    distortMirrorSlider.value = '0';
+  }
+  if (frameMaskIronCell) {
+    frameMaskIronCell.classList.remove('frame-mask-cell--iron--dm-visible');
+  }
+}
+
+/**
+ * 3:4 `oval-only` 时左格默认 `display:none`；畸变镜滑块显示时用 `--dm-visible` 露出左格。
+ * @returns {void}
+ */
+function updateDistortMirrorIronCellClass() {
+  if (!frameMaskIronCell || !frameMaskDual || !distortMirrorSliderWrap) return;
+  var visible =
+    !distortMirrorSliderWrap.hidden &&
+    distortMirrorSliderWrap.getAttribute('aria-hidden') !== 'true';
+  if (visible && frameMaskDual.classList.contains('frame-mask-dual--oval-only')) {
+    frameMaskIronCell.classList.add('frame-mask-cell--iron--dm-visible');
+  } else {
+    frameMaskIronCell.classList.remove('frame-mask-cell--iron--dm-visible');
+  }
+}
+
+/**
+ * Distorting Mirror：滑块显隐；预览锁定且 `usedDistortingMirror` 时强制隐藏（Photo / Loop 一致）。
+ * Live：Style 为畸变镜时显示（含 Loop）；非畸变镜或预览锁定则隐藏。
+ * @returns {void}
+ */
+function syncDistortMirrorSliderVisibility() {
+  if (!distortMirrorSliderWrap || !distortMirrorSlider || !densityPicker) return;
+  var p = AsciiCameraPreview.pendingGalleryPayload;
+  var previewLockDm =
+    AsciiCameraPreview.previewCaptureActive &&
+    p &&
+    p.usedDistortingMirror === true;
+  if (previewLockDm) {
+    distortMirrorSliderWrap.hidden = true;
+    distortMirrorSliderWrap.setAttribute('aria-hidden', 'true');
+    distortMirrorSlider.disabled = true;
+    updateDistortMirrorIronCellClass();
+    return;
+  }
+  var isDm = densityPicker.value === STYLE_DISTORTING_MIRROR;
+  if (isDm) {
+    distortMirrorSliderWrap.hidden = false;
+    distortMirrorSliderWrap.setAttribute('aria-hidden', 'false');
+    distortMirrorSlider.disabled = densityPicker.disabled;
+  } else {
+    distortMirrorSliderWrap.hidden = true;
+    distortMirrorSliderWrap.setAttribute('aria-hidden', 'true');
+    distortMirrorSlider.disabled = true;
+  }
+  updateDistortMirrorIronCellClass();
+}
+
+/**
  * 采样当前视频帧为亮度格 + ASCII（用于预览态按 Style 重算，不重新访问摄像头像素逻辑外路径）。
  * @param {number} cols
  * @param {number | null | undefined} aspectOverride
@@ -4212,6 +4550,12 @@ function toAsciiWithLuminance(cols, aspectOverride) {
     ctx.drawImage(video, 0, 0, cols, rows);
   }
   ctx.restore();
+  if (densityPicker && densityPicker.value === STYLE_DISTORTING_MIRROR) {
+    var dmLv = getDistortMirrorLevel();
+    if (dmLv > 0) {
+      applyDistortingMirrorToCanvas2d(ctx, cols, rows, dmLv);
+    }
+  }
   const pixels = ctx.getImageData(0, 0, cols, rows).data;
   const luma = new Float32Array(cols * rows);
   for (let y = 0; y < rows; y++) {
@@ -4445,6 +4789,7 @@ startBtn.addEventListener('click', async () => {
     if (camTabVideo) camTabVideo.disabled = false;
     stream.getTracks().forEach(t => t.stop());
     stream = null;
+    resetDistortingMirrorForIdle();
     if (animId != null) cancelAnimationFrame(animId);
     animId = null;
     startBtn.textContent = 'Start Camera';
@@ -4604,7 +4949,13 @@ snapBtn.addEventListener('click', async () => {
         cols: photoPack.cols,
         rows: photoPack.rows,
         bakedFrameMask: bakedFrameMask,
-        ironBarsSpec: ironBarsSpecForPayload
+        ironBarsSpec: ironBarsSpecForPayload,
+        usedDistortingMirror:
+          !!(densityPicker && densityPicker.value === STYLE_DISTORTING_MIRROR),
+        distortMirrorLevel:
+          densityPicker && densityPicker.value === STYLE_DISTORTING_MIRROR
+            ? getDistortMirrorLevel()
+            : 0
       };
     } else {
       if (videoProgressBar) videoProgressBar.style.width = '100%';
@@ -4642,7 +4993,13 @@ snapBtn.addEventListener('click', async () => {
         previewRows: vf.rows,
         frameCount: VIDEO_FRAME_COUNT,
         fps: VIDEO_FPS,
-        durationMs: VIDEO_DURATION_MS
+        durationMs: VIDEO_DURATION_MS,
+        usedDistortingMirror:
+          !!(densityPicker && densityPicker.value === STYLE_DISTORTING_MIRROR),
+        distortMirrorLevel:
+          densityPicker && densityPicker.value === STYLE_DISTORTING_MIRROR
+            ? getDistortMirrorLevel()
+            : 0
       };
     }
 

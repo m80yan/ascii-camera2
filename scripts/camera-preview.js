@@ -339,12 +339,16 @@
 
   /**
    * 预览态下切换 Style：按已保存的亮度格重算 ASCII/GIF，并写回 `pendingGalleryPayload`（提交时即最新样式）。
+   * 若 `usedDistortingMirror`（Photo / Loop 录制时带畸变镜）则锁定，不重算、不改变样式。
    * @returns {void}
    */
   P.applyPreviewStyleFromDensity = function () {
     if (!P.previewCaptureActive || !P.pendingGalleryPayload) return;
-    var chars = /** @type {() => string} */ (C().getChars)();
     var p = P.pendingGalleryPayload;
+    if (p && typeof p === 'object' && p.usedDistortingMirror === true) {
+      return;
+    }
+    var chars = /** @type {() => string} */ (C().getChars)();
     if (p && typeof p === 'object' && p.isPhotoPreview === true && p.lumaCanonical && p.cols && p.rows) {
       var regen = /** @type {unknown} */ (C().regeneratePhotoPreviewFromCanonical);
       if (typeof regen === 'function') {

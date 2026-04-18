@@ -639,11 +639,13 @@
     z-index: 1;
     overflow: hidden;
   }
-  #upload-editor-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 16px; width: 100%; align-items: start; }
+  /**
+   * 行距与 camera `.cam-mode-lock-strip` 的 `row-gap:12px` 一致；下一行 `.upload-frame-mask-shared-row` 有 `margin-top:-4px`，净距 8px（与 camera `frame-mask-slot` 节奏一致）。
+   */
+  #upload-editor-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; width: 100%; align-items: start; }
   .upload-ctl { display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: stretch; }
   /**
-   * Aspect 列：与 camera 一致，避免 `.upload-ctl { gap:4px }` 在下拉与缓冲之间再叠 4px（否则与 `#uploadAspectFrameGroup` 的 8px 合成为 12px）。
-   * 「Aspect 字 → 下拉」仍 4px（`.upload-ctl-label { margin-bottom:4px }`）；「下拉底 → Monocular」仅 `#uploadAspectFrameBuffer` 的 8px（对齐 strip `row-gap:12` + slot `margin-top:-4`）。
+   * Aspect 列：仅标签 + 下拉（与 camera Aspect 列一致）；畸变滑块与框线在 `upload-frame-mask-shared-row` 内同一子网格行。
    */
   .upload-ctl.upload-ctl--aspect {
     align-self: start;
@@ -653,14 +655,41 @@
     margin-bottom: 4px;
   }
   /**
-   * 固定高度缓冲：换 Aspect 时高度不变；框线间距由 buffer 顶距 8px + `#uploadFrameIronRow` 的 margin 控制。
+   * 横跨 `#upload-editor-controls`，内层与上行 **相同 4 列**（`repeat(4, minmax(0,1fr))` + 同列间距）：
+   * 第 1 列 = Style 列宽（畸变滑块）；第 4 列 = Aspect 列宽（`#uploadAspectFrameBuffer`）；第 2–3 列留空，不与 50/50 半行混淆。
+   * `min-height:72px` 稳定行高，减轻 Aspect / DM 显隐时预览区 flex 重分抖动。
+   */
+  .upload-frame-mask-shared-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    column-gap: 16px;
+    row-gap: 0;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: -4px;
+    align-items: start;
+    min-height: 72px;
+  }
+  .upload-dm-slider-col {
+    grid-column: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+  /**
+   * 不再与 `.upload-frame-mask-shared-row` 的 `margin-top:-4px` 叠加上移，避免 Aspect 下拉底 → 首行勾选被压扁；滑块列同步去掉内层 `-4px` 以保持左右列相对对齐。
    */
   #uploadAspectFrameBuffer {
+    grid-column: 4;
     width: 100%;
-    height: 72px;
-    min-height: 72px;
-    max-height: 72px;
-    margin-top: 8px;
+    min-width: 0;
+    margin-top: 0;
+    height: auto;
+    min-height: 0;
+    max-height: none;
     box-sizing: border-box;
     flex-shrink: 0;
     display: flex;
@@ -670,32 +699,112 @@
     overflow: visible;
   }
   /**
-   * frame-group：Monocular + Iron；顶距由 buffer `margin-top:8px` 承担，此处为 0 以免与 flex gap 叠加。
+   * frame-group：与 camera `.frame-mask-cell--primary` 的 `gap:4px` 一致（配合 `.upload-aspect-frame-slot { display:contents }` 作用在两行上）。
    */
   #uploadAspectFrameGroup.upload-aspect-frame-group {
     margin-top: 0;
     display: flex;
     flex-direction: column;
+    gap: 4px;
     width: 100%;
-    flex: 1;
+    flex: 0 1 auto;
     min-height: 0;
     box-sizing: border-box;
   }
-  /** Iron Bars 行：`margin-top:4px` = Monocular → Iron（不对 Monocular 设 margin）。 */
+  /** Iron Bars：纵向间距由 `#uploadAspectFrameGroup` 的 `gap` 承担 */
   #uploadFrameIronRow {
-    margin-top: 4px;
+    margin-top: 0;
   }
+  /**
+   * 与 camera `.frame-mask-cell--primary` 一致：`gap:4px` 作用在两行 `.upload-frame-mask-row` 之间（非 slot 外框之间）。
+   * `display: contents` 使 slot 不参与盒布局，1:1 时 Monocular / Iron Bars 勾选块的纵向间距与 Camera 同为 4px。
+   */
   .upload-aspect-frame-slot {
-    min-height: 0;
-    width: 100%;
-    flex-shrink: 0;
-  }
-  .upload-aspect-frame-slot .upload-frame-mask-row {
-    min-height: 24px;
-    box-sizing: border-box;
+    display: contents;
   }
   .upload-ctl-label { font-size: 11px; opacity: 0.55; letter-spacing: 1px; text-align: left; width: 100%; }
   .upload-ctl select { width: 100%; background: #111; border: 1px solid rgba(0,255,65,0.3); color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; padding: 6px 8px; cursor: pointer; box-sizing: border-box; }
+  /** Distorting Mirror（Upload）：与 camera `#distortMirrorSlider` / Loop 轨同视觉；十二档；`[hidden]` 不占位 */
+  #uploadDistortMirrorSliderWrap[hidden] {
+    display: none !important;
+  }
+  /**
+   * 与 `#uploadAspectFrameBuffer` 一致取消内层 `margin-top:-4px`，避免与共享行 `-4px` 叠加；与右侧 checkbox 列同基准对齐。
+   */
+  #uploadDistortMirrorSliderWrap {
+    width: 100%;
+    max-width: 100%;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    padding: 0 2px;
+    margin-top: -4px;
+  }
+  #uploadDistortMirrorSlider {
+    width: 100%;
+    max-width: 100%;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    cursor: pointer;
+    background: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    --loop-cover-n: 12;
+  }
+  #uploadDistortMirrorSlider:focus {
+    outline: 1px solid rgba(0, 255, 65, 0.45);
+    outline-offset: 1px;
+  }
+  #uploadDistortMirrorSlider:focus:not(:focus-visible) {
+    outline: none;
+  }
+  #uploadDistortMirrorSlider::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 6px;
+    border-radius: 0;
+    border: none;
+    background-color: #ffffff;
+    background-image: repeating-linear-gradient(
+      to right,
+      #0a0a0a 0 1px,
+      transparent 1px calc(100% / max(1, calc(var(--loop-cover-n) - 1)))
+    );
+  }
+  #uploadDistortMirrorSlider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -3px;
+    background: #00ff41;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  #uploadDistortMirrorSlider::-moz-range-track {
+    width: 100%;
+    height: 6px;
+    border-radius: 0;
+    border: none;
+    background-color: #ffffff;
+    background-image: repeating-linear-gradient(
+      to right,
+      #0a0a0a 0 1px,
+      transparent 1px calc(100% / max(1, calc(var(--loop-cover-n) - 1)))
+    );
+  }
+  #uploadDistortMirrorSlider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: #00ff41;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  #uploadDistortMirrorSlider::-moz-focus-outer {
+    border: 0;
+  }
   /**
    * 与 camera.html Flash / frame 行同款 `.flash-switch`（仅作用于上传弹窗）。
    */
@@ -738,8 +847,18 @@
     outline-offset: 2px;
   }
   #upload-modal-inner .flash-switch-label { line-height: 1; }
+  /**
+   * 与 camera `frame-mask-row` + `.ctl-stack` 一致：列方向 flex 行盒，高度贴紧唯一子项 label，避免块级行盒 + inline-flex 的 baseline/line-box 垫高。
+   * 父级 `#uploadAspectFrameGroup { gap:4px }` 不变；缩小行盒后两枚 checkbox 方块之间的视觉间距与 Camera 一致。
+   */
   .upload-frame-mask-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    min-width: 0;
     min-height: 0;
+    box-sizing: border-box;
   }
   #upload-frame-mask-row[hidden],
   #uploadFrameIronRow[hidden] {
@@ -749,6 +868,11 @@
   .upload-frame-mask-row .upload-frame-mask-flash-switch {
     width: 100%;
     justify-content: flex-start;
+  }
+  /**
+   * 1:1 仅微调首行内 Monocular 的 label（不移动 `#uploadAspectFrameBuffer`、不改行间 gap）。
+   */
+  #uploadAspectFrameGroup:has(#uploadFrameIronCell:not([hidden])) #upload-frame-mask-row .upload-frame-mask-flash-switch {
   }
   @media (max-width: 640px) {
     #upload-editor-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1016,6 +1140,7 @@
             <option value="simple">Simple</option>
             <option value="blocks">Blocks</option>
             <option value="binary">Binary</option>
+            <option value="distortingMirror">Distorting Mirror</option>
           </select>
         </div>
         <div class="upload-ctl">
@@ -1047,6 +1172,21 @@
             <option value="4:3">4:3</option>
             <option value="3:4">3:4 (Portrait)</option>
           </select>
+        </div>
+        <div class="upload-frame-mask-shared-row" id="uploadFrameMaskSharedRow">
+          <div class="upload-dm-slider-col">
+            <div id="uploadDistortMirrorSliderWrap" hidden aria-hidden="true">
+              <input
+                type="range"
+                id="uploadDistortMirrorSlider"
+                min="0"
+                max="11"
+                step="1"
+                value="0"
+                aria-label="Distorting mirror intensity"
+              />
+            </div>
+          </div>
           <div id="uploadAspectFrameBuffer">
             <div id="uploadAspectFrameGroup" class="upload-aspect-frame-group">
               <div id="uploadFramePrimaryCell" class="upload-aspect-frame-slot">
@@ -1244,6 +1384,8 @@ const CHAR_SETS = {
   blocks:   '\u2588\u2593\u2592\u2591 ',
   binary:   '\u2588\u2591 '
 };
+/** Style 下拉：畸变镜（非 `CHAR_SETS` 键；字集见 {@link getUploadCharSet}），与 camera `STYLE_DISTORTING_MIRROR` 一致 */
+const STYLE_DISTORTING_MIRROR = 'distortingMirror';
 const gallery = document.getElementById('gallery');
 const empty = document.getElementById('empty');
 const lightbox = document.getElementById('lightbox');
@@ -1271,6 +1413,10 @@ let uploadModalOpenerEl = null;
 const uploadSrcImg = document.getElementById('upload-src-img');
 const uploadPreviewPre = document.getElementById('upload-preview-pre');
 const uploadDensity = document.getElementById('upload-density');
+const uploadDistortMirrorSliderWrap = document.getElementById('uploadDistortMirrorSliderWrap');
+const uploadDistortMirrorSlider = /** @type {HTMLInputElement | null} */ (
+  document.getElementById('uploadDistortMirrorSlider')
+);
 const uploadColor = document.getElementById('upload-color');
 const uploadCols = document.getElementById('upload-cols');
 const uploadAspect = document.getElementById('upload-aspect');
@@ -1475,6 +1621,7 @@ uploadInput.addEventListener('change', (e) => {
       uploadModal.setAttribute('aria-hidden', 'false');
       lastUploadAspectForFrameMask = uploadAspect.value;
       updateUploadFrameMaskUi();
+      syncUploadDistortMirrorSliderVisibility();
       renderUploadPreview();
     };
     uploadSrcImg.src = /** @type {string} */ (ev.target.result);
@@ -1483,7 +1630,13 @@ uploadInput.addEventListener('change', (e) => {
   uploadInput.value = '';
 });
 
-uploadDensity.addEventListener('change', () => renderUploadPreview());
+uploadDensity.addEventListener('change', () => {
+  syncUploadDistortMirrorSliderVisibility();
+  renderUploadPreview();
+});
+if (uploadDistortMirrorSlider) {
+  uploadDistortMirrorSlider.addEventListener('input', () => renderUploadPreview());
+}
 uploadColor.addEventListener('change', () => renderUploadPreview());
 uploadCols.addEventListener('change', () => renderUploadPreview());
 
@@ -1643,12 +1796,141 @@ function closeUploadModal() {
   uploadModal.setAttribute('aria-hidden', 'true');
   uploadSrcImg.removeAttribute('src');
   uploadPreviewPre.textContent = '';
+  if (uploadDistortMirrorSlider) uploadDistortMirrorSlider.value = '0';
+  syncUploadDistortMirrorSliderVisibility();
+}
+
+/**
+ * 畸变镜强度 0…11（Upload；`#uploadDistortMirrorSlider`），与 camera `getDistortMirrorLevel` 一致。
+ * @returns {number}
+ */
+function getUploadDistortMirrorLevel() {
+  if (!uploadDistortMirrorSlider) return 0;
+  var v = parseInt(uploadDistortMirrorSlider.value, 10);
+  if (!Number.isFinite(v)) return 0;
+  return Math.min(11, Math.max(0, v));
+}
+
+/**
+ * Distorting Mirror：滑块显隐（与 camera `syncDistortMirrorSliderVisibility` 的 Photo 分支一致）。
+ * @returns {void}
+ */
+function syncUploadDistortMirrorSliderVisibility() {
+  if (!uploadDistortMirrorSliderWrap || !uploadDistortMirrorSlider || !uploadDensity) return;
+  var isDm = uploadDensity.value === STYLE_DISTORTING_MIRROR;
+  if (isDm) {
+    uploadDistortMirrorSliderWrap.hidden = false;
+    uploadDistortMirrorSliderWrap.setAttribute('aria-hidden', 'false');
+    uploadDistortMirrorSlider.disabled = false;
+  } else {
+    uploadDistortMirrorSliderWrap.hidden = true;
+    uploadDistortMirrorSliderWrap.setAttribute('aria-hidden', 'true');
+    uploadDistortMirrorSlider.disabled = true;
+  }
+}
+
+/**
+ * 水平方向镜面反射，将任意实数 x 映射到 [0, width-1]（三角折返）。与 camera `mirrorSampleXIntoRange` 相同。
+ * @param {number} x
+ * @param {number} width
+ * @returns {number}
+ */
+function mirrorSampleXIntoRangeUpload(x, width) {
+  if (width <= 1) return 0;
+  var max = width - 1;
+  var t = x;
+  var i = 0;
+  while ((t < 0 || t > max) && i < 64) {
+    if (t < 0) {
+      t = -t;
+    } else {
+      t = 2 * max - t;
+    }
+    i++;
+  }
+  if (t < 0) t = 0;
+  if (t > max) t = max;
+  return t;
+}
+
+/**
+ * @param {Uint8ClampedArray} d
+ * @param {number} w
+ * @param {number} h
+ * @param {number} sx
+ * @param {number} sy
+ * @param {number} cOff
+ * @returns {number}
+ */
+function sampleBilinearDistortUpload(d, w, h, sx, sy, cOff) {
+  if (sx < 0 || sy < 0 || sx >= w - 1e-6 || sy >= h - 1e-6) return 0;
+  var x0 = Math.floor(sx);
+  var y0 = Math.floor(sy);
+  var x1 = Math.min(x0 + 1, w - 1);
+  var y1 = Math.min(y0 + 1, h - 1);
+  var fx = sx - x0;
+  var fy = sy - y0;
+  var i00 = (y0 * w + x0) * 4 + cOff;
+  var i10 = (y0 * w + x1) * 4 + cOff;
+  var i01 = (y1 * w + x0) * 4 + cOff;
+  var i11 = (y1 * w + x1) * 4 + cOff;
+  return (
+    d[i00] * (1 - fx) * (1 - fy) +
+    d[i10] * fx * (1 - fy) +
+    d[i01] * (1 - fx) * fy +
+    d[i11] * fx * fy
+  );
+}
+
+/**
+ * 纵向镜面波纹畸变（canvas 像素域）。与 camera `applyDistortingMirrorToCanvas2d` 算法一致。
+ * @param {CanvasRenderingContext2D} c2d
+ * @param {number} cols
+ * @param {number} rows
+ * @param {number} level 0…11
+ * @returns {void}
+ */
+function applyDistortingMirrorToCanvas2dUpload(c2d, cols, rows, level) {
+  if (level <= 0) return;
+  var lv = Math.min(11, Math.max(1, level));
+  var DISTORT_MIRROR_WAVE_CYCLES = 2;
+  var phase = 0;
+  var freq = (DISTORT_MIRROR_WAVE_CYCLES * 2 * Math.PI) / Math.max(rows - 1, 1);
+  var AMP_MAX_REL = 0.17;
+  var AMP_MIN_REL = 0.012;
+  var ampMinPx = cols * AMP_MIN_REL;
+  var ampMaxPx = cols * AMP_MAX_REL;
+  var u = (lv - 1) / 10;
+  var AMP_CURVE_EXP = 1.65;
+  var ampPx = ampMinPx + (ampMaxPx - ampMinPx) * Math.pow(u, AMP_CURVE_EXP);
+  var img = c2d.getImageData(0, 0, cols, rows);
+  var d = img.data;
+  var out = new Uint8ClampedArray(d.length);
+  var y;
+  var x;
+  for (y = 0; y < rows; y++) {
+    var offsetX = ampPx * Math.sin(freq * y + phase);
+    for (x = 0; x < cols; x++) {
+      var sx = mirrorSampleXIntoRangeUpload(x + offsetX, cols);
+      var sy = y;
+      var o = (y * cols + x) * 4;
+      out[o] = sampleBilinearDistortUpload(d, cols, rows, sx, sy, 0);
+      out[o + 1] = sampleBilinearDistortUpload(d, cols, rows, sx, sy, 1);
+      out[o + 2] = sampleBilinearDistortUpload(d, cols, rows, sx, sy, 2);
+      out[o + 3] = sampleBilinearDistortUpload(d, cols, rows, sx, sy, 3);
+    }
+  }
+  img.data.set(out);
+  c2d.putImageData(img, 0, 0);
 }
 
 /**
  * @returns {string}
  */
 function getUploadCharSet() {
+  if (uploadDensity.value === STYLE_DISTORTING_MIRROR) {
+    return CHAR_SETS.detailed;
+  }
   return CHAR_SETS[uploadDensity.value] || CHAR_SETS.detailed;
 }
 
@@ -1664,6 +1946,19 @@ function getUploadAspectNumber() {
   if (v === '3:4') return 3 / 4;
   if (v === '1:1') return 1;
   return 1;
+}
+
+/**
+ * Upload 预览专用：在 Resolution 基准列数上略增有效列数，减轻宽画幅下 contain 缩放后两侧留白。
+ * 仅当 Aspect 为 16:9 时乘以约 1.12；1:1、3:4、4:3、free 等不改变。保存画廊仍用基准列数。
+ * @param {number} baseCols Resolution 下拉解析值
+ * @returns {number}
+ */
+function getUploadPreviewEffectiveCols(baseCols) {
+  if (!uploadAspect || uploadAspect.value !== '16:9') return baseCols;
+  var b = Math.max(1, Math.floor(baseCols));
+  var n = Math.round(b * 1.12);
+  return Math.max(1, Math.min(200, n));
 }
 
 /**
@@ -2619,7 +2914,8 @@ function renderUploadPreview() {
     hideUploadUploadFrameMaskCanvas();
     return '';
   }
-  const cols = parseInt(uploadCols.value, 10) || 96;
+  const baseCols = parseInt(uploadCols.value, 10) || 96;
+  const cols = getUploadPreviewEffectiveCols(baseCols);
   /** 预览不烘焙框线，由 Canvas 遮罩动画（与 camera 实时取景一致） */
   const ascii = imageToAscii(
     uploadSrcImg,
@@ -2746,6 +3042,12 @@ function imageToAscii(img, cols, forcedAspect, chars, frameMaskKind, bakeIronBar
     }
   }
   c.drawImage(img, sx, sy, sw, sh, 0, 0, cols, rows);
+  if (uploadDensity && uploadDensity.value === STYLE_DISTORTING_MIRROR) {
+    var dmLv = getUploadDistortMirrorLevel();
+    if (dmLv > 0) {
+      applyDistortingMirrorToCanvas2dUpload(c, cols, rows, dmLv);
+    }
+  }
   const pixels = c.getImageData(0, 0, cols, rows).data;
   const luma = new Float32Array(cols * rows);
   for (let y = 0; y < rows; y++) {
