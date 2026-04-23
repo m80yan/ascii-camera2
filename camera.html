@@ -1326,14 +1326,33 @@ const VIDEO_POST_RECORD_FREEZE_MS = 1000;
 const PHOTO_SHUTTER_SOUND_URL = '/public/sounds/shutter.mp3';
 /** Video 录制同期音效（单文件，与约 `VIDEO_DURATION_MS` 同期自然播放） */
 const VIDEO_RECORD_SOUND_URL = '/public/sounds/record.mp3';
+/** 整段约 3s、每秒一拍，与显示 2→1→0 对齐；显示「2」时起播一次，不按步重播 */
+const COUNTDOWN_BEEP_SOUND_URL = '/public/sounds/countdown-beep.mp3';
+/** 开屏 code-rain 环境雨（仅离线 intro；懒加载单例） */
+const MATRIX_RAIN_AMBIENCE_SOUND_URL = '/public/sounds/matrix-rain-ambience.mp3';
 
 const PHOTO_SHUTTER_VOLUME = 0.5;
 const VIDEO_RECORD_VOLUME = 0.5;
+const COUNTDOWN_BEEP_VOLUME = 0.5;
+/** 背景级，避免压过快门 / 倒计时音 */
+const MATRIX_RAIN_AMBIENCE_VOLUME = 0.22;
 
 /** @type {HTMLAudioElement | null} */
 let photoShutterAudio = null;
 /** @type {HTMLAudioElement | null} */
 let videoRecordAudio = null;
+/** @type {HTMLAudioElement | null} */
+let countdownBeepAudio = null;
+/** @type {AudioContext | null} */
+let matrixRainAmbienceAudioContext = null;
+/** @type {AudioBuffer | null} */
+let matrixRainAmbienceBuffer = null;
+/** @type {Promise<AudioBuffer | null> | null} */
+let matrixRainAmbienceDecodePromise = null;
+/** @type {GainNode | null} */
+let matrixRainAmbienceGainNode = null;
+/** @type {AudioBufferSourceNode | null} */
+let matrixRainAmbienceSourceNode = null;
 
 /**
  * 懒创建并复用快门 `Audio`，`preload` 预加载。
@@ -1367,6 +1386,225 @@ function getVideoRecordAudio() {
     }
   }
   return videoRecordAudio;
+}
+
+/**
+ * 懒创建并复用倒计时整段 `Audio`（单文件多拍，与 2/1/0 三秒对齐）。
+ * @returns {HTMLAudioElement | null}
+ */
+function getCountdownBeepAudio() {
+  if (!countdownBeepAudio) {
+    try {
+      countdownBeepAudio = new Audio(COUNTDOWN_BEEP_SOUND_URL);
+      countdownBeepAudio.preload = 'auto';
+      countdownBeepAudio.volume = COUNTDOWN_BEEP_VOLUME;
+    } catch (e) {
+      return null;
+    }
+  }
+  return countdownBeepAudio;
+}
+
+/**
+ * 在用户手势内预热倒计时整段音频，避免约 4s 后 `play()` 被浏览器拒绝。
+ * @returns {void}
+ */
+function primeCountdownBeepAudioInUserGesture() {
+  var a = getCountdownBeepAudio();
+  if (!a) return;
+  try {
+    var v = a.volume;
+    a.volume = 0;
+    a.currentTime = 0;
+    var p = a.play();
+    if (p && typeof p.then === 'function') {
+      p.then(function () {
+        try {
+          a.pause();
+          a.currentTime = 0;
+          a.volume = v;
+        } catch (e2) {}
+      }).catch(function () {
+        try {
+          a.volume = v;
+        } catch (e3) {}
+      });
+    } else {
+      try {
+        a.volume = v;
+      } catch (e4) {}
+    }
+  } catch (e) {
+    try {
+      a.volume = COUNTDOWN_BEEP_VOLUME;
+    } catch (e5) {}
+  }
+}
+
+/**
+ * 从文件头起播整段倒计时音（约 3s、三拍）；仅在显示「2」时调用一次，与 2/1/0 对齐。
+ * 失败不抛、不影响倒计时。
+ * @returns {void}
+ */
+function playCountdownSequenceAudioFromStart() {
+  var a = getCountdownBeepAudio();
+  if (!a) return;
+  try {
+    a.currentTime = 0;
+    var p = a.play();
+    if (p && typeof p.then === 'function') {
+      p.catch(function () {});
+    }
+  } catch (e) {}
+}
+
+/**
+ * 确保 `AudioContext` 存在（仅矩阵雨环境音使用，与快门等 `<audio>` 隔离）。
+ * @returns {AudioContext | null}
+ */
+function ensureMatrixRainAmbienceAudioContext() {
+  if (matrixRainAmbienceAudioContext) return matrixRainAmbienceAudioContext;
+  try {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    matrixRainAmbienceAudioContext = new AC();
+    return matrixRainAmbienceAudioContext;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 懒解码矩阵雨环境音为 `AudioBuffer`（仅一次；失败返回 `null`）。
+ * @returns {Promise<AudioBuffer | null>}
+ */
+function ensureMatrixRainAmbienceBufferDecoded() {
+  if (matrixRainAmbienceBuffer) {
+    return Promise.resolve(matrixRainAmbienceBuffer);
+  }
+  if (matrixRainAmbienceDecodePromise) {
+    return matrixRainAmbienceDecodePromise;
+  }
+  matrixRainAmbienceDecodePromise = (function () {
+    var ctx = ensureMatrixRainAmbienceAudioContext();
+    if (!ctx) {
+      return Promise.resolve(null);
+    }
+    return fetch(MATRIX_RAIN_AMBIENCE_SOUND_URL)
+      .then(function (res) {
+        if (!res.ok) return null;
+        return res.arrayBuffer();
+      })
+      .then(function (ab) {
+        if (!ab) return Promise.resolve(null);
+        return new Promise(function (resolve, reject) {
+          try {
+            ctx.decodeAudioData(
+              ab.slice(0),
+              function (buf) {
+                resolve(buf);
+              },
+              reject
+            );
+          } catch (e) {
+            reject(e);
+          }
+        });
+      })
+      .then(function (buf) {
+        if (buf) matrixRainAmbienceBuffer = buf;
+        return buf;
+      })
+      .catch(function () {
+        matrixRainAmbienceBuffer = null;
+        return null;
+      })
+      .then(function (result) {
+        matrixRainAmbienceDecodePromise = null;
+        return result;
+      });
+  })();
+  return matrixRainAmbienceDecodePromise;
+}
+
+/**
+ * 连接常驻 `GainNode`（音量与快门路径独立）。
+ * @param {AudioContext} ctx
+ * @returns {GainNode | null}
+ */
+function ensureMatrixRainAmbienceGainNode(ctx) {
+  if (matrixRainAmbienceGainNode && matrixRainAmbienceGainNode.context === ctx) {
+    matrixRainAmbienceGainNode.gain.value = MATRIX_RAIN_AMBIENCE_VOLUME;
+    return matrixRainAmbienceGainNode;
+  }
+  try {
+    var g = ctx.createGain();
+    g.gain.value = MATRIX_RAIN_AMBIENCE_VOLUME;
+    g.connect(ctx.destination);
+    matrixRainAmbienceGainNode = g;
+    return g;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 在无 `stream` 的 code-rain intro 中循环播放环境雨（Web Audio `AudioBufferSourceNode.loop`）；已在播则不重开。
+ * @returns {void}
+ */
+function startMatrixRainAmbiencePlay() {
+  if (stream) return;
+  if (matrixRainAmbienceSourceNode) return;
+  ensureMatrixRainAmbienceBufferDecoded().then(function (buf) {
+    if (!buf || stream) return;
+    if (matrixRainAmbienceSourceNode) return;
+    var ctx = ensureMatrixRainAmbienceAudioContext();
+    if (!ctx) return;
+    var gain = ensureMatrixRainAmbienceGainNode(ctx);
+    if (!gain) return;
+    var resumeP =
+      ctx.state === 'suspended' && typeof ctx.resume === 'function' ? ctx.resume() : Promise.resolve();
+    resumeP
+      .catch(function () {})
+      .then(function () {
+        if (stream || matrixRainAmbienceSourceNode) return;
+        var src;
+        try {
+          src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.loop = true;
+          src.connect(gain);
+          matrixRainAmbienceSourceNode = src;
+          src.start(0);
+        } catch (e) {
+          matrixRainAmbienceSourceNode = null;
+          try {
+            if (src) src.disconnect();
+          } catch (e2) {}
+        }
+      });
+  });
+}
+
+/**
+ * 离开 code-rain intro 时停止 `AudioBufferSourceNode` 并挂起上下文，避免叠层或后台续播。
+ * @returns {void}
+ */
+function stopMatrixRainAmbience() {
+  var src = matrixRainAmbienceSourceNode;
+  matrixRainAmbienceSourceNode = null;
+  if (src) {
+    try {
+      src.stop(0);
+    } catch (e) {}
+    try {
+      src.disconnect();
+    } catch (e2) {}
+  }
+  var ctx = matrixRainAmbienceAudioContext;
+  if (ctx && ctx.state === 'running' && typeof ctx.suspend === 'function') {
+    ctx.suspend().catch(function () {});
+  }
 }
 
 /**
@@ -3872,6 +4110,7 @@ function startRequestRainEffect() {
   requestRainCanvas.classList.add('ascii-request-rain-canvas--visible');
   if (requestRainRaf != null) cancelAnimationFrame(requestRainRaf);
   requestRainRaf = requestAnimationFrame(requestRainTick);
+  startMatrixRainAmbiencePlay();
 }
 
 /**
@@ -3881,6 +4120,7 @@ function startRequestRainEffect() {
 function stopRequestRainEffectFade() {
   if (!requestRainCanvas) return;
   var gen = ++requestRainFadeGen;
+  stopMatrixRainAmbience();
   if (requestRainRaf != null) {
     cancelAnimationFrame(requestRainRaf);
     requestRainRaf = null;
@@ -3918,6 +4158,7 @@ function stopRequestRainEffectFade() {
  */
 function abortRequestRainEffect() {
   requestRainFadeGen++;
+  stopMatrixRainAmbience();
   if (!requestRainCanvas) return;
   if (requestRainRaf != null) {
     cancelAnimationFrame(requestRainRaf);
@@ -4869,9 +5110,10 @@ startBtn.addEventListener('click', async () => {
 });
 
 /**
- * 3s 倒计时（按钮 3→2→1）；完成后进入本地预览，不自动上传。
- * Photo：最后一秒开闪，该秒结束后关闪再抓拍（行为不变）。
- * Video：最后一秒开始时开闪（比录制早 1s，作同步缓冲），常亮共 3s（1s 倒计时末 + 2s 录制），录制结束关闪。
+ * 倒计时：按钮 3（静音 1s）→2→1→0（显示「2」时起播整段 3s 倒计时音，三拍对齐 2/1/0）→抓拍。
+ * 完成后进入本地预览，不自动上传。
+ * Photo：最后一整秒（显示「0」）开闪，该秒结束后关闪再快门。
+ * Video：最后一整秒（「0」）开始时开闪，常亮共 3s（1s 倒计时末 + 2s 录制），录制结束关闪。
  */
 snapBtn.addEventListener('click', async () => {
   if (!stream || snapCountdownActive) return;
@@ -4891,15 +5133,19 @@ snapBtn.addEventListener('click', async () => {
   const useFlash = flashToggle.checked;
   if (!videoMode) primePhotoShutterAudioInUserGesture();
   else primeVideoRecordAudioInUserGesture();
+  primeCountdownBeepAudioInUserGesture();
   try {
-    for (let n = 3; n >= 1; n--) {
+    for (let n = 3; n >= 0; n--) {
       snapBtn.textContent = String(n);
-      if (useFlash && n === 1) {
+      if (n === 2) {
+        playCountdownSequenceAudioFromStart();
+      }
+      if (useFlash && n === 0) {
         AsciiCameraUi.layoutFlashOutsideStrips();
         if (flashOutsideRoot) flashOutsideRoot.classList.add('on');
       }
       await sleep(1000);
-      if (useFlash && n === 1 && flashOutsideRoot && !videoMode) {
+      if (useFlash && n === 0 && flashOutsideRoot && !videoMode) {
         flashOutsideRoot.classList.remove('on');
       }
     }

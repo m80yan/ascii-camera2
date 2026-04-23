@@ -169,6 +169,22 @@
     letter-spacing: 0;
     flex-shrink: 0;
   }
+  /**
+   * 共享打开：飞层叠在缩略图位后隐藏原图区与卡片的绿框/底栏条，避免与飞层叠出「双线框」或残留绿边。
+   */
+  .photo-card.photo-card--fly-source-suppressed {
+    border-color: transparent;
+    transition: none;
+  }
+  .photo-card.photo-card--fly-source-suppressed:hover {
+    border-color: transparent;
+  }
+  .photo-card.photo-card--fly-source-suppressed .photo-thumb {
+    visibility: hidden;
+  }
+  .photo-card.photo-card--fly-source-suppressed .photo-meta {
+    visibility: hidden;
+  }
   .photo-meta {
     flex: 0 0 auto;
     padding: 8px 10px;
@@ -293,6 +309,16 @@
     display: block;
   }
   /**
+   * 共享打开：首段背板极弱，保留画廊可读；与飞层 transform 同时加 `lightbox--open-flight-backdrop-reveal` 渐入至正常遮罩。
+   */
+  #lightbox.open.lightbox--open-flight-soft-backdrop {
+    background: rgba(0, 0, 0, 0.07);
+  }
+  #lightbox.open.lightbox--open-flight-soft-backdrop.lightbox--open-flight-backdrop-reveal {
+    background: rgba(0, 0, 0, 0.92);
+    transition: background 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  /**
    * 居中图片区：尺寸随内容变，不参与导航按钮的定位计算。
    */
   .lightbox-stage {
@@ -306,6 +332,9 @@
     justify-content: center;
     z-index: 1;
     pointer-events: auto;
+    /** 为底部固定操作条留出空间，避免大图与按钮叠压 */
+    padding-bottom: 56px;
+    box-sizing: border-box;
   }
   /**
    * 导航层：全幅覆盖；实际按键落在 `.lightbox-nav-bar` 内，宽度封顶避免超宽屏两侧过远。
@@ -337,18 +366,21 @@
     align-items: center;
     pointer-events: none;
   }
+  /**
+   * 仅包裹大图：无绿框卡片感，与系统相册式「图为主」一致。
+   */
   #lightbox-inner {
     max-width: 90vw;
-    max-height: 90vh;
-    background: #000;
-    border: 1px solid rgba(0,255,65,0.2);
-    border-radius: 4px;
-    padding: 16px;
+    max-height: 100%;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
   }
   /**
    * 灯箱主内容区：仅包裹居中图片，与两侧导航分离。
@@ -363,6 +395,7 @@
     width: 100%;
   }
   #lightbox-scroll {
+    position: relative;
     flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
@@ -401,16 +434,114 @@
     cursor: not-allowed;
   }
   #lightbox-pre { font-family: monospace, ui-monospace, "Courier New", monospace; letter-spacing: 0; white-space: pre; margin: 0; display: inline-block; width: max-content; max-width: 100%; line-height: 1; cursor: default; }
-  #lightbox-footer {
+  /**
+   * 共享打开：离屏测量用，与 `#lightbox-pre` 同排版约束，避免飞行期间真实 pre 承载全文 reflow。
+   */
+  #lightbox-pre-measure {
+    position: absolute;
+    left: -32000px;
+    top: 0;
+    visibility: hidden;
+    pointer-events: none;
+    margin: 0;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    letter-spacing: 0;
+    white-space: pre;
+    display: inline-block;
+    width: max-content;
+    max-width: 100%;
+    line-height: 1;
+    cursor: default;
+  }
+  /**
+   * 画廊 ↔ 灯箱共享元素过渡：固定层上的 shell 仅做 transform 动画；打开飞行期间真实 `#lightbox-pre` 可保持空，由 `#lightbox-pre-measure` 承担测量。
+   */
+  #lightbox-shared-fly {
+    position: fixed;
+    inset: 0;
+    z-index: 110;
+    pointer-events: none;
+    overflow: visible;
+  }
+  .lightbox-shared-fly__shell {
+    position: absolute;
+    left: 0;
+    top: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    background: #000;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 255, 65, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    will-change: transform;
+    box-shadow: 0 6px 28px rgba(0, 0, 0, 0.45);
+  }
+  /**
+   * 仅画廊→灯箱打开：`#lightbox-shared-fly` 挂在 body 下，非 `#lightbox` 后代，故必须用 fly 根上的类命中 shell。
+   * 关闭路径不传 hideChrome，不添加 `lightbox-shared-fly--open-plain`，保留 shell 绿边与阴影。
+   */
+  #lightbox-shared-fly.lightbox-shared-fly--open-plain .lightbox-shared-fly__shell {
+    border: none;
+    border-color: transparent;
+    outline: none;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.1),
+      0 10px 36px rgba(0, 0, 0, 0.42);
+  }
+  .lightbox-shared-fly__shell pre {
+    margin: 0;
+    white-space: pre;
+    pointer-events: none;
+    display: block;
     flex-shrink: 0;
+  }
+  #lightbox-inner.lightbox-inner--fly-handoff {
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+  /**
+   * 共享打开 Phase1：仅飞层图像；底栏与导航隐藏。Phase2 由 JS 加 `lightbox--open-chrome-reveal` 淡入。
+   */
+  #lightbox.lightbox--open-chrome-hidden .lightbox-nav-overlay,
+  #lightbox.lightbox--open-chrome-hidden #lightbox-footer {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: none !important;
+  }
+  @keyframes lightbox-open-chrome-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  #lightbox.lightbox--open-chrome-reveal .lightbox-nav-overlay,
+  #lightbox.lightbox--open-chrome-reveal #lightbox-footer {
+    animation: lightbox-open-chrome-in 0.24s ease-out forwards;
+  }
+  /**
+   * 固定在灯箱视口底部，与主图区域解耦，打开/缩放时不再随 inner 卡片 reflow。
+   */
+  #lightbox-footer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     align-items: center;
     gap: 14px;
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid rgba(0,255,65,0.12);
+    margin: 0;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+    border-top: none;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.45) 55%, transparent 100%);
+    pointer-events: auto;
   }
   #lightbox-like, #lightbox-download-png, #lightbox-open-to-download {
     background: transparent;
@@ -456,6 +587,27 @@
     border-color: rgba(249, 107, 109, 0.8);
   }
   #lightbox-like.lightbox-like--liked:hover { background: rgba(249, 107, 109, 0.12); }
+  /**
+   * 键盘彩蛋：ArrowUp 点赞成功时短 Y 轴抖动（仅 transform，不改变布局）。
+   */
+  @keyframes lightbox-like-shake-y {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    25% {
+      transform: translateY(-5px);
+    }
+    50% {
+      transform: translateY(4px);
+    }
+    75% {
+      transform: translateY(-2px);
+    }
+  }
+  #lightbox-like.lightbox-like--shake-y {
+    animation: lightbox-like-shake-y 0.34s ease-out;
+  }
   #lightbox-download-png:disabled { opacity: 0.55; cursor: wait; }
   /**
    * `#lightbox-download-png` 等与 `[hidden]`：上方共用规则里 `display:inline-flex` 特异性高于 UA 对 `[hidden]` 的 display:none，
@@ -588,26 +740,39 @@
     max-width: 100%;
     overflow: hidden;
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: center;
     box-sizing: border-box;
   }
   /**
-   * 与 camera `.ascii-active-frame`：包住 ASCII 与遮罩画布；限制在 stage 内，与最终绘制尺寸一致。
+   * 与 camera `.ascii-active-frame`：相对定位、铺满 stage 可用区；内部 scale-wrap 负责 contain 缩放（Route B Phase 1）。
    */
   .upload-preview-active-frame {
     position: relative;
-    display: inline-block;
+    display: block;
+    width: 100%;
     max-width: 100%;
-    max-height: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
     overflow: hidden;
-    vertical-align: middle;
     box-sizing: border-box;
+  }
+  /**
+   * 与 camera `.ascii-out-scale-wrap`：固定字格渲染后整体 `scale` 入画幅。
+   */
+  .upload-preview-scale-wrap {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    transform-origin: center center;
+    z-index: 1;
   }
   /**
    * Photo 取景框遮罩：与 camera `.ascii-frame-mask-canvas` 一致（纯黑格、叠于 pre 之上）。
    */
-  /* 宽高由 JS 按 `#upload-preview-pre` 的 offset 盒设置，与可见 ASCII 同参考盒（避免相对 frame 的 100% 与 pre 子像素不一致导致四边漏亮） */
+  /* 宽高/定位由 JS 按 post-scale `#upload-preview-pre` 的 getBoundingClientRect（Route B Phase 1） */
   #upload-modal-inner .upload-upload-frame-mask-canvas {
     position: absolute;
     left: 0;
@@ -621,23 +786,19 @@
   #upload-modal-inner .upload-upload-frame-mask-canvas.upload-upload-frame-mask-canvas--visible {
     display: block;
   }
-  /* 字号由 JS 按 stage 可用区缩放；max-width 防撑破，overflow 与父级 hidden 双保险 */
+  /* 与 `#gallery-cell-probe` / camera `#ascii-out`：固定 6px 字格；缩放由 `.upload-preview-scale-wrap` 的 transform 承担 */
   #upload-preview-pre {
     font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 6px;
+    line-height: 6px;
     white-space: pre;
     letter-spacing: 0;
     margin: 0;
     display: inline-block;
-    width: max-content;
-    max-width: 100%;
-    max-height: 100%;
     box-sizing: border-box;
-    vertical-align: middle;
-    line-height: 1;
-    flex-shrink: 1;
     position: relative;
     z-index: 1;
-    overflow: hidden;
+    overflow: visible;
   }
   /**
    * 行距与 camera `.cam-mode-lock-strip` 的 `row-gap:12px` 一致；下一行 `.upload-frame-mask-shared-row` 有 `margin-top:-4px`，净距 8px（与 camera `frame-mask-slot` 节奏一致）。
@@ -1127,7 +1288,9 @@
       <div id="upload-preview-wrap">
         <div id="upload-preview-stage">
           <div id="upload-preview-active-frame" class="upload-preview-active-frame">
-            <pre id="upload-preview-pre"></pre>
+            <div id="upload-preview-scale-wrap" class="upload-preview-scale-wrap">
+              <pre id="upload-preview-pre"></pre>
+            </div>
             <canvas id="uploadUploadFrameMaskCanvas" class="upload-upload-frame-mask-canvas" width="1" height="1" aria-hidden="true"></canvas>
           </div>
         </div>
@@ -1230,14 +1393,15 @@
       <div id="lightbox-body" class="lightbox-body">
         <div id="lightbox-scroll">
           <pre id="lightbox-pre"></pre>
+          <pre id="lightbox-pre-measure" aria-hidden="true"></pre>
         </div>
       </div>
-      <div id="lightbox-footer">
-        <button type="button" id="lightbox-like">Like</button>
-        <button type="button" id="lightbox-download-png">Download PNG</button>
-        <button type="button" id="lightbox-open-to-download" hidden aria-hidden="true" title="Opens the full gallery page for this item so you can download">Open to download</button>
-      </div>
     </div>
+  </div>
+  <div id="lightbox-footer">
+    <button type="button" id="lightbox-like">Like</button>
+    <button type="button" id="lightbox-download-png">Download PNG</button>
+    <button type="button" id="lightbox-open-to-download" hidden aria-hidden="true" title="Opens the full gallery page for this item so you can download">Open to download</button>
   </div>
   <div class="lightbox-nav-overlay">
     <div class="lightbox-nav-bar">
@@ -1403,6 +1567,34 @@ let lightboxAsciiAnimTimer = null;
 let lightboxLikeSessionGen = 0;
 /** @type {{ liked: boolean, count: number }} */
 let lightboxLikeUiState = { liked: false, count: 0 };
+/** 键盘彩蛋 ArrowUp：已赞文案用 `1 Liked` / `N Liked`；鼠标路径为 false */
+let lightboxKeyboardLikedLabel = false;
+/** @type {HTMLAudioElement | null} 灯箱边界禁用音（懒加载） */
+let lightboxDisabledSoundAudio = null;
+/** 上次播放禁用音时间戳，防长按连发叠音 */
+let lightboxDisabledSoundLastPlayMs = 0;
+/** 禁用音最小间隔（ms） */
+const LIGHTBOX_DISABLED_SOUND_GAP_MS = 380;
+/** 共享元素 transform 过渡时长（ms） */
+const LIGHTBOX_SHARED_MS = 440;
+/** 共享元素缓动（偏 Photos 系 ease-out） */
+const LIGHTBOX_SHARED_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
+/**
+ * `transitionend` 偶发缺失时兜底超出 CSS duration 的毫秒数；宜明显小于旧版 +120，避免飞层末段「挂住」。
+ */
+const LIGHTBOX_SHARED_FINISH_FALLBACK_MS = 40;
+/** Escape 关闭前 `scrollIntoView` 平滑滚动预留 settle 时间（ms） */
+const LIGHTBOX_ESCAPE_SCROLL_SETTLE_MS = 420;
+/** 取消/串行共享过渡的世代令牌 */
+let lightboxSharedTransitGen = 0;
+/** 网格共享打开飞行期间：推迟点赞 fetch 写回，避免 footer 在动画末段 reflow */
+let lightboxDeferLikeUiForSharedOpen = false;
+/** @type {{ liked: boolean, count: number } | null} */
+let lightboxPendingLikeUiForSharedOpen = null;
+/** 共享打开飞行期间：推迟启动灯箱 GIF 帧循环，避免 `#lightbox-pre` 在飞行末段被改写 */
+let lightboxDeferAsciiAnimForSharedOpen = false;
+/** @type {{ frames: string[], session: number } | null} */
+let lightboxPendingAsciiAnim = null;
 const confirmModal = document.getElementById('confirm-modal');
 const uploadInput = document.getElementById('upload-input');
 const uploadBtn = document.getElementById('upload-btn');
@@ -1412,6 +1604,8 @@ const uploadModal = document.getElementById('upload-modal');
 let uploadModalOpenerEl = null;
 const uploadSrcImg = document.getElementById('upload-src-img');
 const uploadPreviewPre = document.getElementById('upload-preview-pre');
+const uploadPreviewScaleWrap = document.getElementById('upload-preview-scale-wrap');
+const uploadPreviewActiveFrame = document.getElementById('upload-preview-active-frame');
 const uploadDensity = document.getElementById('upload-density');
 const uploadDistortMirrorSliderWrap = document.getElementById('uploadDistortMirrorSliderWrap');
 const uploadDistortMirrorSlider = /** @type {HTMLInputElement | null} */ (
@@ -1433,6 +1627,8 @@ const uploadUploadFrameMaskCtx = uploadUploadFrameMaskCanvas
 /** 与 `imageToAscii` 最近一次采样格一致，供遮罩格网对齐 */
 let uploadPreviewGridCols = 0;
 let uploadPreviewGridRows = 0;
+/** @type {number} Upload 预览 scale 调度 rAF */
+let uploadPreviewScaleRaf = 0;
 /** @type {number} */
 let uploadPhotoFrameMaskEase = 0;
 /**
@@ -1796,6 +1992,7 @@ function closeUploadModal() {
   uploadModal.setAttribute('aria-hidden', 'true');
   uploadSrcImg.removeAttribute('src');
   uploadPreviewPre.textContent = '';
+  if (uploadPreviewScaleWrap) uploadPreviewScaleWrap.style.transform = '';
   if (uploadDistortMirrorSlider) uploadDistortMirrorSlider.value = '0';
   syncUploadDistortMirrorSliderVisibility();
 }
@@ -1960,6 +2157,56 @@ function getUploadPreviewEffectiveCols(baseCols) {
   var n = Math.round(b * 1.12);
   return Math.max(1, Math.min(200, n));
 }
+
+/**
+ * 固定字格下测量 `#upload-preview-pre`，以 `transform: scale` 填入 `.upload-preview-active-frame`（contain，与 camera `updateAsciiOutScale` 同构）。
+ * @returns {void}
+ */
+function updateUploadPreviewScale() {
+  if (!uploadPreviewScaleWrap || !uploadPreviewPre || !uploadPreviewActiveFrame) return;
+  var cw = uploadPreviewActiveFrame.clientWidth;
+  var ch = uploadPreviewActiveFrame.clientHeight;
+  if (cw < 2 || ch < 2) return;
+  uploadPreviewScaleWrap.style.transform = 'translate(-50%, -50%)';
+  void uploadPreviewPre.offsetWidth;
+  var wi = uploadPreviewPre.offsetWidth;
+  var hi = uploadPreviewPre.offsetHeight;
+  if (wi < 1 || hi < 1) return;
+  var s = Math.min(cw / wi, ch / hi);
+  uploadPreviewScaleWrap.style.transform = 'translate(-50%, -50%) scale(' + s + ')';
+  window.requestAnimationFrame(function () {
+    if (
+      uploadUploadFrameMaskCanvas &&
+      uploadUploadFrameMaskCanvas.classList.contains('upload-upload-frame-mask-canvas--visible')
+    ) {
+      drawUploadPhotoFrameMaskAtEase(uploadPhotoFrameMaskEase);
+    }
+  });
+}
+
+/**
+ * 下一帧更新预览缩放，避免与刚写入的 ASCII 不同步。
+ * @returns {void}
+ */
+function scheduleUploadPreviewScale() {
+  if (uploadPreviewScaleRaf) cancelAnimationFrame(uploadPreviewScaleRaf);
+  uploadPreviewScaleRaf = requestAnimationFrame(function () {
+    uploadPreviewScaleRaf = 0;
+    updateUploadPreviewScale();
+  });
+}
+
+(function setupUploadPreviewResizeObserver() {
+  var stage = document.getElementById('upload-preview-stage');
+  if (!stage || stage.dataset.uploadPreviewRo === '1') return;
+  stage.dataset.uploadPreviewRo = '1';
+  var ro = new ResizeObserver(function () {
+    if (uploadModal && uploadModal.classList.contains('open')) {
+      scheduleUploadPreviewScale();
+    }
+  });
+  ro.observe(stage);
+})();
 
 /**
  * 与 camera `getAsciiMaskRowCountForColsExplicit` 相同：铁栅 SSOT 用显式 cellAspect / 画幅比。
@@ -2216,6 +2463,7 @@ function isUploadAsciiMaskLayoutValidForIron(layout) {
   return Wc >= 2 && Hc >= 2;
 }
 
+
 /**
  * 上传比例是否支持框线（与 camera `getPhotoFrameMaskKind` 一致）。
  * @returns {'oval' | 'round' | null}
@@ -2278,13 +2526,15 @@ function updateUploadFrameMaskUi() {
 
 /**
  * 上传预览遮罩与 camera 一致：`layout` 描述 **遮罩 canvas 本地坐标**（0…W × 0…H）。
- * W/H 与 **渲染完成后** `#upload-preview-pre` 的 `offsetWidth`/`offsetHeight`（已按 `#upload-preview-stage` 缩放后的最终显示盒）一致，遮罩与所见 ASCII 同盒。
- * 椭圆与格网均在 canvas 空间从 (0,0) 铺满至 (W,H)，与 camera 中 ascii-out 铺满活动画幅后再做字母框带（此处无字母框，content=整 canvas）同构。
+ * Route B Phase 1：`#upload-preview-pre` 经祖先 `.upload-preview-scale-wrap` 的 `transform: scale` 显示，`offsetWidth/offsetHeight` 不含缩放。
+ * 此处用 **getBoundingClientRect** 取 **最终可见** 像素盒，与所见 ASCII 同盒；`posLeft`/`posTop` 为相对活动画幅的定位。
  * @returns {{
  *   cols: number,
  *   rows: number,
  *   originX: number,
  *   originY: number,
+ *   posLeft: number,
+ *   posTop: number,
  *   cellW: number,
  *   cellH: number,
  *   frameW: number,
@@ -2304,6 +2554,8 @@ function getUploadAsciiMaskGridLayout() {
       rows: 1,
       originX: 0,
       originY: 0,
+      posLeft: 0,
+      posTop: 0,
       cellW: 1,
       cellH: 1,
       frameW: 1,
@@ -2312,23 +2564,29 @@ function getUploadAsciiMaskGridLayout() {
       contentRightX: 1
     };
   }
-  var preW = pre.offsetWidth;
-  var preH = pre.offsetHeight;
-  if (preW < 1 || preH < 1) {
-    preW = 1;
-    preH = 1;
+  var frB = frameEl.getBoundingClientRect();
+  var preB = pre.getBoundingClientRect();
+  var posLeft = preB.left - frB.left;
+  var posTop = preB.top - frB.top;
+  var visW = preB.width;
+  var visH = preB.height;
+  if (visW < 1 || visH < 1) {
+    visW = 1;
+    visH = 1;
   }
   return {
     cols: cols,
     rows: rows,
     originX: 0,
     originY: 0,
-    cellW: preW / cols,
-    cellH: preH / rows,
-    frameW: preW,
-    frameH: preH,
-    contentBottomY: preH,
-    contentRightX: preW
+    posLeft: posLeft,
+    posTop: posTop,
+    cellW: visW / cols,
+    cellH: visH / rows,
+    frameW: visW,
+    frameH: visH,
+    contentBottomY: visH,
+    contentRightX: visW
   };
 }
 
@@ -2386,29 +2644,37 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
   if (!showOval && !showRound && !drawIronBarsLayer) return;
 
   var layout = getUploadAsciiMaskGridLayout();
-  var frameEl = document.getElementById('upload-preview-active-frame');
-  var preEl = uploadPreviewPre;
-  var preLeft = 0;
-  var preTop = 0;
-  if (preEl && frameEl) {
-    if (preEl.offsetParent === frameEl) {
-      preLeft = preEl.offsetLeft;
-      preTop = preEl.offsetTop;
-    } else {
-      var frB = frameEl.getBoundingClientRect();
-      var orB = preEl.getBoundingClientRect();
-      preLeft = orB.left - frB.left;
-      preTop = orB.top - frB.top;
-    }
+  /**
+   * 3:4 Evil Queen：与 camera 一致，遮罩外接盒 = `#upload-preview-active-frame`（椭圆相对整帧），
+   * ASCII 格网为 frame 内 inset（`posLeft`/`posTop` + layout 的 content 宽/高）。1:1 Monocular / Iron：仍为 pre 盒（本步不改）。
+   */
+  var ovalMaskFrameSpace = showOval;
+  var W;
+  var H;
+  if (ovalMaskFrameSpace) {
+    var frameEl = document.getElementById('upload-preview-active-frame');
+    if (!frameEl) return;
+    var frB = frameEl.getBoundingClientRect();
+    W = frB.width;
+    H = frB.height;
+    uploadUploadFrameMaskCanvas.style.left = '0';
+    uploadUploadFrameMaskCanvas.style.top = '0';
+    uploadUploadFrameMaskCanvas.style.width = W + 'px';
+    uploadUploadFrameMaskCanvas.style.height = H + 'px';
+  } else {
+    uploadUploadFrameMaskCanvas.style.left = layout.posLeft + 'px';
+    uploadUploadFrameMaskCanvas.style.top = layout.posTop + 'px';
+    /**
+     * 1:1：右侧仍 +1px 盖水平子像素；竖直在低分辨率下 `visH` 常低估合成下沿，故 **仅增高** +1px（总 H = frameH+2），不对称扩宽。
+     */
+    var upload11MaskRightPad = ap === '1:1' ? 1 : 0;
+    var upload11MaskBottomSlack = ap === '1:1' ? 2 : 0;
+    W = layout.frameW + upload11MaskRightPad;
+    H = layout.frameH + upload11MaskBottomSlack;
+    uploadUploadFrameMaskCanvas.style.width = W + 'px';
+    uploadUploadFrameMaskCanvas.style.height = H + 'px';
   }
-  /** 遮罩 canvas 与可见 `#upload-preview-pre` 同一整数盒：与 camera「格网相对 ascii-out」等价，避免 frame 级 100% 与 pre 不等宽高的四边漏亮 */
-  uploadUploadFrameMaskCanvas.style.left = preLeft + 'px';
-  uploadUploadFrameMaskCanvas.style.top = preTop + 'px';
-  uploadUploadFrameMaskCanvas.style.width = layout.frameW + 'px';
-  uploadUploadFrameMaskCanvas.style.height = layout.frameH + 'px';
   void uploadUploadFrameMaskCanvas.offsetWidth;
-  var W = uploadUploadFrameMaskCanvas.clientWidth || layout.frameW;
-  var H = uploadUploadFrameMaskCanvas.clientHeight || layout.frameH;
   if (W < 2 || H < 2) return;
 
   var dpr = typeof window.devicePixelRatio === 'number' ? window.devicePixelRatio : 1;
@@ -2421,6 +2687,7 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
   ctx.clearRect(0, 0, W, H);
 
   var t = Math.min(1, Math.max(0, ease));
+  /** 整帧画布下仍用 frame 尺度撑开 reveal；椭圆中心/半轴在 Evil Queen 分支另用 content 盒（见下）。 */
   var cx0 = W * 0.5;
   var cy0 = H * 0.5;
   var big = Math.max(W, H) * 2;
@@ -2432,8 +2699,16 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
     a1 = rf;
     b1 = rf;
   } else if (shapeKind === 'oval') {
-    a1 = W * 0.5;
-    b1 = H * 0.5;
+    if (ovalMaskFrameSpace) {
+      /** 画布在 active frame；椭圆与 pre 可见盒同形同心（frame 坐标内），避免 raw flex 框宽高比压扁 Oval。 */
+      cx0 = layout.posLeft + layout.frameW * 0.5;
+      cy0 = layout.posTop + layout.frameH * 0.5;
+      a1 = layout.frameW * 0.5;
+      b1 = layout.frameH * 0.5;
+    } else {
+      a1 = W * 0.5;
+      b1 = H * 0.5;
+    }
   }
   var a;
   var b;
@@ -2475,6 +2750,14 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
   var rhCell = layout.cellH;
   var contentBottomY = layout.contentBottomY;
   var contentRightX = layout.contentRightX;
+  if (ovalMaskFrameSpace) {
+    x0 = layout.posLeft;
+    y0 = layout.posTop;
+    contentRightX = layout.posLeft + layout.contentRightX;
+    contentBottomY = layout.posTop + layout.contentBottomY;
+  }
+  /** 1:1 pre 画布：末列/末行贴齐 W/H + 与 camera 同构的边带 for 循环，封子像素缝；勿用于 Evil Queen（`ovalMaskFrameSpace`）。 */
+  var uploadMaskSeal11 = !ovalMaskFrameSpace && ap === '1:1';
   var x1;
   var y1;
   var x2;
@@ -2487,65 +2770,102 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
       y2 = y0 + (row + 1) * rhCell;
       if (row === layout.rows - 1) {
         y2 = Math.min(y2, contentBottomY);
+        if (uploadMaskSeal11) {
+          y2 = H;
+        }
       }
       for (col = 0; col < layout.cols; col++) {
         x1 = x0 + col * cwCell;
         x2 = x0 + (col + 1) * cwCell;
         if (col === layout.cols - 1) {
           x2 = Math.min(x2, contentRightX);
+          if (uploadMaskSeal11) {
+            x2 = W;
+          }
         }
         fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
       }
     }
     /**
-     * Upload 预览：pre 与 frame 的 `getBoundingClientRect` 常为子像素高；用固定步长 `+= rhCell` / `+= cwCell`
-     * 且 `y < y0 - eps` 会在最后一格与内容边界之间留下未覆盖条带，Evil Queen 椭圆外即现亮边泄漏。
-     * 按实际覆盖段推进（y1=y2 / x1=x2）直至贴齐边界，几何与 camera 一致，仅消除缝隙。
+     * Evil Queen：子像素边带用 while 推进（与 frame 画布一致）。
+     * 1:1 Monocular：与 camera `drawPhotoFrameMaskAtEase` 相同，`eps=0.5` + for 步进，封底/侧漏亮。
      */
-    var edgeEps = 1e-6;
-    y1 = 0;
-    while (y1 < y0 - edgeEps) {
-      y2 = Math.min(y0, y1 + rhCell);
-      x1 = 0;
-      while (x1 < W - edgeEps) {
-        x2 = Math.min(W, x1 + cwCell);
-        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
-        x1 = x2;
-      }
-      y1 = y2;
-    }
-    y1 = contentBottomY;
-    while (y1 < H - edgeEps) {
-      y2 = Math.min(H, y1 + rhCell);
-      x1 = 0;
-      while (x1 < W - edgeEps) {
-        x2 = Math.min(W, x1 + cwCell);
-        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
-        x1 = x2;
-      }
-      y1 = y2;
-    }
-    x1 = 0;
-    while (x1 < x0 - edgeEps) {
-      x2 = Math.min(x0, x1 + cwCell);
+    if (ovalMaskFrameSpace) {
+      var edgeEps = 1e-6;
       y1 = 0;
-      while (y1 < H - edgeEps) {
-        y2 = Math.min(H, y1 + rhCell);
-        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+      while (y1 < y0 - edgeEps) {
+        y2 = Math.min(y0, y1 + rhCell);
+        x1 = 0;
+        while (x1 < W - edgeEps) {
+          x2 = Math.min(W, x1 + cwCell);
+          fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+          x1 = x2;
+        }
         y1 = y2;
       }
-      x1 = x2;
-    }
-    x1 = contentRightX;
-    while (x1 < W - edgeEps) {
-      x2 = Math.min(W, x1 + cwCell);
-      y1 = 0;
+      y1 = contentBottomY;
       while (y1 < H - edgeEps) {
         y2 = Math.min(H, y1 + rhCell);
-        fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+        x1 = 0;
+        while (x1 < W - edgeEps) {
+          x2 = Math.min(W, x1 + cwCell);
+          fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+          x1 = x2;
+        }
         y1 = y2;
       }
-      x1 = x2;
+      x1 = 0;
+      while (x1 < x0 - edgeEps) {
+        x2 = Math.min(x0, x1 + cwCell);
+        y1 = 0;
+        while (y1 < H - edgeEps) {
+          y2 = Math.min(H, y1 + rhCell);
+          fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+          y1 = y2;
+        }
+        x1 = x2;
+      }
+      x1 = contentRightX;
+      while (x1 < W - edgeEps) {
+        x2 = Math.min(W, x1 + cwCell);
+        y1 = 0;
+        while (y1 < H - edgeEps) {
+          y2 = Math.min(H, y1 + rhCell);
+          fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+          y1 = y2;
+        }
+        x1 = x2;
+      }
+    } else if (uploadMaskSeal11) {
+      var eps11 = 0.5;
+      for (y1 = 0; y1 < y0 - eps11; y1 += rhCell) {
+        y2 = Math.min(y0, y1 + rhCell);
+        for (x1 = 0; x1 < W - eps11; x1 += cwCell) {
+          x2 = Math.min(W, x1 + cwCell);
+          fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+        }
+      }
+      for (y1 = contentBottomY; y1 < H - eps11; y1 += rhCell) {
+        y2 = Math.min(H, y1 + rhCell);
+        for (x1 = 0; x1 < W - eps11; x1 += cwCell) {
+          x2 = Math.min(W, x1 + cwCell);
+          fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+        }
+      }
+      for (x1 = 0; x1 < x0 - eps11; x1 += cwCell) {
+        x2 = Math.min(x0, x1 + cwCell);
+        for (y1 = 0; y1 < H - eps11; y1 += rhCell) {
+          y2 = Math.min(H, y1 + rhCell);
+          fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+        }
+      }
+      for (x1 = contentRightX; x1 < W - eps11; x1 += cwCell) {
+        x2 = Math.min(W, x1 + cwCell);
+        for (y1 = 0; y1 < H - eps11; y1 += rhCell) {
+          y2 = Math.min(H, y1 + rhCell);
+          fillMaskCellIfOutsideEllipse(x1, y1, x2, y2);
+        }
+      }
     }
   }
 
@@ -2582,6 +2902,9 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
           x2 = x0 + (col + 1) * cwCell;
           if (col === layout.cols - 1) {
             x2 = Math.min(x2, contentRightX);
+            if (uploadMaskSeal11) {
+              x2 = W;
+            }
           }
           ctx.fillRect(
             Math.floor(x1),
@@ -2596,6 +2919,9 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
         y2 = y0 + (row + 1) * rhCell;
         if (row === layout.rows - 1) {
           y2 = Math.min(y2, contentBottomY);
+          if (uploadMaskSeal11) {
+            y2 = H;
+          }
         }
         for (col = 0; col < layout.cols; col++) {
           if (!isIronBarMaskCellFromSpec(col, row, specIron)) continue;
@@ -2603,6 +2929,9 @@ function drawUploadPhotoFrameMaskAtEase(ease) {
           x2 = x0 + (col + 1) * cwCell;
           if (col === layout.cols - 1) {
             x2 = Math.min(x2, contentRightX);
+            if (uploadMaskSeal11) {
+              x2 = W;
+            }
           }
           ctx.fillRect(
             Math.floor(x1),
@@ -2900,12 +3229,13 @@ function galleryLuminanceToAscii(luma, cols, rows, chars) {
 
 /**
  * 根据当前选项从上传图生成 ASCII，并写入预览；返回生成的字符串。
- * 缩放：用基准字号下 pre 的实测宽高比计算字号，避免块字符与探测字符字宽不一致导致比例失真。
+ * 显示：固定 6px 字格 + `.upload-preview-scale-wrap` 的 transform 缩放入画幅（Route B Phase 1）。
  * @returns {string}
  */
 function renderUploadPreview() {
   if (!uploadSrcImg.naturalWidth) {
     uploadPreviewPre.textContent = '';
+    if (uploadPreviewScaleWrap) uploadPreviewScaleWrap.style.transform = '';
     cancelUploadPhotoFrameMaskAnimation();
     uploadPhotoFrameMaskEase = 0;
     uploadIronBarsRevealEase = 0;
@@ -2926,44 +3256,10 @@ function renderUploadPreview() {
   );
   uploadPreviewPre.textContent = ascii;
   uploadPreviewPre.style.color = uploadColor.value;
-  const wrap = document.getElementById('upload-preview-wrap');
-  const stage = document.getElementById('upload-preview-stage');
-  var availW = stage && stage.clientWidth > 4 ? stage.clientWidth : 200;
-  var availH = stage && stage.clientHeight > 4 ? stage.clientHeight : 200;
-  if (wrap && (availW < 8 || availH < 8)) {
-    var padX =
-      parseFloat(getComputedStyle(wrap).paddingLeft) + parseFloat(getComputedStyle(wrap).paddingRight);
-    var padY2 =
-      parseFloat(getComputedStyle(wrap).paddingTop) + parseFloat(getComputedStyle(wrap).paddingBottom);
-    availW = Math.max(32, wrap.clientWidth - padX);
-    availH = Math.max(32, wrap.clientHeight - padY2);
-  }
-  availW = Math.max(32, availW);
-  availH = Math.max(32, availH);
-  /** 基准字号下测 intrinsic 尺寸，再缩放到落在 stage 内；必要时循环减小字号，避免 16:9 等仍超出（不再依赖容器滚动） */
-  const BASE = 10;
-  uploadPreviewPre.style.fontSize = BASE + 'px';
-  uploadPreviewPre.style.lineHeight = '1';
-  uploadPreviewPre.style.display = 'inline-block';
+  uploadPreviewPre.style.fontSize = '';
+  uploadPreviewPre.style.lineHeight = '';
   void uploadPreviewPre.offsetWidth;
-  var w = uploadPreviewPre.offsetWidth;
-  var h = uploadPreviewPre.offsetHeight;
-  var scale = Math.min(availW / Math.max(1, w), availH / Math.max(1, h));
-  var fs = Math.max(0.5, Math.min(10, Math.round(BASE * scale * 100) / 100));
-  uploadPreviewPre.style.fontSize = fs + 'px';
-  uploadPreviewPre.style.lineHeight = '1';
-  void uploadPreviewPre.offsetWidth;
-  var guard = 0;
-  while (
-    guard < 56 &&
-    fs > 0.35 &&
-    (uploadPreviewPre.offsetWidth > availW + 0.5 || uploadPreviewPre.offsetHeight > availH + 0.5)
-  ) {
-    fs *= 0.9;
-    uploadPreviewPre.style.fontSize = fs + 'px';
-    void uploadPreviewPre.offsetWidth;
-    guard++;
-  }
+  scheduleUploadPreviewScale();
   window.requestAnimationFrame(function () {
     window.requestAnimationFrame(function () {
       syncUploadPhotoFrameMaskOverlay();
@@ -3115,8 +3411,12 @@ function applyLightboxLikeButton() {
     return;
   }
   const n = st.count;
-  lightboxLikeBtn.textContent =
-    n === 1 ? '1 like' : n > 1 ? n + ' likes' : '1 like';
+  if (lightboxKeyboardLikedLabel) {
+    lightboxLikeBtn.textContent = n <= 1 ? '1 Liked' : n + ' Liked';
+  } else {
+    lightboxLikeBtn.textContent =
+      n === 1 ? '1 like' : n > 1 ? n + ' likes' : '1 like';
+  }
   lightboxLikeBtn.classList.add('lightbox-like--liked');
 }
 
@@ -3132,11 +3432,422 @@ function stopLightboxAsciiAnim() {
 }
 
 /**
+ * @returns {boolean}
+ */
+function shouldLightboxSharedMotion() {
+  return !(
+    window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+/**
+ * @returns {HTMLElement | null}
+ */
+function getLightboxInnerEl() {
+  return document.getElementById('lightbox-inner');
+}
+
+/**
+ * 移除飞行层、`lightbox-shared-fly--open-plain`、源卡片抑制与 inner handoff（不递增世代）。
+ * @returns {void}
+ */
+function cleanupLightboxSharedFlyVisual() {
+  var fly = document.getElementById('lightbox-shared-fly');
+  if (fly) {
+    fly.classList.remove('lightbox-shared-fly--open-plain');
+    fly.innerHTML = '';
+    fly.hidden = true;
+  }
+  var suppressed = document.querySelectorAll('.photo-card--fly-source-suppressed');
+  for (var si = 0; si < suppressed.length; si++) {
+    suppressed[si].classList.remove('photo-card--fly-source-suppressed');
+  }
+  var inner = getLightboxInnerEl();
+  if (inner) inner.classList.remove('lightbox-inner--fly-handoff');
+}
+
+/**
+ * @returns {HTMLElement}
+ */
+function ensureLightboxSharedFlyRoot() {
+  var fly = document.getElementById('lightbox-shared-fly');
+  if (!fly) {
+    fly = document.createElement('div');
+    fly.id = 'lightbox-shared-fly';
+    fly.setAttribute('aria-hidden', 'true');
+    fly.hidden = true;
+    document.body.appendChild(fly);
+  }
+  return fly;
+}
+
+/**
+ * @param {HTMLElement} targetPre
+ * @param {HTMLElement} sourcePre
+ * @returns {void}
+ */
+function applySharedFlyPreStylesFrom(targetPre, sourcePre) {
+  var s = window.getComputedStyle(sourcePre);
+  targetPre.style.fontFamily = s.fontFamily;
+  targetPre.style.fontSize = s.fontSize;
+  targetPre.style.lineHeight = s.lineHeight;
+  targetPre.style.letterSpacing = s.letterSpacing;
+  targetPre.style.color = s.color;
+  targetPre.style.fontWeight = s.fontWeight;
+  targetPre.style.whiteSpace = 'pre';
+  targetPre.style.margin = '0';
+}
+
+/**
+ * 仅对飞行层做 transform 过渡；`fillPre` 写入已有 ASCII 与字体外观，不重新排版灯箱。
+ * 使用单一等比系数 + 目标框内居中，避免 scaleX≠scaleY 挤压变形。
+ *
+ * **画廊 OPEN（`hideLightboxChromeDuringFlight`）**：飞层在**同步段**摆在 `src`；随后 **rAF₁** 仅做灯箱 viewer 态
+ *（`open`、弱背板、handoff、chrome-hidden、`updateLightboxNavButtons`、背板 reveal），**rAF₂** 仅写 shell 的 `transition`/`transform` 启动位移，
+ * 避免「动效首帧」与 layout/类切换抢同一帧。关闭路径 `hideChrome` 为 false 时仍为单帧 rAF 只启动 transform。
+ *
+ * @param {DOMRectReadOnly | DOMRect} src
+ * @param {DOMRectReadOnly | DOMRect} dest
+ * @param {number} gen
+ * @param {(pre: HTMLPreElement) => void} fillPre
+ * @param {function(): void} onDone 打开且 `hideChrome` 时仅应做图像 handoff（如去掉 `lightbox-inner--fly-handoff`）；nav/footer 露出由 `finish` 后 `scheduleLightboxOpenChromeRevealAfterSharedFly` 触发。
+ * @param {boolean} [hideLightboxChromeDuringFlight] 画廊打开：飞行期间隐藏导航与底栏，关闭路径勿传
+ * @param {HTMLElement | undefined} [flySourceCardEl] 打开且 `hideChrome` 时传入源 `.photo-card`，飞层在 `src` 就位后加抑制类，避免与飞层重影。
+ * @returns {void}
+ */
+function runLightboxSharedTransformFlight(
+  src,
+  dest,
+  gen,
+  fillPre,
+  onDone,
+  hideLightboxChromeDuringFlight,
+  flySourceCardEl
+) {
+  var hideChrome = !!hideLightboxChromeDuringFlight;
+  var flySourceCard =
+    flySourceCardEl && flySourceCardEl.nodeType === 1
+      ? /** @type {HTMLElement} */ (flySourceCardEl)
+      : null;
+  var sw = src.width;
+  var sh = src.height;
+  if (sw < 2 || sh < 2 || dest.width < 2 || dest.height < 2) {
+    if (gen === lightboxSharedTransitGen) {
+      try {
+        onDone();
+      } catch (e) {
+        /* 忽略 */
+      } finally {
+        cleanupLightboxSharedFlyVisual();
+      }
+      if (hideChrome) {
+        lightbox.classList.remove(
+          'lightbox--open-chrome-hidden',
+          'lightbox--open-chrome-reveal',
+          'lightbox--open-flight-soft-backdrop',
+          'lightbox--open-flight-backdrop-reveal'
+        );
+        if (!lightbox.classList.contains('open')) {
+          lightbox.classList.add('open');
+          updateLightboxNavButtons();
+        }
+      }
+    }
+    return;
+  }
+  var fly = ensureLightboxSharedFlyRoot();
+  fly.hidden = false;
+  fly.innerHTML = '';
+  if (hideChrome) {
+    fly.classList.add('lightbox-shared-fly--open-plain');
+  } else {
+    fly.classList.remove('lightbox-shared-fly--open-plain');
+  }
+  var shell = document.createElement('div');
+  shell.className = 'lightbox-shared-fly__shell';
+  var pre = document.createElement('pre');
+  fillPre(pre);
+  shell.appendChild(pre);
+  fly.appendChild(shell);
+
+  shell.style.width = sw + 'px';
+  shell.style.height = sh + 'px';
+  shell.style.transformOrigin = '0 0';
+  shell.style.transition = 'none';
+  shell.style.transform =
+    'translate(' + src.left + 'px,' + src.top + 'px) scale(1,1)';
+
+  void shell.offsetWidth;
+  if (hideChrome && flySourceCard) {
+    flySourceCard.classList.add('photo-card--fly-source-suppressed');
+  }
+
+  var dw = dest.width;
+  var dh = dest.height;
+  /** `min(dw/sw, dh/sh)`：contain 等比，使缩放后宽高均不超出 dest */
+  var k = Math.min(dw / sw, dh / sh);
+  if (!Number.isFinite(k) || k <= 0) k = 1;
+  var fw = sw * k;
+  var fh = sh * k;
+  /** 在 dest 内居中放置缩放后的源矩形左上角 */
+  var tx = dest.left + (dw - fw) * 0.5;
+  var ty = dest.top + (dh - fh) * 0.5;
+
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  var finishFallbackTimer = null;
+  var finished = false;
+  function finish() {
+    if (finishFallbackTimer != null) {
+      window.clearTimeout(finishFallbackTimer);
+      finishFallbackTimer = null;
+    }
+    if (finished) return;
+    finished = true;
+    shell.removeEventListener('transitionend', onEnd);
+    if (gen !== lightboxSharedTransitGen) {
+      cleanupLightboxSharedFlyVisual();
+      if (hideChrome) {
+        lightbox.classList.remove(
+          'lightbox--open-chrome-hidden',
+          'lightbox--open-chrome-reveal',
+          'lightbox--open-flight-soft-backdrop',
+          'lightbox--open-flight-backdrop-reveal'
+        );
+      }
+      return;
+    }
+    try {
+      onDone();
+    } catch (e) {
+      /* 忽略 */
+    } finally {
+      cleanupLightboxSharedFlyVisual();
+    }
+    if (hideChrome && gen === lightboxSharedTransitGen) {
+      lightbox.classList.remove(
+        'lightbox--open-flight-soft-backdrop',
+        'lightbox--open-flight-backdrop-reveal'
+      );
+      scheduleLightboxOpenChromeRevealAfterSharedFly(gen);
+    }
+  }
+  function onEnd(e) {
+    if (e.target !== shell || e.propertyName !== 'transform') return;
+    finish();
+  }
+  shell.addEventListener('transitionend', onEnd);
+
+  requestAnimationFrame(function sharedFlyViewerOrMotionFrame1() {
+    if (gen !== lightboxSharedTransitGen) {
+      shell.removeEventListener('transitionend', onEnd);
+      if (hideChrome) {
+        lightbox.classList.remove(
+          'lightbox--open-chrome-hidden',
+          'lightbox--open-chrome-reveal',
+          'lightbox--open-flight-soft-backdrop',
+          'lightbox--open-flight-backdrop-reveal'
+        );
+      }
+      cleanupLightboxSharedFlyVisual();
+      return;
+    }
+    if (hideChrome) {
+      var innerOpen = getLightboxInnerEl();
+      if (innerOpen) innerOpen.classList.add('lightbox-inner--fly-handoff');
+      lightbox.classList.add('open');
+      lightbox.classList.add('lightbox--open-flight-soft-backdrop');
+      lightbox.classList.add('lightbox--open-chrome-hidden');
+      updateLightboxNavButtons();
+      void lightbox.offsetWidth;
+      lightbox.classList.add('lightbox--open-flight-backdrop-reveal');
+      requestAnimationFrame(function sharedFlyMotionOnlyFrame2() {
+        if (gen !== lightboxSharedTransitGen) {
+          shell.removeEventListener('transitionend', onEnd);
+          lightbox.classList.remove(
+            'lightbox--open-chrome-hidden',
+            'lightbox--open-chrome-reveal',
+            'lightbox--open-flight-soft-backdrop',
+            'lightbox--open-flight-backdrop-reveal'
+          );
+          cleanupLightboxSharedFlyVisual();
+          return;
+        }
+        shell.style.transition =
+          'transform ' + LIGHTBOX_SHARED_MS + 'ms ' + LIGHTBOX_SHARED_EASE;
+        shell.style.transform =
+          'translate(' + tx + 'px,' + ty + 'px) scale(' + k + ',' + k + ')';
+        finishFallbackTimer = window.setTimeout(
+          finish,
+          LIGHTBOX_SHARED_MS + LIGHTBOX_SHARED_FINISH_FALLBACK_MS
+        );
+      });
+      return;
+    }
+    shell.style.transition =
+      'transform ' + LIGHTBOX_SHARED_MS + 'ms ' + LIGHTBOX_SHARED_EASE;
+    shell.style.transform =
+      'translate(' + tx + 'px,' + ty + 'px) scale(' + k + ',' + k + ')';
+    finishFallbackTimer = window.setTimeout(
+      finish,
+      LIGHTBOX_SHARED_MS + LIGHTBOX_SHARED_FINISH_FALLBACK_MS
+    );
+  });
+}
+
+/**
+ * 清除共享打开两阶段 chrome、弱背板 / 背板渐入类。
+ * @returns {void}
+ */
+function clearLightboxOpenChromePhaseClasses() {
+  lightbox.classList.remove(
+    'lightbox--open-chrome-hidden',
+    'lightbox--open-chrome-reveal',
+    'lightbox--open-flight-soft-backdrop',
+    'lightbox--open-flight-backdrop-reveal'
+  );
+}
+
+/**
+ * 共享打开未起飞/失败/关灯：合并推迟的点赞 UI，丢弃推迟的 GIF 帧缓冲。
+ * @returns {void}
+ */
+function abortLightboxSharedOpenDeferrals() {
+  lightboxDeferLikeUiForSharedOpen = false;
+  lightboxDeferAsciiAnimForSharedOpen = false;
+  lightboxPendingAsciiAnim = null;
+  if (lightboxPendingLikeUiForSharedOpen) {
+    lightboxLikeUiState = lightboxPendingLikeUiForSharedOpen;
+    lightboxPendingLikeUiForSharedOpen = null;
+    applyLightboxLikeButton();
+  }
+}
+
+/**
+ * 共享打开 handoff 完成后的下一帧：应用推迟的点赞 UI，并在需要时启动推迟的 GIF 循环。
+ * @returns {void}
+ */
+function flushLightboxSharedOpenDeferredAfterHandoff() {
+  lightboxDeferLikeUiForSharedOpen = false;
+  lightboxDeferAsciiAnimForSharedOpen = false;
+  if (lightboxPendingLikeUiForSharedOpen) {
+    lightboxLikeUiState = lightboxPendingLikeUiForSharedOpen;
+    lightboxPendingLikeUiForSharedOpen = null;
+    applyLightboxLikeButton();
+  }
+  var p = lightboxPendingAsciiAnim;
+  lightboxPendingAsciiAnim = null;
+  if (!p || !p.frames || !p.frames.length) return;
+  if (p.session !== lightboxLikeSessionGen) return;
+  if (!lightbox.classList.contains('open')) return;
+  var photo = lightboxOpenPhoto;
+  if (!photo || !isLightboxPhotoAnimatedForDownload(photo)) return;
+  var fps = typeof photo.fps === 'number' && photo.fps > 0 ? photo.fps : 6;
+  var delay = Math.max(16, Math.round(1000 / fps));
+  /** handoff 后再 slice，避免飞行窗口内主线程大分配 */
+  var frames = p.frames.slice();
+  var sess = p.session;
+  var idx = 0;
+  lightboxAsciiAnimTimer = setInterval(function () {
+    if (sess !== lightboxLikeSessionGen || !lightbox.classList.contains('open')) {
+      stopLightboxAsciiAnim();
+      return;
+    }
+    idx = (idx + 1) % frames.length;
+    lightboxPre.textContent = frames[idx];
+  }, delay);
+}
+
+/**
+ * handoff + 飞层清理后立刻露出 nav/footer；推迟逻辑用 microtask 紧跟，避免多等一整帧 rAF。
+ * @param {number} gen 本次飞行的 `lightboxSharedTransitGen` 快照
+ * @returns {void}
+ */
+function scheduleLightboxOpenChromeRevealAfterSharedFly(gen) {
+  if (gen !== lightboxSharedTransitGen) return;
+  if (!lightbox.classList.contains('open')) return;
+  lightbox.classList.remove('lightbox--open-chrome-hidden');
+  lightbox.classList.add('lightbox--open-chrome-reveal');
+  queueMicrotask(function () {
+    if (gen !== lightboxSharedTransitGen) return;
+    flushLightboxSharedOpenDeferredAfterHandoff();
+  });
+  window.setTimeout(function () {
+    if (gen !== lightboxSharedTransitGen) return;
+    lightbox.classList.remove('lightbox--open-chrome-reveal');
+  }, 248);
+}
+
+/**
+ * Escape：先平滑滚动使当前缩略图靠近视口中部，再反向共享元素飞回缩略图。
+ * @param {HTMLElement} card
+ * @returns {void}
+ */
+function runLightboxEscapeSharedClose(card) {
+  var thumb = card.querySelector('.photo-thumb') || card;
+  var src = lightboxPre.getBoundingClientRect();
+  lightboxSharedTransitGen++;
+  cleanupLightboxSharedFlyVisual();
+  var gen = lightboxSharedTransitGen;
+
+  if (!shouldLightboxSharedMotion()) {
+    thumb.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
+    closeLightbox();
+    return;
+  }
+
+  thumb.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+
+  window.setTimeout(function () {
+    if (!lightbox.classList.contains('open')) return;
+    if (gen !== lightboxSharedTransitGen) return;
+    requestAnimationFrame(function () {
+      if (!lightbox.classList.contains('open')) {
+        cleanupLightboxSharedFlyVisual();
+        return;
+      }
+      if (gen !== lightboxSharedTransitGen) {
+        cleanupLightboxSharedFlyVisual();
+        return;
+      }
+      var dest = thumb.getBoundingClientRect();
+      if (dest.width < 2 || dest.height < 2 || src.width < 2 || src.height < 2) {
+        closeLightbox();
+        return;
+      }
+      var innerEl = getLightboxInnerEl();
+      if (innerEl) innerEl.classList.add('lightbox-inner--fly-handoff');
+      runLightboxSharedTransformFlight(
+        src,
+        dest,
+        gen,
+        function (pre) {
+          pre.textContent = lightboxPre.textContent;
+          applySharedFlyPreStylesFrom(pre, lightboxPre);
+        },
+        function () {
+          closeLightbox();
+        },
+        false
+      );
+    });
+  }, LIGHTBOX_ESCAPE_SCROLL_SETTLE_MS);
+}
+
+/**
  * 关闭灯箱并停止帧动画。
  * @returns {void}
  */
 function closeLightbox() {
+  lightboxSharedTransitGen++;
   stopLightboxAsciiAnim();
+  abortLightboxSharedOpenDeferrals();
+  clearLightboxOpenChromePhaseClasses();
+  lightboxKeyboardLikedLabel = false;
+  if (lightboxLikeBtn) {
+    lightboxLikeBtn.classList.remove('lightbox-like--shake-y');
+  }
+  cleanupLightboxSharedFlyVisual();
   lightbox.classList.remove('open');
 }
 
@@ -3156,11 +3867,208 @@ function updateLightboxNavButtons() {
 }
 
 /**
+ * 共享打开失败/中止时：把全文与字号写回真实 `#lightbox-pre`（与常规打开一致）。
+ * @param {{ ascii?: string, color?: string } | null} photo
+ * @returns {void}
+ */
+function applyLightboxPreFullLayoutFromPhoto(photo) {
+  lightboxPre.textContent = photo && typeof photo.ascii === 'string' ? photo.ascii : '';
+  lightboxPre.style.color = (photo && photo.color) || '#00ff41';
+  lightboxPre.style.display = 'inline-block';
+  lightboxPre.style.lineHeight = '1';
+  var maxW = Math.min(window.innerWidth * 0.88, 960) - 48;
+  var maxH = Math.max(40, window.innerHeight * 0.82 - 48 - 56 - 4);
+  var BASE = 10;
+  lightboxPre.style.fontSize = BASE + 'px';
+  void lightboxPre.offsetWidth;
+  var w = lightboxPre.offsetWidth;
+  var h = lightboxPre.offsetHeight;
+  var scale = Math.min(Math.max(40, maxW) / Math.max(1, w), maxH / Math.max(1, h));
+  var fs = Math.max(2, Math.min(14, Math.round(BASE * scale * 100) / 100));
+  lightboxPre.style.fontSize = fs + 'px';
+  lightboxPre.style.lineHeight = '1';
+}
+
+/**
+ * 共享飞入无法安全起飞时：清飞层、写回真实 `#lightbox-pre` 排版、`open` 灯箱（无共享动画）。
+ * @param {{ ascii?: string, color?: string } | null} photo
+ * @returns {void}
+ */
+function gallerySharedFlyOpenFallbackNoFly(photo) {
+  cleanupLightboxSharedFlyVisual();
+  lightbox.classList.remove(
+    'lightbox--open-flight-soft-backdrop',
+    'lightbox--open-flight-backdrop-reveal',
+    'lightbox--open-chrome-hidden',
+    'lightbox--open-chrome-reveal'
+  );
+  applyLightboxPreFullLayoutFromPhoto(photo);
+  var inner = getLightboxInnerEl();
+  if (inner) inner.classList.remove('lightbox-inner--fly-handoff');
+  abortLightboxSharedOpenDeferrals();
+  lightbox.classList.add('open');
+  updateLightboxNavButtons();
+}
+
+/**
+ * 灯箱未 `open` 时，用与 `#lightbox` padding、`.lightbox-stage` 底留白、`#lightbox-inner` max-width 一致的几何估算 `#lightbox-scroll` 可用宿主矩形。
+ * @returns {{ left: number, top: number, width: number, height: number }}
+ */
+function computeLightboxScrollHostRectForGallerySharedOpen() {
+  var vw = window.innerWidth;
+  var vh = window.innerHeight;
+  var pad = 24;
+  var stageBottomReserve = 56;
+  var stageW = Math.max(0, vw - pad * 2);
+  var stageInnerH = Math.max(0, vh - pad * 2 - stageBottomReserve);
+  var hostW = Math.min(vw * 0.9, stageW);
+  var hostH = stageInnerH;
+  var hostLeft = pad + (stageW - hostW) * 0.5;
+  var hostTop = pad + (stageInnerH - hostH) * 0.5;
+  return { left: hostLeft, top: hostTop, width: hostW, height: hostH };
+}
+
+/**
+ * 在 body 上临时挂载与 `#lightbox-pre-measure` 同约束的离屏 `pre`，得到与 `applyLightboxPreFullLayoutFromPhoto` 一致的缩放字号与内容尺寸（无需先 `lightbox.open`）。
+ * @param {{ ascii?: string, color?: string } | null} photo
+ * @param {number} hostWidthPx 宿主横向上限（与 scroll 区宽度对齐）
+ * @returns {{ fs: number, cw: number, ch: number } | null}
+ */
+function measureGallerySharedOpenAsciiSize(photo, hostWidthPx) {
+  var ascii = photo && typeof photo.ascii === 'string' ? photo.ascii : '';
+  var maxW = Math.min(window.innerWidth * 0.88, 960) - 48;
+  var maxH = Math.max(40, window.innerHeight * 0.82 - 48 - 56 - 4);
+  var BASE = 10;
+  var capW = Math.max(40, Math.min(hostWidthPx, maxW));
+  var pre = document.createElement('pre');
+  pre.textContent = ascii;
+  pre.setAttribute('aria-hidden', 'true');
+  pre.style.cssText = [
+    'position:absolute',
+    'left:-32000px',
+    'top:0',
+    'visibility:hidden',
+    'pointer-events:none',
+    'margin:0',
+    'font-family:monospace,ui-monospace,"Courier New",monospace',
+    'letter-spacing:0',
+    'white-space:pre',
+    'display:inline-block',
+    'line-height:1',
+    'cursor:default',
+    'max-width:' + capW + 'px',
+    'font-size:' + BASE + 'px',
+    'color:' + ((photo && photo.color) || '#00ff41')
+  ].join(';');
+  document.body.appendChild(pre);
+  void pre.offsetWidth;
+  var w = pre.offsetWidth;
+  var h = pre.offsetHeight;
+  var scale = Math.min(Math.max(40, maxW) / Math.max(1, w), maxH / Math.max(1, h));
+  var fs = Math.max(2, Math.min(14, Math.round(BASE * scale * 100) / 100));
+  pre.style.fontSize = fs + 'px';
+  void pre.offsetWidth;
+  var cw = pre.offsetWidth;
+  var ch = pre.offsetHeight;
+  document.body.removeChild(pre);
+  if (cw < 2 || ch < 2) return null;
+  return { fs: fs, cw: cw, ch: ch };
+}
+
+/**
+ * 构建飞层 `pre` 填充函数：正文与缩略图 `pre` 同字模样式。
+ * @param {{ ascii?: string, color?: string } | null} photo
+ * @param {HTMLElement} thumbPreEl
+ * @returns {(pre: HTMLPreElement) => void}
+ */
+function sharedOpenPipeline_buildFillPre(photo, thumbPreEl) {
+  return function sharedOpenPipeline_fillPre(pre) {
+    pre.textContent = photo && typeof photo.ascii === 'string' ? photo.ascii : '';
+    applySharedFlyPreStylesFrom(pre, thumbPreEl);
+  };
+}
+
+/**
+ * Stage C：飞层落地后写入真实 `#lightbox-pre`、去掉 inner handoff（chrome 由 `finish` 内 `scheduleLightboxOpenChromeRevealAfterSharedFly` 负责）。
+ * @param {{ ascii?: string, color?: string } | null} photo
+ * @param {number} fs
+ * @returns {() => void}
+ */
+function sharedOpenPipeline_buildStageC_onDone(photo, fs) {
+  return function sharedOpenPipeline_stageC_onDone() {
+    lightboxPre.textContent = photo && typeof photo.ascii === 'string' ? photo.ascii : '';
+    lightboxPre.style.fontSize = fs + 'px';
+    lightboxPre.style.lineHeight = '1';
+    var inDone = getLightboxInnerEl();
+    if (inDone) inDone.classList.remove('lightbox-inner--fly-handoff');
+  };
+}
+
+/**
+ * 画廊网格共享 OPEN：同步挂载飞层 → 下一帧再 `open` 灯箱并开 transform；测量与 dest 在灯箱外完成，真实 `#lightbox-pre` 仍在落地后写入。
+ * @param {{ ascii?: string, color?: string } | null} photo
+ * @param {HTMLElement} flyCard
+ * @returns {void}
+ */
+function beginGallerySharedOpenFlyFirst(photo, flyCard) {
+  var thumbWrap = flyCard.querySelector('.photo-thumb') || flyCard;
+  var thumbPreEl = flyCard.querySelector('.photo-thumb pre');
+  if (!thumbPreEl) {
+    gallerySharedFlyOpenFallbackNoFly(photo);
+    return;
+  }
+  var host = computeLightboxScrollHostRectForGallerySharedOpen();
+  var measured = measureGallerySharedOpenAsciiSize(photo, host.width);
+  if (!measured) {
+    gallerySharedFlyOpenFallbackNoFly(photo);
+    return;
+  }
+  var sr = thumbWrap.getBoundingClientRect();
+  var dr = {
+    left: host.left + (host.width - measured.cw) * 0.5,
+    top: host.top + (host.height - measured.ch) * 0.5,
+    width: measured.cw,
+    height: measured.ch
+  };
+  var g = lightboxSharedTransitGen;
+  if (sr.width < 2 || sr.height < 2 || dr.width < 2 || dr.height < 2) {
+    gallerySharedFlyOpenFallbackNoFly(photo);
+    return;
+  }
+  runLightboxSharedTransformFlight(
+    sr,
+    dr,
+    g,
+    sharedOpenPipeline_buildFillPre(photo, thumbPreEl),
+    sharedOpenPipeline_buildStageC_onDone(photo, measured.fs),
+    true,
+    flyCard
+  );
+}
+
+/**
  * @param {{ascii:string,color?:string,time?:number,id?:string,isAnimated?:boolean,frames?:string[],fps?:number}} photo
  * @param {number} [feedIndexOpt] 当前可见列表中的下标（与 All/Loop feed 一致）；省略时按 id 在 `photosCache` 中查找
+ * @param {HTMLElement | undefined} [flyFromCard] 从网格打开时传入源 `.photo-card` 以启用共享元素展开；灯箱内切换勿传
  */
-function openLightbox(photo, feedIndexOpt) {
+function openLightbox(photo, feedIndexOpt, flyFromCard) {
   stopLightboxAsciiAnim();
+  lightboxSharedTransitGen++;
+  cleanupLightboxSharedFlyVisual();
+  var preMeasureReset = document.getElementById('lightbox-pre-measure');
+  if (preMeasureReset) {
+    preMeasureReset.textContent = '';
+    preMeasureReset.style.fontSize = '';
+    preMeasureReset.style.display = '';
+    preMeasureReset.style.lineHeight = '';
+    preMeasureReset.style.color = '';
+  }
+  clearLightboxOpenChromePhaseClasses();
+  lightboxDeferLikeUiForSharedOpen = false;
+  lightboxDeferAsciiAnimForSharedOpen = false;
+  lightboxPendingLikeUiForSharedOpen = null;
+  lightboxPendingAsciiAnim = null;
+  lightboxKeyboardLikedLabel = false;
   if (window.AsciiCameraGalleryCloudSync && typeof AsciiCameraGalleryCloudSync.trackEvent === 'function' && photo) {
     AsciiCameraGalleryCloudSync.trackEvent('photo_view', { photoId: photo.id });
   }
@@ -3182,48 +4090,81 @@ function openLightbox(photo, feedIndexOpt) {
   }
   syncLightboxDownloadButtonsVisibility();
 
-  lightboxPre.textContent = photo.ascii;
+  var flyCard =
+    flyFromCard && flyFromCard.nodeType === 1 ? /** @type {HTMLElement} */ (flyFromCard) : null;
+  var useSharedOpen =
+    !!flyCard &&
+    shouldLightboxSharedMotion() &&
+    !!flyCard.querySelector('.photo-thumb pre');
+  if (!useSharedOpen) {
+    lightboxPre.textContent = photo.ascii;
+  } else {
+    lightboxPre.textContent = '';
+    lightboxPre.style.fontSize = '';
+  }
   lightboxPre.style.color = photo.color || '#00ff41';
   lightboxPre.style.display = 'inline-block';
   lightboxPre.style.lineHeight = '1';
-  lightbox.classList.add('open');
-  updateLightboxNavButtons();
+  if (useSharedOpen) {
+    lightboxDeferLikeUiForSharedOpen = true;
+    lightboxDeferAsciiAnimForSharedOpen = true;
+    beginGallerySharedOpenFlyFirst(photo, /** @type {HTMLElement} */ (flyCard));
+  } else {
+    lightbox.classList.add('open');
+    updateLightboxNavButtons();
+  }
 
   const sync = window.AsciiCameraGalleryCloudSync;
   if (sync && typeof sync.likesApiEnabled === 'function' && sync.likesApiEnabled() && lightboxPhotoId) {
     sync.fetchPhotoLikeState(lightboxPhotoId).then(function (st) {
       if (session !== lightboxLikeSessionGen) return;
+      if (lightboxDeferLikeUiForSharedOpen) {
+        lightboxPendingLikeUiForSharedOpen = { liked: st.likedByMe, count: st.count };
+        return;
+      }
       lightboxLikeUiState = { liked: st.likedByMe, count: st.count };
       applyLightboxLikeButton();
     }).catch(function () {
       if (session !== lightboxLikeSessionGen) return;
+      if (lightboxDeferLikeUiForSharedOpen) {
+        lightboxPendingLikeUiForSharedOpen = { liked: false, count: 0 };
+        return;
+      }
       lightboxLikeUiState = { liked: false, count: 0 };
       applyLightboxLikeButton();
     });
   }
 
-  requestAnimationFrame(function () {
-    const maxW = Math.min(window.innerWidth * 0.88, 960) - 48;
-    const maxH = Math.max(40, window.innerHeight * 0.78 - 48 - 72 - 4);
-    const BASE = 10;
-    lightboxPre.style.fontSize = BASE + 'px';
-    void lightboxPre.offsetWidth;
-    const w = lightboxPre.offsetWidth;
-    const h = lightboxPre.offsetHeight;
-    const scale = Math.min(Math.max(40, maxW) / Math.max(1, w), maxH / Math.max(1, h));
-    const fs = Math.max(2, Math.min(14, Math.round(BASE * scale * 100) / 100));
-    lightboxPre.style.fontSize = fs + 'px';
-    lightboxPre.style.lineHeight = '1';
-  });
+  if (!useSharedOpen) {
+    requestAnimationFrame(function () {
+      var maxW = Math.min(window.innerWidth * 0.88, 960) - 48;
+      var maxH = Math.max(40, window.innerHeight * 0.82 - 48 - 56 - 4);
+      var BASE = 10;
+      lightboxPre.style.fontSize = BASE + 'px';
+      void lightboxPre.offsetWidth;
+      var w0 = lightboxPre.offsetWidth;
+      var h0 = lightboxPre.offsetHeight;
+      var scale0 = Math.min(Math.max(40, maxW) / Math.max(1, w0), maxH / Math.max(1, h0));
+      var fs0 = Math.max(2, Math.min(14, Math.round(BASE * scale0 * 100) / 100));
+      lightboxPre.style.fontSize = fs0 + 'px';
+      lightboxPre.style.lineHeight = '1';
+    });
+  }
 
   if (photo && isLightboxPhotoAnimatedForDownload(photo)) {
     resolveLightboxAsciiFrames(photo).then(function (frames) {
-      if (
-        session !== lightboxLikeSessionGen ||
-        !frames ||
-        !frames.length ||
-        !lightbox.classList.contains('open')
-      ) {
+      if (session !== lightboxLikeSessionGen || !frames || !frames.length) {
+        return;
+      }
+      /**
+       * 共享 fly-first：`open` 在 `runLightboxSharedTransformFlight` 的 rAF 里才加上；
+       * `resolveLightboxAsciiFrames` 可能同步 resolve，`.then` 会早于 `open`，故 defer 路径必须先于 `open` 守卫。
+       */
+      if (lightboxDeferAsciiAnimForSharedOpen) {
+        lightboxPendingAsciiAnim = { frames: frames, session: session };
+        return;
+      }
+      if (!lightbox.classList.contains('open')) {
         return;
       }
       var fps = typeof photo.fps === 'number' && photo.fps > 0 ? photo.fps : 6;
@@ -3242,6 +4183,7 @@ function openLightbox(photo, feedIndexOpt) {
 }
 lightbox.addEventListener('click', function (e) {
   if (e.target.closest('#lightbox-inner')) return;
+  if (e.target.closest('#lightbox-footer')) return;
   if (e.target.closest('.lightbox-nav-btn')) return;
   closeLightbox();
 });
@@ -3264,6 +4206,7 @@ lightbox.addEventListener('click', function (e) {
 
 if (lightboxLikeBtn) {
   lightboxLikeBtn.addEventListener('click', function () {
+    lightboxKeyboardLikedLabel = false;
     const sync = window.AsciiCameraGalleryCloudSync;
     const pid = lightboxPhotoId;
     if (!pid || !sync || typeof sync.likesApiEnabled !== 'function' || !sync.likesApiEnabled()) return;
@@ -3305,6 +4248,180 @@ if (lightboxLikeBtn) {
     }
   });
 }
+
+/**
+ * 解析灯箱边界禁用音 URL（兼容 http(s) 与 file:）。
+ * @returns {string}
+ */
+function resolveLightboxDisabledSoundSrc() {
+  try {
+    if (typeof window.location === 'undefined') return '/public/sounds/ui-disabled.mp3';
+    if (window.location.protocol === 'file:') {
+      return new URL('public/sounds/ui-disabled.mp3', window.location.href).href;
+    }
+    return window.location.origin + '/public/sounds/ui-disabled.mp3';
+  } catch (err) {
+    return 'public/sounds/ui-disabled.mp3';
+  }
+}
+
+/**
+ * 在首张/末张再按左右箭头时播放禁用音；失败或节流不影响导航。
+ * @returns {void}
+ */
+function playLightboxDisabledSound() {
+  var now = Date.now();
+  if (now - lightboxDisabledSoundLastPlayMs < LIGHTBOX_DISABLED_SOUND_GAP_MS) return;
+  lightboxDisabledSoundLastPlayMs = now;
+  try {
+    if (!lightboxDisabledSoundAudio) {
+      lightboxDisabledSoundAudio = new Audio(resolveLightboxDisabledSoundSrc());
+      lightboxDisabledSoundAudio.preload = 'auto';
+    }
+    lightboxDisabledSoundAudio.currentTime = 0;
+    var p = lightboxDisabledSoundAudio.play();
+    if (p && typeof p.catch === 'function') p.catch(function () {});
+  } catch (err) {
+    /* 忽略音频错误 */
+  }
+}
+
+/**
+ * 为 Like 按钮触发一次性 Y 轴抖动；动画结束后移除 class。
+ * @returns {void}
+ */
+function triggerLightboxLikeShakeY() {
+  if (!lightboxLikeBtn) return;
+  lightboxLikeBtn.classList.remove('lightbox-like--shake-y');
+  requestAnimationFrame(function () {
+    if (!lightboxLikeBtn) return;
+    lightboxLikeBtn.classList.add('lightbox-like--shake-y');
+    var onEnd = function () {
+      if (lightboxLikeBtn) {
+        lightboxLikeBtn.classList.remove('lightbox-like--shake-y');
+        lightboxLikeBtn.removeEventListener('animationend', onEnd);
+      }
+    };
+    lightboxLikeBtn.addEventListener('animationend', onEnd);
+    window.setTimeout(function () {
+      if (!lightboxLikeBtn) return;
+      lightboxLikeBtn.removeEventListener('animationend', onEnd);
+      lightboxLikeBtn.classList.remove('lightbox-like--shake-y');
+    }, 450);
+  });
+}
+
+/**
+ * 键盘彩蛋 ArrowUp：未赞时复用与点击相同的点赞 API 与状态刷新。
+ * @returns {void}
+ */
+function lightboxKeyboardLikeUp() {
+  const sync = window.AsciiCameraGalleryCloudSync;
+  const pid = lightboxPhotoId;
+  if (!pid || !sync || typeof sync.likesApiEnabled !== 'function' || !sync.likesApiEnabled()) return;
+
+  const prev = { liked: lightboxLikeUiState.liked, count: lightboxLikeUiState.count };
+  if (prev.liked) return;
+
+  lightboxKeyboardLikedLabel = true;
+  const session = lightboxLikeSessionGen;
+
+  lightboxLikeUiState = { liked: true, count: prev.count + 1 };
+  applyLightboxLikeButton();
+  triggerLightboxLikeShakeY();
+
+  sync.addPhotoLike(pid).then(function () {
+    if (typeof sync.trackEvent === 'function') {
+      sync.trackEvent('like_photo', { photoId: pid });
+    }
+    return sync.fetchPhotoLikeState(pid);
+  }).then(function (st) {
+    if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
+    lightboxLikeUiState = { liked: st.likedByMe, count: st.count };
+    applyLightboxLikeButton();
+  }).catch(function () {
+    if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
+    lightboxKeyboardLikedLabel = false;
+    lightboxLikeUiState = { liked: false, count: 0 };
+    applyLightboxLikeButton();
+  });
+}
+
+/**
+ * 键盘彩蛋 ArrowDown：已赞时复用与点击相同的取消赞逻辑。
+ * @returns {void}
+ */
+function lightboxKeyboardLikeDown() {
+  const sync = window.AsciiCameraGalleryCloudSync;
+  const pid = lightboxPhotoId;
+  if (!pid || !sync || typeof sync.likesApiEnabled !== 'function' || !sync.likesApiEnabled()) return;
+
+  const prev = { liked: lightboxLikeUiState.liked, count: lightboxLikeUiState.count };
+  if (!prev.liked) return;
+
+  lightboxKeyboardLikedLabel = false;
+  const session = lightboxLikeSessionGen;
+
+  lightboxLikeUiState = { liked: false, count: 0 };
+  applyLightboxLikeButton();
+  sync.removePhotoLike(pid).then(function () {
+    return sync.fetchPhotoLikeState(pid);
+  }).then(function (st) {
+    if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
+    lightboxLikeUiState = { liked: st.likedByMe, count: st.count };
+    applyLightboxLikeButton();
+  }).catch(function () {
+    if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
+    lightboxLikeUiState = prev;
+    applyLightboxLikeButton();
+  });
+}
+
+(function setupLightboxKeyboardEasterEgg() {
+  window.addEventListener('keydown', function (e) {
+    if (!lightbox.classList.contains('open')) return;
+    var k = e.key;
+    if (k === 'Escape') {
+      e.preventDefault();
+      var escCard =
+        gallery &&
+        lightboxFeedIndex >= 0 &&
+        lightboxFeedIndex < photosCache.length
+          ? gallery.querySelector('.photo-card[data-index="' + lightboxFeedIndex + '"]')
+          : null;
+      if (escCard) {
+        runLightboxEscapeSharedClose(escCard);
+      } else {
+        closeLightbox();
+      }
+      return;
+    }
+    if (k !== 'ArrowLeft' && k !== 'ArrowRight' && k !== 'ArrowUp' && k !== 'ArrowDown') return;
+    e.preventDefault();
+
+    if (k === 'ArrowLeft') {
+      if (lightboxFeedIndex <= 0) {
+        playLightboxDisabledSound();
+        return;
+      }
+      openLightbox(photosCache[lightboxFeedIndex - 1], lightboxFeedIndex - 1);
+      return;
+    }
+    if (k === 'ArrowRight') {
+      if (lightboxFeedIndex < 0 || lightboxFeedIndex >= photosCache.length - 1) {
+        playLightboxDisabledSound();
+        return;
+      }
+      openLightbox(photosCache[lightboxFeedIndex + 1], lightboxFeedIndex + 1);
+      return;
+    }
+    if (k === 'ArrowUp') {
+      lightboxKeyboardLikeUp();
+      return;
+    }
+    lightboxKeyboardLikeDown();
+  });
+})();
 
 /** 设为 `false` 可关闭灯箱导出调试日志 */
 var GALLERY_EXPORT_DEBUG = true;
@@ -4556,7 +5673,7 @@ function renderGallery(photos, userCountOverride) {
       var el = raw instanceof Element ? raw : raw && /** @type {Node} */ (raw).parentElement;
       if (el && el.closest('.delete-btn, .restore-btn, .purge-btn')) return;
       var ix = parseInt(card.dataset.index, 10);
-      openLightbox(photosCache[ix], ix);
+      openLightbox(photosCache[ix], ix, card);
     });
     card.addEventListener('mouseenter', function () {
       var idx = parseInt(card.getAttribute('data-index') || '0', 10);
