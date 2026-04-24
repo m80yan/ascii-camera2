@@ -86,6 +86,7 @@
     Ui.asciiActiveFrame = document.getElementById('asciiActiveFrame');
     Ui.asciiActiveColumn = document.getElementById('asciiActiveColumn');
     Ui.asciiOutScaleWrap = document.getElementById('asciiOutScaleWrap');
+    Ui.asciiLightningOverlay = document.getElementById('asciiLightningOverlay');
     Ui.requestRainCanvas = document.getElementById('requestRainCanvas');
     Ui.iframeHint = document.getElementById('iframe-hint');
     Ui.iframeOpenTab = document.getElementById('iframe-open-tab');

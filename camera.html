@@ -747,6 +747,24 @@
     opacity: 1;
   }
   /**
+   * code-rain 闪电白闪层：限于 `.ascii-active-frame`（overflow 裁剪），不画闪电形状，仅做柔和白闪。
+   * 放在雨效画布之下，使雨仍清晰可见。
+   */
+  .ascii-lightning-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    display: none;
+    opacity: 0;
+    background: #fff;
+    /* 由 rAF 逐帧写入 opacity；transition 会把瞬时峰值抹平，导致闪电显得偏弱 */
+    transition: none;
+  }
+  .ascii-lightning-overlay.ascii-lightning-overlay--mounted {
+    display: block;
+  }
+  /**
    * Photo 取景框遮罩画布：纯黑格、叠于雨效之上；不改动画幅尺寸与 ASCII 生成。
    */
   .ascii-frame-mask-canvas {
@@ -1094,6 +1112,7 @@
                 <div class="ascii-out-scale-wrap" id="asciiOutScaleWrap">
                   <pre id="ascii-out" aria-hidden="true">Click &quot;START CAMERA&quot; to begin</pre>
                 </div>
+                <div id="asciiLightningOverlay" class="ascii-lightning-overlay" aria-hidden="true"></div>
                 <canvas id="requestRainCanvas" class="ascii-request-rain-canvas" width="1" height="1" aria-hidden="true"></canvas>
                 <!-- Photo 取景预览专用：ASCII 格二值遮罩，不改变导出/提交；置于雨效之上 -->
                 <canvas id="asciiFrameMaskCanvas" class="ascii-frame-mask-canvas" width="1" height="1" aria-hidden="true"></canvas>
@@ -1291,6 +1310,7 @@ const aspectPickerStack = U.aspectPickerStack;
 const asciiActiveFrame = U.asciiActiveFrame;
 const asciiActiveColumn = U.asciiActiveColumn;
 const asciiOutScaleWrap = U.asciiOutScaleWrap;
+const asciiLightningOverlay = U.asciiLightningOverlay;
 const requestRainCanvas = U.requestRainCanvas;
 /** @type {CanvasRenderingContext2D | null} */
 const requestRainCtx = requestRainCanvas ? requestRainCanvas.getContext('2d') : null;
@@ -1330,12 +1350,25 @@ const VIDEO_RECORD_SOUND_URL = '/public/sounds/record.mp3';
 const COUNTDOWN_BEEP_SOUND_URL = '/public/sounds/countdown-beep.mp3';
 /** 开屏 code-rain 环境雨（仅离线 intro；懒加载单例） */
 const MATRIX_RAIN_AMBIENCE_SOUND_URL = '/public/sounds/matrix-rain-ambience.mp3';
+/**
+ * code-rain 雷声素材（延迟于闪电；与 ambience 同一 AudioContext 解码复用）。
+ * @type {{ farSoft: string, farRoll: string, mid: string, nearCrack: string, nearHeavy: string }}
+ */
+const MATRIX_RAIN_THUNDER_ASSETS = {
+  farSoft: '/public/sounds/thunder_far_soft.mp3',
+  farRoll: '/public/sounds/thunder_far_roll.mp3',
+  mid: '/public/sounds/thunder_mid.mp3',
+  nearCrack: '/public/sounds/thunder_near_crack.mp3',
+  nearHeavy: '/public/sounds/thunder_near_heavy.mp3'
+};
 
 const PHOTO_SHUTTER_VOLUME = 0.5;
 const VIDEO_RECORD_VOLUME = 0.5;
 const COUNTDOWN_BEEP_VOLUME = 0.5;
 /** 背景级，避免压过快门 / 倒计时音 */
 const MATRIX_RAIN_AMBIENCE_VOLUME = 0.22;
+/** 雷声上限电平（事件强度会映射到该范围） */
+const MATRIX_RAIN_THUNDER_GAIN_MAX = 0.55;
 
 /** @type {HTMLAudioElement | null} */
 let photoShutterAudio = null;
@@ -1353,6 +1386,31 @@ let matrixRainAmbienceDecodePromise = null;
 let matrixRainAmbienceGainNode = null;
 /** @type {AudioBufferSourceNode | null} */
 let matrixRainAmbienceSourceNode = null;
+
+/** @type {Record<string, AudioBuffer | null>} */
+let matrixRainThunderBuffers = Object.create(null);
+/** @type {Record<string, Promise<AudioBuffer | null> | null>} */
+let matrixRainThunderDecodePromises = Object.create(null);
+/**
+ * 雷声音量包络（轻量低频能量曲线，用于视觉后续微脉冲；非逐采样波形）。
+ * @type {Record<string, null | { stepSec: number, values: Float32Array, durationSec: number }>}
+ */
+let matrixRainThunderEnvelopes = Object.create(null);
+/** @type {number[]} */
+let matrixRainThunderTimeoutIds = [];
+/** @type {{ src: AudioBufferSourceNode, gain: GainNode }[]} */
+let matrixRainThunderActiveNodes = [];
+/** @type {Array<{ startMs: number, env: { stepSec: number, values: Float32Array, durationSec: number }, strength: number, endMs: number }>} */
+let matrixRainThunderActivePulses = [];
+
+/** @type {boolean} */
+let matrixRainLightningActive = false;
+/** @type {number} */
+let matrixRainLightningNextEventMs = 0;
+/** @type {number} */
+let matrixRainLightningEventEndMs = 0;
+/** @type {Array<{ t0: number, t1: number, peak: number }>} */
+let matrixRainLightningFlashes = [];
 
 /**
  * 懒创建并复用快门 `Audio`，`preload` 预加载。
@@ -1528,6 +1586,303 @@ function ensureMatrixRainAmbienceBufferDecoded() {
 }
 
 /**
+ * 懒解码雷声为 `AudioBuffer`（仅一次；失败返回 `null`）。
+ * 使用与 ambience 相同的 `AudioContext`，避免额外上下文开销。
+ * @returns {Promise<AudioBuffer | null>}
+ */
+/**
+ * 计算并缓存雷声的轻量能量包络（RMS 窗口 + 平滑 + 归一化）。
+ * @param {AudioBuffer} buf
+ * @returns {{ stepSec: number, values: Float32Array, durationSec: number }}
+ */
+function analyzeThunderEnvelope(buf) {
+  var sr = buf.sampleRate || 44100;
+  var durationSec = buf.duration || (buf.length ? buf.length / sr : 0);
+  // 约 20Hz：每 50ms 一个点；窗口 100ms，足够平滑且不重。
+  var stepSec = 0.05;
+  var winSec = 0.1;
+  var step = Math.max(1, Math.round(stepSec * sr));
+  var win = Math.max(step, Math.round(winSec * sr));
+  var n = Math.max(1, Math.floor((buf.length - 1) / step) + 1);
+  var out = new Float32Array(n);
+  // mixdown
+  var ch0 = buf.getChannelData(0);
+  var ch1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : null;
+  var i;
+  var max = 1e-6;
+  var ema = 0;
+  var EMA_A = 0.35;
+  for (i = 0; i < n; i++) {
+    var center = i * step;
+    var start = Math.max(0, center - Math.floor(win / 2));
+    var end = Math.min(buf.length, start + win);
+    var sum = 0;
+    var k;
+    for (k = start; k < end; k++) {
+      var s = ch0[k] + (ch1 ? ch1[k] : 0);
+      if (ch1) s *= 0.5;
+      sum += s * s;
+    }
+    var rms = Math.sqrt(sum / Math.max(1, end - start));
+    ema = i === 0 ? rms : ema + EMA_A * (rms - ema);
+    out[i] = ema;
+    if (ema > max) max = ema;
+  }
+  // normalize
+  for (i = 0; i < n; i++) out[i] = out[i] / max;
+  return { stepSec: stepSec, values: out, durationSec: durationSec };
+}
+
+/**
+ * 懒解码指定雷声素材为 `AudioBuffer`（每个 key 只解码一次）。
+ * @param {keyof typeof MATRIX_RAIN_THUNDER_ASSETS | string} key
+ * @returns {Promise<AudioBuffer | null>}
+ */
+function ensureMatrixRainThunderAssetDecoded(key) {
+  if (matrixRainThunderBuffers[key]) return Promise.resolve(matrixRainThunderBuffers[key]);
+  if (matrixRainThunderDecodePromises[key]) return matrixRainThunderDecodePromises[key];
+  var url = /** @type {Record<string, string>} */ (MATRIX_RAIN_THUNDER_ASSETS)[key];
+  if (!url) return Promise.resolve(null);
+  matrixRainThunderDecodePromises[key] = (function () {
+    var ctx = ensureMatrixRainAmbienceAudioContext();
+    if (!ctx) return Promise.resolve(null);
+    return fetch(url)
+      .then(function (res) {
+        if (!res.ok) return null;
+        return res.arrayBuffer();
+      })
+      .then(function (ab) {
+        if (!ab) return Promise.resolve(null);
+        return new Promise(function (resolve, reject) {
+          try {
+            ctx.decodeAudioData(
+              ab.slice(0),
+              function (buf) {
+                resolve(buf);
+              },
+              reject
+            );
+          } catch (e) {
+            reject(e);
+          }
+        });
+      })
+      .then(function (buf) {
+        matrixRainThunderBuffers[key] = buf;
+        if (buf && !matrixRainThunderEnvelopes[key]) {
+          try {
+            matrixRainThunderEnvelopes[key] = analyzeThunderEnvelope(buf);
+          } catch (e2) {
+            matrixRainThunderEnvelopes[key] = null;
+          }
+        }
+        return buf;
+      })
+      .catch(function () {
+        matrixRainThunderBuffers[key] = null;
+        matrixRainThunderEnvelopes[key] = null;
+        return null;
+      })
+      .then(function (result) {
+        matrixRainThunderDecodePromises[key] = null;
+        return result;
+      });
+  })();
+  return matrixRainThunderDecodePromises[key];
+}
+
+/**
+ * 根据闪电强度选择雷声类别（带随机扰动，避免机械分桶）。
+ * @param {number} intensity 0..1
+ * @returns {keyof typeof MATRIX_RAIN_THUNDER_ASSETS}
+ */
+function pickThunderAssetKey(intensity) {
+  var t = Math.max(0, Math.min(1, intensity));
+  var r = Math.random();
+  if (t < 0.34) {
+    return r < 0.6 ? 'farSoft' : 'farRoll';
+  }
+  if (t < 0.68) {
+    if (r < 0.55) return 'mid';
+    return r < 0.8 ? 'farRoll' : 'nearCrack';
+  }
+  return r < 0.52 ? 'nearHeavy' : 'nearCrack';
+}
+
+/**
+ * 停止并清理所有 pending 雷声计时器与正在播放的 node（仅 intro 范围）。
+ * @returns {void}
+ */
+function stopMatrixRainThunder() {
+  if (matrixRainThunderTimeoutIds && matrixRainThunderTimeoutIds.length) {
+    matrixRainThunderTimeoutIds.forEach(function (id) {
+      try {
+        clearTimeout(id);
+      } catch (e) {}
+    });
+    matrixRainThunderTimeoutIds = [];
+  }
+  if (matrixRainThunderActiveNodes && matrixRainThunderActiveNodes.length) {
+    matrixRainThunderActiveNodes.forEach(function (p) {
+      if (!p) return;
+      try {
+        p.src.stop(0);
+      } catch (e) {}
+      try {
+        p.src.disconnect();
+      } catch (e2) {}
+      try {
+        p.gain.disconnect();
+      } catch (e3) {}
+    });
+    matrixRainThunderActiveNodes = [];
+  }
+  matrixRainThunderActivePulses = [];
+}
+
+/**
+ * 触发一次延迟雷声（强度驱动音量/延迟/速率/起播偏移）。
+ * @param {number} intensity 0..1
+ * @returns {void}
+ */
+function scheduleMatrixRainThunder(intensity, key) {
+  var t = Math.max(0, Math.min(1, intensity));
+  var k = key || pickThunderAssetKey(t);
+  // 距离感：far 更慢、near 更快。再叠加强度（强雷偏近）与少量抖动。
+  var baseDelay =
+    k === 'farSoft' || k === 'farRoll'
+      ? 1400 + Math.random() * 900
+      : k === 'mid'
+        ? 900 + Math.random() * 650
+        : 520 + Math.random() * 520;
+  var delayMs = Math.round(baseDelay * (1.05 - 0.35 * t) + (Math.random() * 140 - 70));
+  if (delayMs < 260) delayMs = 260;
+  var tid = setTimeout(function () {
+    if (stream) return;
+    if (!requestRainCanvas || !requestRainCanvas.classList.contains('ascii-request-rain-canvas--visible')) return;
+    ensureMatrixRainThunderAssetDecoded(k).then(function (buf) {
+      if (!buf || stream) return;
+      var ctx = ensureMatrixRainAmbienceAudioContext();
+      if (!ctx) return;
+      var gain;
+      var src;
+      try {
+        gain = ctx.createGain();
+        // 基于类别的基础音量，强度再拉开；并加少量扰动。
+        var baseG =
+          k === 'farSoft'
+            ? 0.14
+            : k === 'farRoll'
+              ? 0.18
+              : k === 'mid'
+                ? 0.24
+                : k === 'nearCrack'
+                  ? 0.30
+                  : 0.34;
+        var g = baseG + (MATRIX_RAIN_THUNDER_GAIN_MAX - baseG) * (0.35 + 0.65 * t);
+        g *= 0.90 + Math.random() * 0.20;
+        gain.gain.value = Math.max(0, Math.min(MATRIX_RAIN_THUNDER_GAIN_MAX, g));
+        gain.connect(ctx.destination);
+        src = ctx.createBufferSource();
+        src.buffer = buf;
+        // 更明显的速度变化：远处更慢更“滚”，近处更锐更快（但保持自然范围）。
+        var baseRate =
+          k === 'farRoll' ? 0.90 : k === 'farSoft' ? 0.96 : k === 'mid' ? 1.0 : k === 'nearHeavy' ? 0.94 : 1.05;
+        var rate = baseRate * (0.93 + Math.random() * 0.14);
+        src.playbackRate.value = Math.max(0.78, Math.min(1.18, rate));
+        src.connect(gain);
+        matrixRainThunderActiveNodes.push({ src: src, gain: gain });
+        // 起播偏移：far 可以跳过更长前奏，near 尽量保留冲击起点。
+        var dur = buf.duration || 0;
+        var maxOff = Math.min(1.1, Math.max(0, dur - 0.25));
+        var offBase = k === 'farSoft' ? 0.55 : k === 'farRoll' ? 0.4 : k === 'mid' ? 0.22 : 0.05;
+        var off = offBase * (0.35 + Math.random() * 0.65);
+        off = Math.max(0, Math.min(maxOff, off));
+
+        // tail 处理：用 gain 包络控制结束，不必整段都播（减少重复感和占用）。
+        var now = ctx.currentTime;
+        var maxPlay = k === 'farRoll' ? 5.2 : k === 'nearHeavy' ? 4.4 : k === 'mid' ? 4.0 : 3.4;
+        maxPlay *= 0.85 + Math.random() * 0.3;
+        var remain = Math.max(0.35, dur - off);
+        var playSec = Math.min(remain, maxPlay);
+        // 保留开头不变，结束前做指数衰减。
+        try {
+          gain.gain.setValueAtTime(gain.gain.value, now);
+          gain.gain.setTargetAtTime(0.0001, now + Math.max(0.1, playSec - 0.65), 0.25);
+        } catch (e0) {}
+        src.start(0, off);
+        try {
+          src.stop(now + playSec);
+        } catch (eStop) {}
+
+        // envelope 驱动视觉后续微脉冲（克制：不改变主闪，只做轻呼吸）。
+        var env = matrixRainThunderEnvelopes[k];
+        if (env && asciiLightningOverlay) {
+          var strength = (k === 'nearCrack' || k === 'nearHeavy' ? 0.12 : k === 'mid' ? 0.09 : 0.06) * (0.35 + 0.65 * t);
+          strength *= 0.85 + Math.random() * 0.25;
+          matrixRainThunderActivePulses.push({
+            startMs: (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(),
+            env: env,
+            strength: Math.max(0.02, Math.min(0.16, strength)),
+            endMs:
+              ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) +
+              Math.min(5200, Math.max(1200, env.durationSec * 1000))
+          });
+        }
+
+        // 偶尔加一层极弱“远处滚尾”，让 near 事件更像天气系统（概率低，避免变成多轨系统）。
+        if ((k === 'nearCrack' || k === 'nearHeavy') && Math.random() < 0.18) {
+          ensureMatrixRainThunderAssetDecoded('farRoll').then(function (tailBuf) {
+            if (!tailBuf || stream) return;
+            var tailSrc;
+            var tailGain;
+            try {
+              tailGain = ctx.createGain();
+              tailGain.gain.value = Math.min(0.14, 0.06 + 0.06 * t) * (0.85 + Math.random() * 0.25);
+              tailGain.connect(ctx.destination);
+              tailSrc = ctx.createBufferSource();
+              tailSrc.buffer = tailBuf;
+              tailSrc.playbackRate.value = 0.88 + Math.random() * 0.14;
+              tailSrc.connect(tailGain);
+              matrixRainThunderActiveNodes.push({ src: tailSrc, gain: tailGain });
+              var tailOff = Math.min(0.8, Math.max(0, (tailBuf.duration || 0) - 0.3)) * Math.random();
+              tailSrc.start(ctx.currentTime + (0.55 + Math.random() * 0.35), tailOff);
+              tailSrc.stop(ctx.currentTime + (2.4 + Math.random() * 1.0));
+            } catch (eTail) {
+              try {
+                if (tailSrc) tailSrc.disconnect();
+              } catch (eD1) {}
+              try {
+                if (tailGain) tailGain.disconnect();
+              } catch (eD2) {}
+            }
+          });
+        }
+        src.onended = function () {
+          matrixRainThunderActiveNodes = matrixRainThunderActiveNodes.filter(function (p) {
+            return p && p.src !== src;
+          });
+          try {
+            src.disconnect();
+          } catch (e4) {}
+          try {
+            gain.disconnect();
+          } catch (e5) {}
+        };
+      } catch (e) {
+        try {
+          if (src) src.disconnect();
+        } catch (e2) {}
+        try {
+          if (gain) gain.disconnect();
+        } catch (e3) {}
+      }
+    });
+  }, delayMs);
+  matrixRainThunderTimeoutIds.push(/** @type {unknown as number} */ (tid));
+}
+
+/**
  * 连接常驻 `GainNode`（音量与快门路径独立）。
  * @param {AudioContext} ctx
  * @returns {GainNode | null}
@@ -1605,6 +1960,39 @@ function stopMatrixRainAmbience() {
   if (ctx && ctx.state === 'running' && typeof ctx.suspend === 'function') {
     ctx.suspend().catch(function () {});
   }
+}
+
+/**
+ * 启动 code-rain 闪电/雷声氛围系统（仅 intro；闪电动画由 `requestRainTick` 驱动）。
+ * @returns {void}
+ */
+function startMatrixRainLightningThunder() {
+  if (stream) return;
+  matrixRainLightningActive = true;
+  matrixRainLightningFlashes = [];
+  matrixRainLightningEventEndMs = 0;
+  var now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  matrixRainLightningNextEventMs = now + (7000 + Math.random() * 9000);
+  if (asciiLightningOverlay) {
+    asciiLightningOverlay.classList.add('ascii-lightning-overlay--mounted');
+    asciiLightningOverlay.style.opacity = '0';
+  }
+}
+
+/**
+ * 停止并清理闪电/雷声系统（不改变 code-rain 状态机，只做资源/计时器清理）。
+ * @returns {void}
+ */
+function stopMatrixRainLightningThunder() {
+  matrixRainLightningActive = false;
+  matrixRainLightningFlashes = [];
+  matrixRainLightningEventEndMs = 0;
+  matrixRainLightningNextEventMs = 0;
+  if (asciiLightningOverlay) {
+    asciiLightningOverlay.style.opacity = '0';
+    asciiLightningOverlay.classList.remove('ascii-lightning-overlay--mounted');
+  }
+  stopMatrixRainThunder();
 }
 
 /**
@@ -4092,6 +4480,111 @@ function requestRainTick() {
     h = requestRainCssH;
   }
   drawRequestRainFrame(w, h);
+  // 闪电白闪：使用同一 rAF 驱动，不额外开动画循环。
+  if (matrixRainLightningActive) {
+    var now2 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    // 生成新事件（稀疏、自然）。
+    if (matrixRainLightningNextEventMs > 0 && now2 >= matrixRainLightningNextEventMs) {
+      // 强度偏向较弱，偶尔更强。
+      var r = Math.random();
+      var intensity = Math.pow(r, 0.55);
+      intensity = Math.max(0.18, Math.min(1, intensity));
+      // 先选定本次雷声类别，使主闪亮度与“距离/性格”强绑定（而非通用强度曲线）。
+      var thunderKey = pickThunderAssetKey(intensity);
+      var flashCount;
+      if (thunderKey === 'nearCrack') flashCount = 2 + (Math.random() < 0.55 ? 1 : 0);
+      else if (thunderKey === 'nearHeavy') flashCount = 2 + (Math.random() < 0.35 ? 1 : 0);
+      else if (thunderKey === 'mid') flashCount = 1 + (Math.random() < 0.55 ? 1 : 0);
+      else flashCount = 1 + (Math.random() < 0.25 ? 1 : 0);
+      var t0 = now2;
+      var flashes = [];
+      // 主闪峰值：按雷声类别分 tier（nearCrack 接近全白），并在 tier 内加入少量随机。
+      var basePeak =
+        thunderKey === 'nearCrack'
+          ? 0.94
+          : thunderKey === 'nearHeavy'
+            ? 0.82
+            : thunderKey === 'mid'
+              ? 0.56
+              : thunderKey === 'farRoll'
+                ? 0.34
+                : 0.24;
+      basePeak *= 0.94 + Math.random() * 0.08;
+      var mainPeak = Math.max(0.18, Math.min(0.98, basePeak));
+      // 维持“瞬发”：主闪极短，不用拉长来增强。
+      var mainDurMs = thunderKey === 'nearCrack' ? 55 : thunderKey === 'nearHeavy' ? 60 : 62;
+      mainDurMs *= 0.9 + Math.random() * 0.25;
+      flashes.push({ t0: t0, t1: t0 + mainDurMs, peak: mainPeak });
+      if (flashCount >= 2) {
+        var tA = t0 + (120 + Math.random() * 120);
+        flashes.push({
+          t0: tA,
+          t1: tA + (38 + Math.random() * 28),
+          peak: mainPeak * (0.42 + Math.random() * 0.22)
+        });
+      }
+      if (flashCount >= 3) {
+        var tB = t0 + (240 + Math.random() * 180);
+        flashes.push({
+          t0: tB,
+          t1: tB + (32 + Math.random() * 24),
+          peak: mainPeak * (0.26 + Math.random() * 0.18)
+        });
+      }
+      matrixRainLightningFlashes = flashes;
+      matrixRainLightningEventEndMs = flashes[flashes.length - 1].t1 + 60;
+      var baseGap = 7000 + Math.random() * 14000; // 7..21s
+      matrixRainLightningNextEventMs = now2 + baseGap * (0.85 + 0.45 * intensity);
+      scheduleMatrixRainThunder(intensity, thunderKey);
+    }
+    // 计算当前闪光 alpha
+    var alpha = 0;
+    if (matrixRainLightningFlashes && matrixRainLightningFlashes.length) {
+      for (var fi = 0; fi < matrixRainLightningFlashes.length; fi++) {
+        var f = matrixRainLightningFlashes[fi];
+        if (!f) continue;
+        if (now2 < f.t0 || now2 > f.t1) continue;
+        var mid = (f.t0 + f.t1) / 2;
+        var half = Math.max(1, (f.t1 - f.t0) / 2);
+        var x = 1 - Math.abs(now2 - mid) / half; // 0..1
+        var eased = x * x * (3 - 2 * x);
+        alpha += f.peak * eased;
+      }
+      if (now2 > matrixRainLightningEventEndMs) {
+        matrixRainLightningFlashes = [];
+        matrixRainLightningEventEndMs = 0;
+      }
+    }
+    alpha = Math.max(0, Math.min(0.55, alpha));
+    // 雷声包络驱动的后续微脉冲（克制、低强度，不覆盖主闪）。
+    if (matrixRainThunderActivePulses && matrixRainThunderActivePulses.length) {
+      var pulseAdd = 0;
+      var keep = [];
+      for (var pi = 0; pi < matrixRainThunderActivePulses.length; pi++) {
+        var p = matrixRainThunderActivePulses[pi];
+        if (!p) continue;
+        if (now2 > p.endMs) continue;
+        var dt = Math.max(0, (now2 - p.startMs) / 1000);
+        var env = p.env;
+        var idx = Math.floor(dt / Math.max(1e-3, env.stepSec));
+        if (idx < 0 || idx >= env.values.length) {
+          keep.push(p);
+          continue;
+        }
+        // 平滑呼吸：平方根压缩，降低峰值；并随时间轻微衰减。
+        var v = Math.sqrt(Math.max(0, env.values[idx]));
+        var decay = Math.max(0, 1 - dt / Math.max(2.5, env.durationSec));
+        pulseAdd += p.strength * v * (0.35 + 0.65 * decay);
+        keep.push(p);
+      }
+      matrixRainThunderActivePulses = keep;
+      alpha += Math.min(0.16, pulseAdd);
+    }
+    alpha = Math.max(0, Math.min(0.55, alpha));
+    if (asciiLightningOverlay) {
+      asciiLightningOverlay.style.opacity = String(alpha.toFixed(3));
+    }
+  }
   requestRainRaf = requestAnimationFrame(requestRainTick);
 }
 
@@ -4111,6 +4604,7 @@ function startRequestRainEffect() {
   if (requestRainRaf != null) cancelAnimationFrame(requestRainRaf);
   requestRainRaf = requestAnimationFrame(requestRainTick);
   startMatrixRainAmbiencePlay();
+  startMatrixRainLightningThunder();
 }
 
 /**
@@ -4121,6 +4615,7 @@ function stopRequestRainEffectFade() {
   if (!requestRainCanvas) return;
   var gen = ++requestRainFadeGen;
   stopMatrixRainAmbience();
+  stopMatrixRainLightningThunder();
   if (requestRainRaf != null) {
     cancelAnimationFrame(requestRainRaf);
     requestRainRaf = null;
@@ -4159,6 +4654,7 @@ function stopRequestRainEffectFade() {
 function abortRequestRainEffect() {
   requestRainFadeGen++;
   stopMatrixRainAmbience();
+  stopMatrixRainLightningThunder();
   if (!requestRainCanvas) return;
   if (requestRainRaf != null) {
     cancelAnimationFrame(requestRainRaf);
