@@ -2131,6 +2131,12 @@ const asciiFrameMaskCtx = asciiFrameMaskCanvas ? asciiFrameMaskCanvas.getContext
 /** 用于 `change` 前把勾选写回上一比例的记忆（与 `aspectPicker.value` 同步于 `applyCaptureModeUi` 末尾）。 */
 var lastAspectPickerValueForMask = aspectPicker ? aspectPicker.value : '';
 
+/**
+ * 进入 **Photo 预览** 前取景用的比例；仅用于 Retake 恢复 live，不参与 Loop。
+ * @type {string | null}
+ */
+var photoPreviewLiveAspectBefore = null;
+
 /** Photo 下 3:4 / 1:1 各自记住取景框遮罩勾选（切 Loop 时仅隐藏 UI，不切记忆）。 */
 var frameMaskCheckedOval = false;
 
@@ -2873,7 +2879,7 @@ function applyCaptureModeUi() {
   if (cameraShell) cameraShell.classList.toggle('cam-video-mode', videoMode);
   /**
    * 未开摄像头：Style 禁用；Photo 下 Aspect/Resolution 可调；Video 下与已开摄像头时一致（1:1；Resolution 可选 60/80）。
-   * 预览态：仅确认画面，不可改比例/分辨率。
+   * 预览态：Resolution 仍锁；Aspect 仅由 `videoMode` 决定（Photo 含 Photo 预览可调，Loop/Video 预览锁定）。
    * 实时取景：Video 下锁定 Aspect（Resolution 可选 60/80）。
    */
   var flashSwitchLabel =
@@ -2948,12 +2954,27 @@ function applyCaptureModeUi() {
       flashSwitchLabel.classList.add('flash-switch--disabled');
       flashSwitchLabel.setAttribute('aria-disabled', 'true');
     }
-    aspectPicker.disabled = true;
+    /** Aspect：仅 `videoMode`；Photo（含 Photo 预览）始终可改，Loop/Video 锁定。 */
+    if (videoMode === true) {
+      if (aspectPicker) {
+        aspectPicker.disabled = true;
+        aspectPicker.classList.add('select-strong-disabled');
+      }
+      if (aspectPickerStack) {
+        aspectPickerStack.classList.add('select-locked');
+      }
+    } else {
+      if (aspectPicker) {
+        aspectPicker.disabled = false;
+        aspectPicker.classList.remove('select-strong-disabled');
+      }
+      if (aspectPickerStack) {
+        aspectPickerStack.classList.remove('select-locked');
+      }
+    }
     resPicker.disabled = true;
-    aspectPicker.classList.add('select-strong-disabled');
     resPicker.classList.add('select-strong-disabled');
     if (resPickerStack) resPickerStack.classList.add('select-locked');
-    if (aspectPickerStack) aspectPickerStack.classList.add('select-locked');
   } else {
     if (densityPicker) {
       densityPicker.disabled = false;
@@ -3379,6 +3400,15 @@ AsciiCameraUi.wireEventBindings({
     syncPhotoFrameMaskLayoutRedraw();
   },
   onAspectPickerChange: function () {
+    var p = AsciiCameraPreview.pendingGalleryPayload;
+    if (AsciiCameraPreview.previewCaptureActive === true && p && p.isPhotoPreview === true) {
+      lastAspectPickerValueForMask = aspectPicker.value;
+      regeneratePhotoPreviewFromCanonical();
+      syncIntroRequestRain();
+      updateFrameMaskUi();
+      applyCaptureModeUi();
+      return;
+    }
     if (videoMode) {
       lastAspectPickerValueForMask = aspectPicker.value;
       invalidateAsciiCellMetrics();
@@ -4467,11 +4497,11 @@ function requestRainTick() {
         (1 - REQUEST_RAIN_BUILD_START_INTENSITY) * ease;
     }
   }
-  var rect = asciiActiveFrame.getBoundingClientRect();
-  var w = Math.max(1, Math.floor(rect.width));
-  var h = Math.max(1, Math.floor(rect.height));
-  if (w < 2 || h < 2) {
-    requestRainRaf = requestAnimationFrame(requestRainTick);
+      var rect = asciiActiveFrame.getBoundingClientRect();
+      var w = Math.max(1, Math.floor(rect.width));
+      var h = Math.max(1, Math.floor(rect.height));
+      if (w < 2 || h < 2) {
+        requestRainRaf = requestAnimationFrame(requestRainTick);
     return;
   }
   if (Math.abs(w - requestRainCssW) > 2 || Math.abs(h - requestRainCssH) > 2) {
@@ -5008,7 +5038,9 @@ function luminanceToAscii(luma, cols, rows, chars) {
 }
 
 /**
- * Photo 预览：自 `lumaCanonical` 复制、按当前勾选施加帧遮罩并重算 ASCII（不修改规范亮度源）。
+ * Photo 预览：自 `lumaCanonical`（**未畸变**）复制 → 若当前 Style 为畸变镜则按滑块档实时重算畸变 → 按当前勾选施加帧遮罩并重算 ASCII。
+ * 是否施加畸变镜以**当前** `densityPicker` 为准，不依赖 `p.usedDistortingMirror`（便于非畸变拍摄后在预览里切到畸变镜再调强度）。
+ * 不修改 `lumaCanonical` 本身，因此可反复拖动滑块刷新预览。
  * @returns {void}
  */
 function regeneratePhotoPreviewFromCanonical() {
@@ -5022,6 +5054,15 @@ function regeneratePhotoPreviewFromCanonical() {
     p.luma = new Float32Array(n);
   }
   p.luma.set(p.lumaCanonical);
+  if (densityPicker && densityPicker.value === STYLE_DISTORTING_MIRROR) {
+    var dmLvNow = getDistortMirrorLevel();
+    if (dmLvNow > 0) {
+      applyDistortingMirrorToLumaArray(p.luma, cols, rows, dmLvNow);
+    }
+    p.distortMirrorLevel = dmLvNow;
+  } else {
+    p.distortMirrorLevel = 0;
+  }
   var metrics = getAsciiCellMetrics();
   var ap = aspectPicker ? aspectPicker.value : '';
   var maskKind = getPhotoFrameMaskKind();
@@ -5049,10 +5090,41 @@ function regeneratePhotoPreviewFromCanonical() {
   }
   p.bakedFrameMask = baked;
   p.ascii = luminanceToAscii(p.luma, cols, rows, getChars());
+  if (aspectPicker) {
+    p.previewAspect = aspectPicker.value;
+  }
   out.textContent = p.ascii;
   invalidateAsciiCellMetrics();
   syncAsciiLayout();
   syncPhotoFrameMaskOverlay();
+}
+
+/**
+ * 进入 Photo 预览时记录当前 live `aspectPicker` 值，供 Retake 恢复。
+ * @returns {void}
+ */
+function recordPhotoPreviewLiveAspectSnapshot() {
+  if (!aspectPicker) return;
+  photoPreviewLiveAspectBefore = aspectPicker.value;
+}
+
+/**
+ * Retake 离开 Photo 预览时恢复进入预览前的 live 比例。
+ * @returns {void}
+ */
+function restorePhotoPreviewLiveAspectAfterRetake() {
+  if (photoPreviewLiveAspectBefore == null || !aspectPicker) return;
+  aspectPicker.value = photoPreviewLiveAspectBefore;
+  photoPreviewLiveAspectBefore = null;
+  if (aspectPicker) lastAspectPickerValueForMask = aspectPicker.value;
+}
+
+/**
+ * 成功提交或其它退出预览路径丢弃快照（不改动当前 `aspectPicker`）。
+ * @returns {void}
+ */
+function clearPhotoPreviewLiveAspectSnapshot() {
+  photoPreviewLiveAspectBefore = null;
 }
 
 /**
@@ -5184,6 +5256,49 @@ function applyDistortingMirrorToCanvas2d(c2d, cols, rows, level) {
 }
 
 /**
+ * 亮度域版的畸变镜（与 `applyDistortingMirrorToCanvas2d` 同算法）。
+ * 直接对 `Float32Array` 亮度做行级正弦水平位移 + 镜面折返 + 水平双线性采样；
+ * 用于：取景每帧仅需亮度时省掉 RGBA 往返；以及 Photo 预览态根据滑块档实时重算畸变（基于未畸变 `lumaCanonical`）。
+ *
+ * @param {Float32Array} luma 目标亮度数组（in-place 写入）；要求长度 = `cols*rows`
+ * @param {number} cols
+ * @param {number} rows
+ * @param {number} level 0…11；0 档直接返回不动
+ * @returns {void}
+ */
+function applyDistortingMirrorToLumaArray(luma, cols, rows, level) {
+  if (level <= 0) return;
+  if (!luma || luma.length !== cols * rows) return;
+  var lv = Math.min(11, Math.max(1, level));
+  var DISTORT_MIRROR_WAVE_CYCLES = 2;
+  var phase = 0;
+  var freq = (DISTORT_MIRROR_WAVE_CYCLES * 2 * Math.PI) / Math.max(rows - 1, 1);
+  /** 与 canvas 版常数保持一致，确保两条路径视觉等价。 */
+  var AMP_MAX_REL = 0.17;
+  var AMP_MIN_REL = 0.012;
+  var ampMinPx = cols * AMP_MIN_REL;
+  var ampMaxPx = cols * AMP_MAX_REL;
+  var u = (lv - 1) / 10;
+  var AMP_CURVE_EXP = 1.65;
+  var ampPx = ampMinPx + (ampMaxPx - ampMinPx) * Math.pow(u, AMP_CURVE_EXP);
+  var src = new Float32Array(luma);
+  var maxX = cols - 1;
+  for (var y = 0; y < rows; y++) {
+    var offsetX = ampPx * Math.sin(freq * y + phase);
+    var rowBase = y * cols;
+    for (var x = 0; x < cols; x++) {
+      var sx = mirrorSampleXIntoRange(x + offsetX, cols);
+      var x0 = Math.floor(sx);
+      if (x0 < 0) x0 = 0;
+      else if (x0 > maxX) x0 = maxX;
+      var x1 = x0 + 1 <= maxX ? x0 + 1 : maxX;
+      var fx = sx - x0;
+      luma[rowBase + x] = src[rowBase + x0] * (1 - fx) + src[rowBase + x1] * fx;
+    }
+  }
+}
+
+/**
  * Stop Camera / 回到 matrix rain idle：Style→Detailed、清畸变强度、去掉预览锁定样式类。
  * @returns {void}
  */
@@ -5217,18 +5332,34 @@ function updateDistortMirrorIronCellClass() {
 }
 
 /**
- * Distorting Mirror：滑块显隐；预览锁定且 `usedDistortingMirror` 时强制隐藏（Photo / Loop 一致）。
- * Live：Style 为畸变镜时显示（含 Loop）；非畸变镜或预览锁定则隐藏。
+ * Loop 预览专用：`densityPicker` 中 `distortingMirror` 选项禁用/恢复；锁为 true 时若当前为畸变镜则切回 `detailed`。
+ * 不在此函数内触发预览重算（避免 Loop 预览再走畸变镜重算路径）。退出预览务必将 `locked` 设回 `false`。
+ * @param {boolean} locked
+ * @returns {void}
+ */
+function setLoopPreviewDistortingMirrorOptionLocked(locked) {
+  if (!densityPicker) return;
+  var opt = densityPicker.querySelector('option[value="' + STYLE_DISTORTING_MIRROR + '"]');
+  if (opt) opt.disabled = !!locked;
+  if (locked && densityPicker.value === STYLE_DISTORTING_MIRROR) {
+    densityPicker.value = 'detailed';
+  }
+  syncDistortMirrorSliderVisibility();
+}
+
+/**
+ * Distorting Mirror：滑块显隐。
+ * - Photo 预览：当前 Style 为畸变镜时显示；**不**依赖 `p.usedDistortingMirror`；滑块始终可拖动（即使 Style 下拉因拍摄时已选畸变镜被禁用）。
+ * - Loop 预览：不展示畸变镜滑块（Style 在预览内被强制离开畸变镜或不选该项）。
+ * - Live：Style 为畸变镜时显示，否则隐藏。
  * @returns {void}
  */
 function syncDistortMirrorSliderVisibility() {
   if (!distortMirrorSliderWrap || !distortMirrorSlider || !densityPicker) return;
   var p = AsciiCameraPreview.pendingGalleryPayload;
-  var previewLockDm =
-    AsciiCameraPreview.previewCaptureActive &&
-    p &&
-    p.usedDistortingMirror === true;
-  if (previewLockDm) {
+  var inPreview = AsciiCameraPreview.previewCaptureActive && !!p;
+  var isPhotoPreview = inPreview && p.isPhotoPreview === true;
+  if (inPreview && !isPhotoPreview) {
     distortMirrorSliderWrap.hidden = true;
     distortMirrorSliderWrap.setAttribute('aria-hidden', 'true');
     distortMirrorSlider.disabled = true;
@@ -5239,7 +5370,7 @@ function syncDistortMirrorSliderVisibility() {
   if (isDm) {
     distortMirrorSliderWrap.hidden = false;
     distortMirrorSliderWrap.setAttribute('aria-hidden', 'false');
-    distortMirrorSlider.disabled = densityPicker.disabled;
+    distortMirrorSlider.disabled = isPhotoPreview ? false : densityPicker.disabled;
   } else {
     distortMirrorSliderWrap.hidden = true;
     distortMirrorSliderWrap.setAttribute('aria-hidden', 'true');
@@ -5250,13 +5381,17 @@ function syncDistortMirrorSliderVisibility() {
 
 /**
  * 采样当前视频帧为亮度格 + ASCII（用于预览态按 Style 重算，不重新访问摄像头像素逻辑外路径）。
+ *
+ * 同时返回 `lumaUndistorted`：未叠加畸变镜的亮度快照（非畸变档与 `luma` 同源）。
+ * 拍照路径将其作为 `lumaCanonical` 持久化，使 Photo 预览能根据滑块实时重算畸变。
+ *
  * @param {number} cols
  * @param {number | null | undefined} aspectOverride
- * @returns {{ ascii: string, luma: Float32Array, cols: number, rows: number }}
+ * @returns {{ ascii: string, luma: Float32Array, lumaUndistorted: Float32Array, cols: number, rows: number }}
  */
 function toAsciiWithLuminance(cols, aspectOverride) {
   if (!video.videoWidth || !video.videoHeight) {
-    return { ascii: '', luma: new Float32Array(0), cols: 0, rows: 0 };
+    return { ascii: '', luma: new Float32Array(0), lumaUndistorted: new Float32Array(0), cols: 0, rows: 0 };
   }
   const chars = getChars();
   const { cellAspect } = getAsciiCellMetrics();
@@ -5287,23 +5422,25 @@ function toAsciiWithLuminance(cols, aspectOverride) {
     ctx.drawImage(video, 0, 0, cols, rows);
   }
   ctx.restore();
-  if (densityPicker && densityPicker.value === STYLE_DISTORTING_MIRROR) {
-    var dmLv = getDistortMirrorLevel();
-    if (dmLv > 0) {
-      applyDistortingMirrorToCanvas2d(ctx, cols, rows, dmLv);
-    }
-  }
   const pixels = ctx.getImageData(0, 0, cols, rows).data;
-  const luma = new Float32Array(cols * rows);
+  const lumaUndistorted = new Float32Array(cols * rows);
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const i = (y * cols + x) * 4;
       const b = (0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2]) / 255;
-      luma[y * cols + x] = b;
+      lumaUndistorted[y * cols + x] = b;
+    }
+  }
+  let luma = lumaUndistorted;
+  if (densityPicker && densityPicker.value === STYLE_DISTORTING_MIRROR) {
+    var dmLv = getDistortMirrorLevel();
+    if (dmLv > 0) {
+      luma = new Float32Array(lumaUndistorted);
+      applyDistortingMirrorToLumaArray(luma, cols, rows, dmLv);
     }
   }
   const ascii = luminanceToAscii(luma, cols, rows, chars);
-  return { ascii, luma, cols, rows };
+  return { ascii, luma, lumaUndistorted, cols, rows };
 }
 
 /**
@@ -5511,7 +5648,11 @@ AsciiCameraPreview.bindCore({
   loopCoverSlider: loopCoverSlider,
   loopCoverLabel: loopCoverLabel,
   camSubmitStatusSlot: camSubmitStatusSlot,
-  regeneratePhotoPreviewFromCanonical: regeneratePhotoPreviewFromCanonical
+  regeneratePhotoPreviewFromCanonical: regeneratePhotoPreviewFromCanonical,
+  setLoopPreviewDistortingMirrorOptionLocked: setLoopPreviewDistortingMirrorOptionLocked,
+  recordPhotoPreviewLiveAspectSnapshot: recordPhotoPreviewLiveAspectSnapshot,
+  restorePhotoPreviewLiveAspectAfterRetake: restorePhotoPreviewLiveAspectAfterRetake,
+  clearPhotoPreviewLiveAspectSnapshot: clearPhotoPreviewLiveAspectSnapshot
 });
 
 startBtn.addEventListener('click', async () => {
@@ -5520,6 +5661,8 @@ startBtn.addEventListener('click', async () => {
     AsciiCameraPreview.clearPreviewAnimLoop();
     AsciiCameraPreview.previewCaptureActive = false;
     AsciiCameraPreview.pendingGalleryPayload = null;
+    setLoopPreviewDistortingMirrorOptionLocked(false);
+    clearPhotoPreviewLiveAspectSnapshot();
     if (cameraShell) cameraShell.classList.remove('cam-preview-capture');
     if (submitGalleryBtn) submitGalleryBtn.disabled = true;
     if (camTabPhoto) camTabPhoto.disabled = false;
@@ -5657,9 +5800,17 @@ snapBtn.addEventListener('click', async () => {
       var bakedFrameMask = false;
       var maskKind = getPhotoFrameMaskKind();
       var nCell = photoPack.cols * photoPack.rows;
+      /**
+       * `lumaCanonical` 选取**未畸变**亮度作为预览源（非畸变档下与 `photoPack.luma` 等价）；
+       * Photo 预览态拖动 `#distortMirrorSlider` 即基于此重算畸变 → 帧遮罩 → ASCII。
+       */
+      var lumaCanonicalSrc =
+        photoPack.lumaUndistorted && photoPack.lumaUndistorted.length === nCell
+          ? photoPack.lumaUndistorted
+          : photoPack.luma;
       var lumaCanonical =
-        photoPack.luma && photoPack.luma.length === nCell
-          ? new Float32Array(photoPack.luma)
+        lumaCanonicalSrc && lumaCanonicalSrc.length === nCell
+          ? new Float32Array(lumaCanonicalSrc)
           : new Float32Array(0);
       var apShot = aspectPicker ? aspectPicker.value : '';
       /** @type {null | { cols: number, rows: number, rows72: number, tVerticalInCells: number, gInCells: number, tHorizontalInRows: number, h1: number, h2: number }} */

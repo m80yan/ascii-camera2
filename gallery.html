@@ -133,7 +133,14 @@
   }
   #upload-input { display: none; }
   #empty { text-align: center; opacity: 0.3; margin-top: 80px; font-size: 13px; letter-spacing: 2px; line-height: 2.5; }
-  #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; align-items: start; }
+  /** 列距保持 16px；行距加倍，减轻卡片纵向拥挤感 */
+  #gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    column-gap: 16px;
+    row-gap: 32px;
+    align-items: start;
+  }
   .photo-card {
     background: #000;
     border: 1px solid rgba(0,255,65,0.15);

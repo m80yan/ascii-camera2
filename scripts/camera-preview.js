@@ -235,6 +235,10 @@
    * @returns {void}
    */
   P.enterPreviewState = function (payload) {
+    var lockOpt = /** @type {unknown} */ (C().setLoopPreviewDistortingMirrorOptionLocked);
+    if (typeof lockOpt === 'function') {
+      /** @type {(v: boolean) => void} */ (lockOpt)(false);
+    }
     P.hideLoopCoverUi();
     P.loopCoverFrameIndex = 0;
     P.previewCaptureActive = true;
@@ -252,9 +256,16 @@
     if (typeof payload === 'string') {
       out.textContent = payload;
     } else if (payload && payload.isPhotoPreview === true) {
+      var recAsp = /** @type {unknown} */ (C().recordPhotoPreviewLiveAspectSnapshot);
+      if (typeof recAsp === 'function') {
+        /** @type {() => void} */ (recAsp)();
+      }
       out.textContent = payload.ascii || '';
     } else if (payload && payload.isAnimated && payload.frames && payload.frames.length) {
       global.AsciiCameraLoop.attachCanonicalLoopCaptureBuffers(payload);
+      if (typeof lockOpt === 'function') {
+        /** @type {(v: boolean) => void} */ (lockOpt)(true);
+      }
       out.textContent = payload.frames[0] || '';
       P.startPreviewAnimLoop(payload.frames);
     }
@@ -283,6 +294,14 @@
    * @returns {void}
    */
   P.retakeFromPreview = function () {
+    var lockOptRet = /** @type {unknown} */ (C().setLoopPreviewDistortingMirrorOptionLocked);
+    if (typeof lockOptRet === 'function') {
+      /** @type {(v: boolean) => void} */ (lockOptRet)(false);
+    }
+    var restAsp = /** @type {unknown} */ (C().restorePhotoPreviewLiveAspectAfterRetake);
+    if (typeof restAsp === 'function') {
+      /** @type {() => void} */ (restAsp)();
+    }
     P.hideLoopCoverUi();
     P.loopCoverFrameIndex = 0;
     P.clearPreviewAnimLoop();
@@ -312,6 +331,14 @@
    * @returns {void}
    */
   P.exitPreviewAfterSuccessfulSubmit = function () {
+    var lockOptEx = /** @type {unknown} */ (C().setLoopPreviewDistortingMirrorOptionLocked);
+    if (typeof lockOptEx === 'function') {
+      /** @type {(v: boolean) => void} */ (lockOptEx)(false);
+    }
+    var clrAsp = /** @type {unknown} */ (C().clearPhotoPreviewLiveAspectSnapshot);
+    if (typeof clrAsp === 'function') {
+      /** @type {() => void} */ (clrAsp)();
+    }
     P.hideLoopCoverUi();
     P.loopCoverFrameIndex = 0;
     P.clearPreviewAnimLoop();
@@ -339,13 +366,19 @@
 
   /**
    * 预览态下切换 Style：按已保存的亮度格重算 ASCII/GIF，并写回 `pendingGalleryPayload`（提交时即最新样式）。
-   * 若 `usedDistortingMirror`（Photo / Loop 录制时带畸变镜）则锁定，不重算、不改变样式。
+   * - Photo 预览：`regeneratePhotoPreviewFromCanonical`（`lumaCanonical` + 畸变镜档）。
+   * - Loop 预览：仅 `_loopCaptureLumas` / `frameLumas` 路径重算 ASCII，**不**含 Loop 预览畸变镜专用重算。
    * @returns {void}
    */
   P.applyPreviewStyleFromDensity = function () {
     if (!P.previewCaptureActive || !P.pendingGalleryPayload) return;
     var p = P.pendingGalleryPayload;
-    if (p && typeof p === 'object' && p.usedDistortingMirror === true) {
+    if (
+      p &&
+      typeof p === 'object' &&
+      p.usedDistortingMirror === true &&
+      p.isPhotoPreview !== true
+    ) {
       return;
     }
     var chars = /** @type {() => string} */ (C().getChars)();
