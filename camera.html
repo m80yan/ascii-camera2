@@ -3240,7 +3240,10 @@ function openCameraInNewTab() {
 
 AsciiCameraUi.setupIframeEmbedUi(isEmbeddedInFrame(), function (e) {
   e.preventDefault();
-  openCameraInNewTab();
+  var w = openCameraInNewTab();
+  if (!w) {
+    window.location.assign(window.location.href);
+  }
 });
 
 /** @type {boolean} */
