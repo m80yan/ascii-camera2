@@ -5715,6 +5715,7 @@ function renderGallery(photos, userCountOverride) {
 /**
  * Notion / 发布页常为 `target=_blank` 链接注入 `noopener`，新标签无 `window.opener`，嵌入画廊收不到 `postMessage`。
  * 在用户手势内 `window.open` + 固定窗口名可保留 opener，与 `camera.html` 内 `CAMERA_POPUP_WINDOW_NAME` 一致。
+ * 若弹窗被拦截：**不得** `location.assign` 替换当前画廊页；仅提示用户允许弹窗或自行新开标签。
  */
 (function setupOpenCameraButton() {
   var liveBtn = document.getElementById('live-btn');
@@ -5728,7 +5729,11 @@ function renderGallery(photos, userCountOverride) {
     }
     var w = window.open(camUrl, winName);
     if (!w) {
-      window.location.assign(camUrl);
+      window.alert(
+        'Could not open Camera in a new window (the browser may have blocked a popup).\n\n' +
+        'Allow popups for this page, or right-click “OPEN CAMERA” and use “Open Link in New Tab”.\n\n' +
+        'The gallery page was not navigated away.'
+      );
     }
   });
 })();
