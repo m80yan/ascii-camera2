@@ -279,9 +279,12 @@
     if (submitGalleryBtn) submitGalleryBtn.disabled = false;
     var snapBtn = C().snapBtn;
     var videoMode = /** @type {boolean} */ (C().videoMode);
-    snapBtn.textContent = videoMode
-      ? /** @type {string} */ (C().SNAP_LABEL_RETAKE_VIDEO)
-      : /** @type {string} */ (C().SNAP_LABEL_RETAKE_PHOTO);
+    /** @type {(label: string, showCameraIcon: boolean) => void} */ (C().setSnapButtonLabel)(
+      videoMode
+        ? /** @type {string} */ (C().SNAP_LABEL_RETAKE_VIDEO)
+        : /** @type {string} */ (C().SNAP_LABEL_RETAKE_PHOTO),
+      true
+    );
     snapBtn.disabled = false;
     /** @type {() => void} */ (C().syncVideoProgressBarForMode)();
     /** @type {() => void} */ (C().applyCaptureModeUi)();
@@ -320,9 +323,12 @@
     var snapBtn = C().snapBtn;
     var videoMode = /** @type {boolean} */ (C().videoMode);
     var stream = C().stream;
-    snapBtn.textContent = videoMode
-      ? /** @type {string} */ (C().SNAP_LABEL_VIDEO)
-      : /** @type {string} */ (C().SNAP_LABEL_READY);
+    /** @type {(label: string, showCameraIcon: boolean) => void} */ (C().setSnapButtonLabel)(
+      videoMode
+        ? /** @type {string} */ (C().SNAP_LABEL_VIDEO)
+        : /** @type {string} */ (C().SNAP_LABEL_READY),
+      true
+    );
     snapBtn.disabled = !stream;
     /** @type {() => void} */ (C().applyCaptureModeUi)();
   };
@@ -357,9 +363,12 @@
     var snapBtn = C().snapBtn;
     var videoMode = /** @type {boolean} */ (C().videoMode);
     var stream = C().stream;
-    snapBtn.textContent = videoMode
-      ? /** @type {string} */ (C().SNAP_LABEL_VIDEO)
-      : /** @type {string} */ (C().SNAP_LABEL_READY);
+    /** @type {(label: string, showCameraIcon: boolean) => void} */ (C().setSnapButtonLabel)(
+      videoMode
+        ? /** @type {string} */ (C().SNAP_LABEL_VIDEO)
+        : /** @type {string} */ (C().SNAP_LABEL_READY),
+      true
+    );
     snapBtn.disabled = !stream;
     /** @type {() => void} */ (C().applyCaptureModeUi)();
   };

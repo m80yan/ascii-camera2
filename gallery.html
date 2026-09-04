@@ -16,8 +16,11 @@
     --gallery-loading-text-base: rgba(0, 255, 65, 0.42);
     --gallery-loading-active: #2AFB4E;
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    left: 0;
     z-index: 3;
+    height: min(36vh, 420px);
     min-height: min(36vh, 420px);
     display: flex;
     align-items: center;
@@ -28,7 +31,7 @@
     transition: opacity 180ms ease, visibility 0s linear 180ms;
   }
   #gallery-loading.is-hidden {
-    opacity: 0.1;
+    opacity: 0;
     visibility: hidden;
     pointer-events: none;
   }
@@ -63,31 +66,48 @@
     font-size: 12px;
     line-height: 1;
     white-space: nowrap;
-    color: transparent;
-    background: linear-gradient(
+    position: relative;
+    color: var(--gallery-loading-text-base);
+  }
+  .gallery-loading-text::before {
+    content: attr(data-text);
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: linear-gradient(
       90deg,
-      var(--gallery-loading-text-base) 0%,
-      var(--gallery-loading-text-base) 36%,
+      transparent 0%,
+      transparent 40%,
       var(--gallery-loading-active) 50%,
-      var(--gallery-loading-text-base) 64%,
-      var(--gallery-loading-text-base) 100%
+      transparent 60%,
+      transparent 100%
     );
-    background-size: 220% 100%;
-    background-clip: text;
+    background-size: 400% 100%;
+    background-repeat: no-repeat;
     -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 2px var(--gallery-loading-active));
     animation: gallery-loading-shimmer 1800ms linear infinite;
   }
   @keyframes gallery-loading-shimmer {
     from { background-position: 100% 0; }
-    to { background-position: -120% 0; }
+    to { background-position: 0% 0; }
   }
   @media (prefers-reduced-motion: reduce) {
     .t-matrix i,
-    .gallery-loading-text { animation: none !important; }
+    .gallery-loading-text::before,
+    #gallery.gallery--entering .photo-card { animation: none !important; }
+    #gallery.gallery--preparing .photo-card,
+    #gallery.gallery--entering .photo-card {
+      opacity: 1;
+      transform: none;
+    }
     .gallery-loading-text {
       color: var(--gallery-loading-active);
-      background: none;
     }
+    .gallery-loading-text::before { display: none !important; }
   }
   /**
    * 顶栏随页面滚动保持吸顶；半透明 + 背景模糊，底部 `::after` 做渐变穿透模糊过渡。
@@ -269,9 +289,23 @@
       0 10px
     );
   }
+  .camera-audio-tip-content {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .camera-audio-tip-content.is-icon-only { gap: 0; }
+  .camera-audio-tip-icon {
+    display: block;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+  }
   .camera-audio-tip-text {
-    display: inline-block;
-    min-width: 13ch;
+    display: block;
+    min-width: 0;
+    text-align: left;
   }
   #upload-btn,
   #upload-btn:visited {
@@ -292,6 +326,18 @@
     column-gap: 16px;
     row-gap: 32px;
     align-items: start;
+  }
+  #gallery.gallery--preparing .photo-card {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  #gallery.gallery--entering .photo-card {
+    animation: gallery-card-enter 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: var(--gallery-enter-delay, 0ms);
+  }
+  @keyframes gallery-card-enter {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
   }
   .photo-card {
     background: #000;
@@ -1393,7 +1439,10 @@
         <div class="camera-audio-tip" role="status" aria-live="polite">
           <span class="camera-audio-tip-pointer" aria-hidden="true"></span>
           <span class="camera-audio-tip-body">
-            <span class="camera-audio-tip-text"></span>
+            <span class="camera-audio-tip-content is-icon-only">
+              <img class="camera-audio-tip-icon" src="public/icons/sound.svg" alt="" aria-hidden="true">
+              <span class="camera-audio-tip-text"></span>
+            </span>
           </span>
         </div>
       </div>
@@ -1445,7 +1494,7 @@
       <i style="--d:300"></i>
       <i style="--d:675"></i>
     </div>
-    <span class="gallery-loading-text">Loading Gallery…</span>
+      <span class="gallery-loading-text" data-text="Loading Gallery…">Loading Gallery…</span>
   </div>
 </div>
 <div id="empty" style="display:none">No photos yet.<br>Use Upload or Open Camera — your shots are saved in this browser only.</div>
@@ -1859,6 +1908,16 @@ let galleryFeedNextOffset = 0;
 let galleryFeedHasMore = true;
 /** 首屏或加载更多进行中 */
 let galleryFeedLoadingMore = false;
+/** 首屏 Gallery 入场动画是否已经播放过 */
+let galleryEntrancePlayed = false;
+/** 首次切换到 Loop 后，Loop 内容是否已经播放过入场动画 */
+let galleryLoopEntrancePlayed = false;
+/** 等待首次切换到 Loop 的内容加载完成 */
+let galleryLoopEntrancePending = false;
+/** 等待 Loading 消失后播放首屏 Gallery 入场动画 */
+let galleryEntrancePending = false;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let galleryEntranceTimer = null;
 
 /** localStorage 键：策展模式（轻量演示用，非服务端鉴权） */
 const ASCII_CURATOR_LS_KEY = 'ascii_curator_mode';
@@ -5485,13 +5544,37 @@ function syncGalleryLoadingPosition() {
   var bottomGap = 24;
   var available = Math.max(0, window.innerHeight - top - bottomGap);
   var defaultMinHeight = Math.min(window.innerHeight * 0.36, 420);
-  loading.style.minHeight = Math.max(available, defaultMinHeight) + 'px';
+  loading.style.height = Math.max(available, defaultMinHeight) + 'px';
+}
+
+function startGalleryEntrance() {
+  if (!galleryEntrancePending) return;
+  galleryEntrancePending = false;
+  galleryEntrancePlayed = true;
+  if (galleryFeedTabLoop) {
+    galleryLoopEntrancePending = false;
+    galleryLoopEntrancePlayed = true;
+  }
+  gallery.classList.remove('gallery--preparing');
+  gallery.classList.add('gallery--entering');
+  var cards = gallery.querySelectorAll('.photo-card');
+  var lastDelay = Math.min(Math.max(cards.length - 1, 0), 10) * 45;
+  window.setTimeout(function () {
+    gallery.classList.remove('gallery--entering');
+  }, 520 + lastDelay);
 }
 
 function hideGalleryLoading() {
   var loading = document.getElementById('gallery-loading');
   if (loading) loading.classList.add('is-hidden');
   showCameraAudioTip();
+  if (galleryEntrancePending) {
+    if (galleryEntranceTimer !== null) window.clearTimeout(galleryEntranceTimer);
+    galleryEntranceTimer = window.setTimeout(function () {
+      galleryEntranceTimer = null;
+      startGalleryEntrance();
+    }, 180);
+  }
 }
 
 (function setupGalleryLoadingPosition() {
@@ -5635,6 +5718,8 @@ function setupGalleryFeedTabs() {
   function switchTab(loop) {
     if (galleryFeedTabLoop === loop) return;
     closeLightbox();
+    if (loop && !galleryLoopEntrancePlayed) galleryLoopEntrancePending = true;
+    if (!loop && !galleryLoopEntrancePlayed) galleryLoopEntrancePending = false;
     galleryFeedTabLoop = loop;
     galleryFeedNextOffset = 0;
     galleryFeedHasMore = true;
@@ -5792,8 +5877,24 @@ function startGalleryThumbAsciiAnim(card, photo, cacheIndex) {
 function renderGallery(photos, userCountOverride) {
   clearGalleryThumbAnim();
   photosCache = photos;
-  if (photos.length === 0) { empty.style.display = 'block'; gallery.innerHTML = ''; return; }
+  if (photos.length === 0) {
+    empty.style.display = 'block';
+    gallery.innerHTML = '';
+    gallery.classList.remove('gallery--preparing', 'gallery--entering');
+    galleryEntrancePending = galleryLoopEntrancePending;
+    return;
+  }
   empty.style.display = 'none';
+  var loading = document.getElementById('gallery-loading');
+  var shouldAnimateEntrance =
+    (!galleryEntrancePlayed && loading && !loading.classList.contains('is-hidden')) ||
+    galleryLoopEntrancePending;
+  if (shouldAnimateEntrance) {
+    galleryEntrancePending = true;
+    gallery.classList.add('gallery--preparing');
+  } else {
+    gallery.classList.remove('gallery--preparing');
+  }
   const userCount =
     typeof userCountOverride === 'number' && Number.isFinite(userCountOverride)
       ? userCountOverride
@@ -5803,6 +5904,7 @@ function renderGallery(photos, userCountOverride) {
     const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
     const isDeleted = p.isDeleted === true;
     const isAnimUser = isUser && isLightboxPhotoAnimatedForDownload(p);
+    const enterDelay = Math.min(i, 10) * 45;
     const canRemoveUser =
       isUser && !isDeleted && (p.mine === true || curatorModeActive);
     const showCuratorRestore =
@@ -5860,7 +5962,9 @@ function renderGallery(photos, userCountOverride) {
         (isDeleted ? ' photo-card--deleted' : '') +
         '" data-index="' +
         i +
-        '"' +
+        '" style="--gallery-enter-delay:' +
+        enterDelay +
+        'ms"' +
         (isAnimUser ? ' data-ascii-animated="1"' : '') +
         '>' +
         '<div class="photo-thumb">' +
@@ -5935,6 +6039,7 @@ function renderGallery(photos, userCountOverride) {
  */
 (function setupCameraAudioTip() {
   var textEl = document.querySelector('.camera-audio-tip-text');
+  var contentEl = document.querySelector('.camera-audio-tip-content');
   if (!textEl) return;
   var messages = ['声音默认开启', 'Sound default ON', '音声デフォルトオン'];
   var TYPE_INTERVAL_MS = 65;
@@ -5966,6 +6071,7 @@ function renderGallery(photos, userCountOverride) {
   startCameraAudioTip = function () {
     if (hasStarted) return;
     hasStarted = true;
+    if (contentEl) contentEl.classList.remove('is-icon-only');
     typeMessage();
   };
 })();

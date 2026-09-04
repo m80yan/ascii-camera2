@@ -247,8 +247,9 @@
   button { background: transparent; border: 1px solid #00ff41; color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 11px; cursor: pointer; letter-spacing: 2px; text-transform: uppercase; transition: background 0.2s; }
   button:hover { background: rgba(0,255,65,0.1); }
   button:disabled { opacity: 0.3; cursor: not-allowed; }
-  #snapBtn { border-color: #ffd700; color: #ffd700; text-transform: none; letter-spacing: 1px; }
+  #snapBtn { border-color: #ffd700; color: #ffd700; text-transform: none; letter-spacing: 1px; gap: 8px; }
   #snapBtn:hover:not(:disabled) { background: rgba(255,215,0,0.1); }
+  #snapBtn .snap-btn-icon { display: block; width: 16px; height: 16px; flex: 0 0 16px; }
   /* 保存中：保持 disabled；与 SAVED 同色便于状态一致 */
   #snapBtn.snap-saving:disabled { opacity: 0.85; cursor: not-allowed; color: #ffd700; border-color: #ffd700; }
   select {
@@ -1058,7 +1059,10 @@
 <div class="camera-content">
 <div class="cam-actions">
   <button id="startBtn" type="button">Start Camera</button>
-  <button id="snapBtn" type="button" disabled>📷 Take Photo</button>
+  <button id="snapBtn" type="button" disabled>
+    <img class="snap-btn-icon" src="public/icons/camera.svg" alt="" aria-hidden="true">
+    <span>Take Photo</span>
+  </button>
 </div>
 <div class="cam-status-below-actions" aria-hidden="true"></div>
 </div>
@@ -1316,14 +1320,14 @@ const iframeHint     = U.iframeHint;
 const iframeOpenTab  = U.iframeOpenTab;
 
 /** 拍照按钮就绪文案（与 HTML 初始一致） */
-const SNAP_LABEL_READY = '📷 Take Photo';
+const SNAP_LABEL_READY = 'Take Photo';
 /** Video 模式就绪文案 */
-const SNAP_LABEL_VIDEO = '🎥 Make Loop';
+const SNAP_LABEL_VIDEO = 'Make Loop';
 /** 写入存储过程中按钮文案 */
 const SNAP_LABEL_SAVING = 'Saving...';
 /** 预览态主按钮：重拍 */
-const SNAP_LABEL_RETAKE_PHOTO = '📷 Retake';
-const SNAP_LABEL_RETAKE_VIDEO = '🎥 Retake';
+const SNAP_LABEL_RETAKE_PHOTO = 'Retake';
+const SNAP_LABEL_RETAKE_VIDEO = 'Retake';
 /** Loop 模式固定列数（与 `AsciiCameraLoop.VIDEO_COLS` 一致） */
 const VIDEO_DEFAULT_COLS = 72;
 /** Iron Bars 竖/横条屏幕厚度锚定 72 列档的单格宽高（与 Photo 分辨率「72」一致）。 */
@@ -1337,27 +1341,47 @@ AsciiCameraUi.setCaptureConstants({ VIDEO_DEFAULT_COLS: VIDEO_DEFAULT_COLS });
 const VIDEO_FRAME_COUNT = AsciiCameraLoop.VIDEO_FRAME_COUNT;
 const VIDEO_FPS = AsciiCameraLoop.VIDEO_FPS;
 const VIDEO_DURATION_MS = AsciiCameraLoop.VIDEO_DURATION_MS;
+
+function setSnapButtonLabel(label, showCameraIcon) {
+  while (snapBtn.firstChild) snapBtn.removeChild(snapBtn.firstChild);
+  if (showCameraIcon) {
+    var icon = document.createElement('img');
+    icon.className = 'snap-btn-icon';
+    icon.src = 'public/icons/camera.svg';
+    icon.alt = '';
+    icon.setAttribute('aria-hidden', 'true');
+    snapBtn.appendChild(icon);
+  }
+  var text = document.createElement('span');
+  text.textContent = label;
+  snapBtn.appendChild(text);
+}
+
 /** Video：冻结帧上展示黄色「SAVED」的最短时长（ms） */
 const VIDEO_POST_RECORD_FREEZE_MS = 1000;
 
-/** Photo 快门音效（站点根路径，如 `/public/sounds/shutter.mp3`） */
-const PHOTO_SHUTTER_SOUND_URL = '/public/sounds/shutter.mp3';
+/** 音效资源使用页面相对路径，同时兼容 localhost、线上页面和 file:// 预览。 */
+function soundAssetUrl(fileName) {
+  return new URL('public/sounds/' + fileName, document.baseURI || window.location.href).href;
+}
+/** Photo 快门音效 */
+const PHOTO_SHUTTER_SOUND_URL = soundAssetUrl('shutter.mp3');
 /** Video 录制同期音效（单文件，与约 `VIDEO_DURATION_MS` 同期自然播放） */
-const VIDEO_RECORD_SOUND_URL = '/public/sounds/record.mp3';
+const VIDEO_RECORD_SOUND_URL = soundAssetUrl('record.mp3');
 /** 整段约 3s、每秒一拍，与显示 2→1→0 对齐；显示「2」时起播一次，不按步重播 */
-const COUNTDOWN_BEEP_SOUND_URL = '/public/sounds/countdown-beep.mp3';
+const COUNTDOWN_BEEP_SOUND_URL = soundAssetUrl('countdown-beep.mp3');
 /** 开屏 code-rain 环境雨（仅离线 intro；懒加载单例） */
-const MATRIX_RAIN_AMBIENCE_SOUND_URL = '/public/sounds/matrix-rain-ambience.mp3';
+const MATRIX_RAIN_AMBIENCE_SOUND_URL = soundAssetUrl('matrix-rain-ambience.mp3');
 /**
  * code-rain 雷声素材（延迟于闪电；与 ambience 同一 AudioContext 解码复用）。
  * @type {{ farSoft: string, farRoll: string, mid: string, nearCrack: string, nearHeavy: string }}
  */
 const MATRIX_RAIN_THUNDER_ASSETS = {
-  farSoft: '/public/sounds/thunder_far_soft.mp3',
-  farRoll: '/public/sounds/thunder_far_roll.mp3',
-  mid: '/public/sounds/thunder_mid.mp3',
-  nearCrack: '/public/sounds/thunder_near_crack.mp3',
-  nearHeavy: '/public/sounds/thunder_near_heavy.mp3'
+  farSoft: soundAssetUrl('thunder_far_soft.mp3'),
+  farRoll: soundAssetUrl('thunder_far_roll.mp3'),
+  mid: soundAssetUrl('thunder_mid.mp3'),
+  nearCrack: soundAssetUrl('thunder_near_crack.mp3'),
+  nearHeavy: soundAssetUrl('thunder_near_heavy.mp3')
 };
 
 const PHOTO_SHUTTER_VOLUME = 0.5;
@@ -1384,6 +1408,8 @@ let matrixRainAmbienceDecodePromise = null;
 let matrixRainAmbienceGainNode = null;
 /** @type {AudioBufferSourceNode | null} */
 let matrixRainAmbienceSourceNode = null;
+/** @type {HTMLAudioElement | null} */
+let matrixRainAmbienceFallbackAudio = null;
 
 /** @type {Record<string, AudioBuffer | null>} */
 let matrixRainThunderBuffers = Object.create(null);
@@ -1398,6 +1424,8 @@ let matrixRainThunderEnvelopes = Object.create(null);
 let matrixRainThunderTimeoutIds = [];
 /** @type {{ src: AudioBufferSourceNode, gain: GainNode }[]} */
 let matrixRainThunderActiveNodes = [];
+/** @type {HTMLAudioElement[]} */
+let matrixRainThunderFallbackAudios = [];
 /** @type {Array<{ startMs: number, env: { stepSec: number, values: Float32Array, durationSec: number }, strength: number, endMs: number }>} */
 let matrixRainThunderActivePulses = [];
 
@@ -1529,6 +1557,41 @@ function ensureMatrixRainAmbienceAudioContext() {
     return null;
   }
 }
+
+function startMatrixRainAmbienceFallbackPlay() {
+  if (matrixRainAmbienceFallbackAudio) return;
+  try {
+    var audio = new Audio(MATRIX_RAIN_AMBIENCE_SOUND_URL);
+    audio.preload = 'auto';
+    audio.loop = true;
+    audio.volume = MATRIX_RAIN_AMBIENCE_VOLUME;
+    matrixRainAmbienceFallbackAudio = audio;
+    var playPromise = audio.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(function () {
+        if (matrixRainAmbienceFallbackAudio === audio) matrixRainAmbienceFallbackAudio = null;
+      });
+    }
+  } catch (e) {
+    matrixRainAmbienceFallbackAudio = null;
+  }
+}
+
+/** file:// 页面首次自动播放被拦截时，在用户第一次操作后重试音频。 */
+(function setupFileAudioUnlock() {
+  if (window.location.protocol !== 'file:') return;
+  var unlock = function () {
+    startMatrixRainAmbienceFallbackPlay();
+    var ctx = ensureMatrixRainAmbienceAudioContext();
+    if (ctx && ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+      ctx.resume().catch(function () {});
+    }
+    window.removeEventListener('pointerdown', unlock);
+    window.removeEventListener('keydown', unlock);
+  };
+  window.addEventListener('pointerdown', unlock);
+  window.addEventListener('keydown', unlock);
+})();
 
 /**
  * 懒解码矩阵雨环境音为 `AudioBuffer`（仅一次；失败返回 `null`）。
@@ -1735,7 +1798,56 @@ function stopMatrixRainThunder() {
     });
     matrixRainThunderActiveNodes = [];
   }
+  if (matrixRainThunderFallbackAudios.length) {
+    matrixRainThunderFallbackAudios.forEach(function (audio) {
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch (e4) {}
+    });
+    matrixRainThunderFallbackAudios = [];
+  }
   matrixRainThunderActivePulses = [];
+}
+
+function playMatrixRainThunderFallback(intensity, key) {
+  var url = /** @type {Record<string, string>} */ (MATRIX_RAIN_THUNDER_ASSETS)[key];
+  if (!url) return;
+  var t = Math.max(0, Math.min(1, intensity));
+  try {
+    var audio = new Audio(url);
+    audio.preload = 'auto';
+    var baseG =
+      key === 'farSoft'
+        ? 0.14
+        : key === 'farRoll'
+          ? 0.18
+          : key === 'mid'
+            ? 0.24
+            : key === 'nearCrack'
+              ? 0.30
+              : 0.34;
+    audio.volume = Math.max(
+      0,
+      Math.min(MATRIX_RAIN_THUNDER_GAIN_MAX, baseG + (MATRIX_RAIN_THUNDER_GAIN_MAX - baseG) * (0.35 + 0.65 * t))
+    );
+    audio.playbackRate =
+      key === 'farRoll' ? 0.90 : key === 'farSoft' ? 0.96 : key === 'mid' ? 1.0 : key === 'nearHeavy' ? 0.94 : 1.05;
+    matrixRainThunderFallbackAudios.push(audio);
+    var playPromise = audio.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(function () {
+        matrixRainThunderFallbackAudios = matrixRainThunderFallbackAudios.filter(function (item) {
+          return item !== audio;
+        });
+      });
+    }
+    audio.addEventListener('ended', function () {
+      matrixRainThunderFallbackAudios = matrixRainThunderFallbackAudios.filter(function (item) {
+        return item !== audio;
+      });
+    });
+  } catch (e) {}
 }
 
 /**
@@ -1759,7 +1871,12 @@ function scheduleMatrixRainThunder(intensity, key) {
     if (stream) return;
     if (!requestRainCanvas || !requestRainCanvas.classList.contains('ascii-request-rain-canvas--visible')) return;
     ensureMatrixRainThunderAssetDecoded(k).then(function (buf) {
-      if (!buf || stream) return;
+      if (!buf || stream) {
+        if (!buf && !stream && window.location.protocol === 'file:') {
+          playMatrixRainThunderFallback(t, k);
+        }
+        return;
+      }
       var ctx = ensureMatrixRainAmbienceAudioContext();
       if (!ctx) return;
       var gain;
@@ -1907,6 +2024,10 @@ function ensureMatrixRainAmbienceGainNode(ctx) {
  */
 function startMatrixRainAmbiencePlay() {
   if (stream) return;
+  if (window.location.protocol === 'file:') {
+    startMatrixRainAmbienceFallbackPlay();
+    return;
+  }
   if (matrixRainAmbienceSourceNode) return;
   ensureMatrixRainAmbienceBufferDecoded().then(function (buf) {
     if (!buf || stream) return;
@@ -1944,6 +2065,13 @@ function startMatrixRainAmbiencePlay() {
  * @returns {void}
  */
 function stopMatrixRainAmbience() {
+  if (matrixRainAmbienceFallbackAudio) {
+    try {
+      matrixRainAmbienceFallbackAudio.pause();
+      matrixRainAmbienceFallbackAudio.currentTime = 0;
+    } catch (e0) {}
+    matrixRainAmbienceFallbackAudio = null;
+  }
   var src = matrixRainAmbienceSourceNode;
   matrixRainAmbienceSourceNode = null;
   if (src) {
@@ -2933,7 +3061,7 @@ function applyCaptureModeUi() {
         restorePhotoSettingsAfterVideo = false;
       }
     }
-    snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
+    setSnapButtonLabel(videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY, true);
   } else if (AsciiCameraPreview.previewCaptureActive) {
     var pPrev = AsciiCameraPreview.pendingGalleryPayload;
     var lockDm = pPrev && pPrev.usedDistortingMirror === true;
@@ -2996,7 +3124,7 @@ function applyCaptureModeUi() {
         resPicker.disabled = true;
       }
       aspectPicker.value = '1:1';
-      snapBtn.textContent = SNAP_LABEL_VIDEO;
+      setSnapButtonLabel(SNAP_LABEL_VIDEO, true);
     } else {
       // 同上：仅在值无效（停留在 Video 的 60）时才恢复 Photo 的记忆值。
       if (resPicker && resPicker.value === '72') {
@@ -3014,7 +3142,7 @@ function applyCaptureModeUi() {
         else if (aspectPicker) aspectPicker.value = PHOTO_DEFAULT_ASPECT;
         restorePhotoSettingsAfterVideo = false;
       }
-      snapBtn.textContent = SNAP_LABEL_READY;
+      setSnapButtonLabel(SNAP_LABEL_READY, true);
     }
   }
   AsciiCameraUi.syncResPickerOptionsVisibility();
@@ -5634,6 +5762,7 @@ AsciiCameraPreview.bindCore({
   SNAP_LABEL_RETAKE_VIDEO: SNAP_LABEL_RETAKE_VIDEO,
   SNAP_LABEL_READY: SNAP_LABEL_READY,
   SNAP_LABEL_VIDEO: SNAP_LABEL_VIDEO,
+  setSnapButtonLabel: setSnapButtonLabel,
   syncVideoProgressBarForMode: function () {
     AsciiCameraUi.syncVideoProgressBarForMode();
   },
@@ -5676,7 +5805,7 @@ startBtn.addEventListener('click', async () => {
     startBtn.textContent = 'Start Camera';
     snapBtn.disabled = true;
     snapCountdownActive = false;
-    snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
+    setSnapButtonLabel(videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY, true);
     AsciiCameraUi.setStatusOffline();
     if (asciiWrap) {
       asciiWrap.classList.add('ascii-wrap--offline');
@@ -5709,7 +5838,7 @@ startBtn.addEventListener('click', async () => {
     video.srcObject = stream; await video.play();
     startBtn.textContent = 'Stop Camera';
     snapBtn.disabled = false;
-    snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
+    setSnapButtonLabel(videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY, true);
     if (submitGalleryBtn) submitGalleryBtn.disabled = true;
     AsciiCameraUi.setStatusLive();
     if (asciiWrap) asciiWrap.classList.remove('ascii-wrap--offline', 'ascii-wrap--startup-hide-helper');
@@ -5776,7 +5905,7 @@ snapBtn.addEventListener('click', async () => {
   primeCountdownBeepAudioInUserGesture();
   try {
     for (let n = 3; n >= 0; n--) {
-      snapBtn.textContent = String(n);
+      setSnapButtonLabel(String(n), false);
       if (n === 2) {
         playCountdownSequenceAudioFromStart();
       }
@@ -5925,13 +6054,13 @@ snapBtn.addEventListener('click', async () => {
     if (AsciiCameraPreview.previewCaptureActive) {
       AsciiCameraUi.syncVideoProgressBarForMode();
       syncAsciiLayout();
-      snapBtn.textContent = videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO;
+      setSnapButtonLabel(videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO, true);
       snapBtn.disabled = false;
     } else {
       restartLiveAsciiPreview();
       AsciiCameraUi.syncVideoProgressBarForMode();
       syncAsciiLayout();
-      snapBtn.textContent = videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY;
+      setSnapButtonLabel(videoMode ? SNAP_LABEL_VIDEO : SNAP_LABEL_READY, true);
       snapBtn.disabled = !stream;
     }
   }
@@ -5953,7 +6082,7 @@ async function submitPreviewToGallery() {
   AsciiCameraPreview.hideLoopCoverUi();
   if (submitGalleryBtn) submitGalleryBtn.disabled = true;
   snapBtn.disabled = true;
-  snapBtn.textContent = SNAP_LABEL_SAVING;
+  setSnapButtonLabel(SNAP_LABEL_SAVING, false);
   snapBtn.classList.add('snap-saving');
   snapBtn.setAttribute('aria-busy', 'true');
   var isVideoCapture =
@@ -6009,7 +6138,7 @@ async function submitPreviewToGallery() {
     snapBtn.classList.remove('snap-saving');
     snapBtn.removeAttribute('aria-busy');
     if (AsciiCameraPreview.previewCaptureActive) {
-      snapBtn.textContent = videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO;
+      setSnapButtonLabel(videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO, true);
     }
   }
 }
