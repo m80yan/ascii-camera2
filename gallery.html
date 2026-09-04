@@ -6,6 +6,89 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0a0a0a; color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; min-height: 100vh; padding: 24px 16px; }
+  @font-face {
+    font-family: "OCR A Extended";
+    src: url("public/fonts/OCR%20A%20Extended.TTF") format("truetype");
+    font-display: swap;
+  }
+  #gallery-loading {
+    --gallery-loading-base: #15311A;
+    --gallery-loading-text-base: rgba(0, 255, 65, 0.42);
+    --gallery-loading-active: #2AFB4E;
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    min-height: min(36vh, 420px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0a0a0a;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 180ms ease, visibility 0s linear 180ms;
+  }
+  #gallery-loading.is-hidden {
+    opacity: 0.1;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .gallery-loading-inner {
+    position: absolute;
+    top: 38.2%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .t-matrix {
+    display: grid;
+    grid-template-columns: repeat(4, 2px);
+    grid-auto-rows: 2px;
+    gap: 2px;
+    flex: 0 0 auto;
+  }
+  .t-matrix i {
+    display: block;
+    background: var(--gallery-loading-base);
+    animation: t-matrix-pulse 1200ms ease-in-out infinite;
+    animation-delay: calc(var(--d, 0) * 1ms);
+  }
+  @keyframes t-matrix-pulse {
+    0%, 45%, 100% { background-color: var(--gallery-loading-base); }
+    15% { background-color: var(--gallery-loading-active); }
+  }
+  .gallery-loading-text {
+    font-family: "OCR A Extended", monospace;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+    color: transparent;
+    background: linear-gradient(
+      90deg,
+      var(--gallery-loading-text-base) 0%,
+      var(--gallery-loading-text-base) 36%,
+      var(--gallery-loading-active) 50%,
+      var(--gallery-loading-text-base) 64%,
+      var(--gallery-loading-text-base) 100%
+    );
+    background-size: 220% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    animation: gallery-loading-shimmer 1800ms linear infinite;
+  }
+  @keyframes gallery-loading-shimmer {
+    from { background-position: 100% 0; }
+    to { background-position: -120% 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .t-matrix i,
+    .gallery-loading-text { animation: none !important; }
+    .gallery-loading-text {
+      color: var(--gallery-loading-active);
+      background: none;
+    }
+  }
   /**
    * 顶栏随页面滚动保持吸顶；半透明 + 背景模糊，底部 `::after` 做渐变穿透模糊过渡。
    * 负 margin 抵消 `body` 内边距，使条带横向贴边；`padding` 保持与原内容对齐。
@@ -81,6 +164,12 @@
     flex-wrap: wrap;
     justify-content: flex-end;
   }
+  .header-live-stack {
+    width: var(--hdr-action-btn-w);
+    max-width: 100%;
+    height: 36px;
+    position: relative;
+  }
   /**
    * 与 `camera.html` `.cam-actions button` 对齐：同高 36px、左右内边距 16px、字重与边框。
    */
@@ -120,6 +209,69 @@
   }
   #live-btn:hover {
     background: rgba(0, 255, 65, 0.1);
+  }
+  .camera-audio-tip {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 2;
+    overflow: visible;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition:
+      opacity 1000ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 1000ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s linear 1000ms;
+  }
+  .camera-audio-tip.is-ready {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition:
+      opacity 1000ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 1000ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .camera-audio-tip-pointer {
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 6px solid #00ff41;
+    transform: translateX(-50%);
+  }
+  .camera-audio-tip-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    width: 100%;
+    padding: 0 12px;
+    background: #00ff41;
+    color: #0a0a0a;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+    clip-path: polygon(
+      10px 0,
+      100% 0,
+      100% calc(100% - 10px),
+      calc(100% - 10px) 100%,
+      0 100%,
+      0 10px
+    );
+  }
+  .camera-audio-tip-text {
+    display: inline-block;
+    min-width: 13ch;
   }
   #upload-btn,
   #upload-btn:visited {
@@ -1223,6 +1375,7 @@
    * 画廊主区：略设 min-height，减轻短列表与长列表切换时的垂直跳动（配合 scrollbar-gutter）。
    */
   #gallery-feed-main {
+    position: relative;
     min-height: min(36vh, 420px);
   }
 </style>
@@ -1235,7 +1388,15 @@
     <div id="header-actions">
       <button class="hdr-btn" id="upload-btn" type="button">Upload Image</button>
       <input type="file" id="upload-input" accept="image/*">
-      <a class="hdr-btn" id="live-btn" href="camera.html">OPEN CAMERA ➤</a>
+      <div class="header-live-stack">
+        <a class="hdr-btn" id="live-btn" href="camera.html">OPEN CAMERA ➤</a>
+        <div class="camera-audio-tip" role="status" aria-live="polite">
+          <span class="camera-audio-tip-pointer" aria-hidden="true"></span>
+          <span class="camera-audio-tip-body">
+            <span class="camera-audio-tip-text"></span>
+          </span>
+        </div>
+      </div>
     </div>
   </div>
   <div class="gallery-feed-bar">
@@ -1264,6 +1425,29 @@
 <p id="cloud-status-banner" role="status"></p>
 <p id="cloud-sync-status" role="status" aria-live="polite"></p>
 <div id="gallery-feed-main">
+<div id="gallery-loading" role="status" aria-live="polite" aria-label="Loading Gallery">
+  <div class="gallery-loading-inner">
+    <div class="t-matrix" aria-hidden="true">
+      <i style="--d:450"></i>
+      <i style="--d:975"></i>
+      <i style="--d:75"></i>
+      <i style="--d:600"></i>
+      <i style="--d:1125"></i>
+      <i style="--d:225"></i>
+      <i style="--d:750"></i>
+      <i style="--d:0"></i>
+      <i style="--d:1050"></i>
+      <i style="--d:375"></i>
+      <i style="--d:825"></i>
+      <i style="--d:150"></i>
+      <i style="--d:525"></i>
+      <i style="--d:900"></i>
+      <i style="--d:300"></i>
+      <i style="--d:675"></i>
+    </div>
+    <span class="gallery-loading-text">Loading Gallery…</span>
+  </div>
+</div>
 <div id="empty" style="display:none">No photos yet.<br>Use Upload or Open Camera — your shots are saved in this browser only.</div>
 <div id="gallery"></div>
 </div>
@@ -5283,6 +5467,38 @@ function purgeGalleryPhoto(userIndex) {
 /**
  * 重新渲染网格：Supabase 下仅使用 `ascii_photos` 缓存；否则 localStorage 用户列表。
  */
+var startCameraAudioTip = null;
+
+function showCameraAudioTip() {
+  var tip = document.querySelector('.camera-audio-tip');
+  if (tip) tip.classList.add('is-ready');
+  window.setTimeout(function () {
+    if (typeof startCameraAudioTip === 'function') startCameraAudioTip();
+  }, 150);
+}
+
+function syncGalleryLoadingPosition() {
+  var loading = document.getElementById('gallery-loading');
+  var main = document.getElementById('gallery-feed-main');
+  if (!loading || !main || loading.classList.contains('is-hidden')) return;
+  var top = main.getBoundingClientRect().top;
+  var bottomGap = 24;
+  var available = Math.max(0, window.innerHeight - top - bottomGap);
+  var defaultMinHeight = Math.min(window.innerHeight * 0.36, 420);
+  loading.style.minHeight = Math.max(available, defaultMinHeight) + 'px';
+}
+
+function hideGalleryLoading() {
+  var loading = document.getElementById('gallery-loading');
+  if (loading) loading.classList.add('is-hidden');
+  showCameraAudioTip();
+}
+
+(function setupGalleryLoadingPosition() {
+  syncGalleryLoadingPosition();
+  window.addEventListener('resize', syncGalleryLoadingPosition);
+})();
+
 function refreshGallery() {
   if (typeof console !== 'undefined' && console.info) {
     console.info('[gallery] refreshGallery() called');
@@ -5305,10 +5521,12 @@ function refreshGallery() {
       );
     }
     renderGallery(pack.photos, pack.userCount);
+    hideGalleryLoading();
     return;
   }
   var merged = AsciiCameraGalleryStorage.getMergedGalleryPhotos();
   renderGallery(merged, AsciiCameraGalleryStorage.getUserPhotoCount());
+  hideGalleryLoading();
 }
 
 /**
@@ -5711,6 +5929,46 @@ function renderGallery(photos, userCountOverride) {
   });
   tryConsumeGalleryOpenQuery();
 }
+
+/**
+ * Open Camera 下方的音频提示：三种语言循环打字，每句完成后停留 1.5 秒。
+ */
+(function setupCameraAudioTip() {
+  var textEl = document.querySelector('.camera-audio-tip-text');
+  if (!textEl) return;
+  var messages = ['声音默认开启', 'Sound default ON', '音声デフォルトオン'];
+  var TYPE_INTERVAL_MS = 65;
+  var HOLD_MS = 1500;
+  var messageIndex = 0;
+  var hasStarted = false;
+
+  function typeMessage() {
+    var message = messages[messageIndex];
+    var charIndex = 0;
+    textEl.textContent = '';
+
+    function typeNextCharacter() {
+      charIndex += 1;
+      textEl.textContent = message.slice(0, charIndex);
+      if (charIndex < message.length) {
+        window.setTimeout(typeNextCharacter, TYPE_INTERVAL_MS);
+        return;
+      }
+      window.setTimeout(function () {
+        messageIndex = (messageIndex + 1) % messages.length;
+        typeMessage();
+      }, HOLD_MS);
+    }
+
+    typeNextCharacter();
+  }
+
+  startCameraAudioTip = function () {
+    if (hasStarted) return;
+    hasStarted = true;
+    typeMessage();
+  };
+})();
 
 /**
  * Notion / 发布页常为 `target=_blank` 链接注入 `noopener`，新标签无 `window.opener`，嵌入画廊收不到 `postMessage`。
