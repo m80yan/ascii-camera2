@@ -254,6 +254,12 @@
       opacity 1000ms cubic-bezier(0.22, 1, 0.36, 1),
       transform 1000ms cubic-bezier(0.22, 1, 0.36, 1);
   }
+  .camera-audio-tip.is-suppressed {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-4px);
+  }
   .camera-audio-tip-pointer {
     position: absolute;
     top: -6px;
@@ -5527,14 +5533,48 @@ function purgeGalleryPhoto(userIndex) {
  * 重新渲染网格：Supabase 下仅使用 `ascii_photos` 缓存；否则 localStorage 用户列表。
  */
 var startCameraAudioTip = null;
+const CAMERA_SOUND_PREFERENCE_KEY = 'ascii_camera_sound_enabled';
+const CAMERA_SOUND_MESSAGE_TYPE = 'ascii_camera_sound_preference';
+
+function readCameraSoundPreference() {
+  try {
+    return window.localStorage.getItem(CAMERA_SOUND_PREFERENCE_KEY) !== 'false';
+  } catch (e) {
+    return true;
+  }
+}
+
+function hideCameraAudioTip() {
+  var tip = document.querySelector('.camera-audio-tip');
+  if (!tip) return;
+  tip.classList.remove('is-ready');
+  tip.classList.add('is-suppressed');
+}
 
 function showCameraAudioTip() {
   var tip = document.querySelector('.camera-audio-tip');
-  if (tip) tip.classList.add('is-ready');
+  if (!readCameraSoundPreference()) {
+    hideCameraAudioTip();
+    return;
+  }
+  if (tip) {
+    tip.classList.remove('is-suppressed');
+    tip.classList.add('is-ready');
+  }
   window.setTimeout(function () {
     if (typeof startCameraAudioTip === 'function') startCameraAudioTip();
   }, 150);
 }
+
+function syncCameraAudioTipPreference(enabled) {
+  if (enabled) showCameraAudioTip();
+  else hideCameraAudioTip();
+}
+
+window.addEventListener('storage', function (ev) {
+  if (ev.key !== CAMERA_SOUND_PREFERENCE_KEY) return;
+  syncCameraAudioTipPreference(ev.newValue !== 'false');
+});
 
 function syncGalleryLoadingPosition() {
   var loading = document.getElementById('gallery-loading');
@@ -6110,6 +6150,10 @@ window.addEventListener('message', function (ev) {
   void (async function () {
     if (ev.origin !== window.location.origin) return;
     var d = ev.data;
+    if (d && d.type === CAMERA_SOUND_MESSAGE_TYPE && typeof d.enabled === 'boolean') {
+      syncCameraAudioTipPreference(d.enabled);
+      return;
+    }
     if (!d || d.type !== AsciiCameraGalleryStorage.GALLERY_PREPEND_MESSAGE_TYPE || !d.photo) return;
     var p = d.photo;
     if (typeof p.ascii !== 'string') return;

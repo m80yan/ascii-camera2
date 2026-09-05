@@ -55,6 +55,10 @@
     align-items: stretch;
     box-sizing: border-box;
   }
+  .camera-top-content {
+    max-width: min(560px, 100%);
+    position: relative;
+  }
   /**
    * 外层取景器（蓝框）：可宽于主列，承载 overlay；宽度不绑 `--cam-actions-row-w`。
    */
@@ -90,6 +94,26 @@
     justify-content: center;
     line-height: 1;
   }
+  .camera-sound-toggle {
+    position: absolute;
+    top: 10px;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .camera-sound-toggle:hover { background: transparent; }
+  .camera-sound-toggle:focus-visible {
+    outline: 1px solid #2afd4f;
+    outline-offset: 3px;
+  }
+  .camera-sound-toggle img { display: block; width: 16px; height: 16px; }
   /**
    * 原 `#status` 已移至取景 overlay 行；保留空行占位，维持与原先一致的顶栏下间距（不改 Start / Snap 与下方控件间距）。
    */
@@ -250,6 +274,14 @@
   #snapBtn { border-color: #ffd700; color: #ffd700; text-transform: none; letter-spacing: 1px; gap: 8px; }
   #snapBtn:hover:not(:disabled) { background: rgba(255,215,0,0.1); }
   #snapBtn .snap-btn-icon { display: block; width: 16px; height: 16px; flex: 0 0 16px; }
+  #snapBtn .snap-btn-icon.snap-btn-icon--shutter {
+    animation: snap-icon-shutter 500ms ease-in-out;
+  }
+  @keyframes snap-icon-shutter {
+    0% { transform: rotate(0deg) scale(1); }
+    50% { transform: rotate(90deg) scale(0.5); }
+    100% { transform: rotate(0deg) scale(1); }
+  }
   /* 保存中：保持 disabled；与 SAVED 同色便于状态一致 */
   #snapBtn.snap-saving:disabled { opacity: 0.85; cursor: not-allowed; color: #ffd700; border-color: #ffd700; }
   select {
@@ -1056,7 +1088,7 @@
   <span class="iframe-hint-text">Embedded preview blocks camera — use a full browser tab.</span>
   <a id="iframe-open-tab" class="iframe-hint-link" href="#">Open in new tab</a>
 </div>
-<div class="camera-content">
+<div class="camera-content camera-top-content">
 <div class="cam-actions">
   <button id="startBtn" type="button">Start Camera</button>
   <button id="snapBtn" type="button" disabled>
@@ -1065,6 +1097,9 @@
   </button>
 </div>
 <div class="cam-status-below-actions" aria-hidden="true"></div>
+<button id="soundToggle" class="camera-sound-toggle" type="button" aria-label="Turn sound off" aria-pressed="true">
+  <img id="soundToggleIcon" src="public/icons/soundon.svg" alt="" aria-hidden="true">
+</button>
 </div>
 <div class="viewfinder-shell">
 <video id="video" autoplay playsinline></video>
@@ -1318,6 +1353,20 @@ const requestRainCanvas = U.requestRainCanvas;
 const requestRainCtx = requestRainCanvas ? requestRainCanvas.getContext('2d') : null;
 const iframeHint     = U.iframeHint;
 const iframeOpenTab  = U.iframeOpenTab;
+const soundToggle = document.getElementById('soundToggle');
+const soundToggleIcon = document.getElementById('soundToggleIcon');
+const CAMERA_SOUND_PREFERENCE_KEY = 'ascii_camera_sound_enabled';
+const CAMERA_SOUND_MESSAGE_TYPE = 'ascii_camera_sound_preference';
+
+function readSoundPreference() {
+  try {
+    return window.localStorage.getItem(CAMERA_SOUND_PREFERENCE_KEY) !== 'false';
+  } catch (e) {
+    return true;
+  }
+}
+
+let soundEnabled = readSoundPreference();
 
 /** 拍照按钮就绪文案（与 HTML 初始一致） */
 const SNAP_LABEL_READY = 'Take Photo';
@@ -1355,6 +1404,14 @@ function setSnapButtonLabel(label, showCameraIcon) {
   var text = document.createElement('span');
   text.textContent = label;
   snapBtn.appendChild(text);
+}
+
+function animateSnapButtonIcon() {
+  var icon = snapBtn.querySelector('.snap-btn-icon');
+  if (!icon) return;
+  icon.classList.remove('snap-btn-icon--shutter');
+  void icon.offsetWidth;
+  icon.classList.add('snap-btn-icon--shutter');
 }
 
 /** Video：冻结帧上展示黄色「SAVED」的最短时长（ms） */
@@ -1426,6 +1483,65 @@ let matrixRainThunderTimeoutIds = [];
 let matrixRainThunderActiveNodes = [];
 /** @type {HTMLAudioElement[]} */
 let matrixRainThunderFallbackAudios = [];
+
+function syncSoundToggleUi() {
+  if (soundToggle) {
+    soundToggle.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
+    soundToggle.setAttribute('aria-label', soundEnabled ? 'Turn sound off' : 'Turn sound on');
+  }
+  if (soundToggleIcon) {
+    soundToggleIcon.src = soundEnabled ? 'public/icons/soundon.svg' : 'public/icons/soundoff.svg';
+  }
+}
+
+function notifyGallerySoundPreference() {
+  try {
+    var opener = window.opener;
+    if (!opener || opener === window || opener.closed) return;
+    var targetOrigin = window.location.protocol === 'file:' ? '*' : window.location.origin;
+    opener.postMessage(
+      { type: CAMERA_SOUND_MESSAGE_TYPE, enabled: soundEnabled },
+      targetOrigin
+    );
+  } catch (e) {}
+}
+
+function persistSoundPreference() {
+  try {
+    window.localStorage.setItem(CAMERA_SOUND_PREFERENCE_KEY, soundEnabled ? 'true' : 'false');
+  } catch (e) {}
+}
+
+function stopAllCameraSounds() {
+  stopMatrixRainAmbience();
+  stopMatrixRainThunder();
+  [photoShutterAudio, videoRecordAudio, countdownBeepAudio].forEach(function (audio) {
+    if (!audio) return;
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+    } catch (e) {}
+  });
+}
+
+function setSoundEnabled(enabled) {
+  soundEnabled = enabled === true;
+  persistSoundPreference();
+  syncSoundToggleUi();
+  if (!soundEnabled) {
+    stopAllCameraSounds();
+  } else if (!stream && requestRainCanvas && requestRainCanvas.classList.contains('ascii-request-rain-canvas--visible')) {
+    startMatrixRainAmbiencePlay();
+  }
+  notifyGallerySoundPreference();
+}
+
+syncSoundToggleUi();
+if (soundToggle) {
+  soundToggle.addEventListener('click', function () {
+    setSoundEnabled(!soundEnabled);
+  });
+}
 /** @type {Array<{ startMs: number, env: { stepSec: number, values: Float32Array, durationSec: number }, strength: number, endMs: number }>} */
 let matrixRainThunderActivePulses = [];
 
@@ -1443,6 +1559,7 @@ let matrixRainLightningFlashes = [];
  * @returns {HTMLAudioElement | null}
  */
 function getPhotoShutterAudio() {
+  if (!soundEnabled) return null;
   if (!photoShutterAudio) {
     try {
       photoShutterAudio = new Audio(PHOTO_SHUTTER_SOUND_URL);
@@ -1460,6 +1577,7 @@ function getPhotoShutterAudio() {
  * @returns {HTMLAudioElement | null}
  */
 function getVideoRecordAudio() {
+  if (!soundEnabled) return null;
   if (!videoRecordAudio) {
     try {
       videoRecordAudio = new Audio(VIDEO_RECORD_SOUND_URL);
@@ -1477,6 +1595,7 @@ function getVideoRecordAudio() {
  * @returns {HTMLAudioElement | null}
  */
 function getCountdownBeepAudio() {
+  if (!soundEnabled) return null;
   if (!countdownBeepAudio) {
     try {
       countdownBeepAudio = new Audio(COUNTDOWN_BEEP_SOUND_URL);
@@ -1559,7 +1678,7 @@ function ensureMatrixRainAmbienceAudioContext() {
 }
 
 function startMatrixRainAmbienceFallbackPlay() {
-  if (matrixRainAmbienceFallbackAudio) return;
+  if (!soundEnabled || matrixRainAmbienceFallbackAudio) return;
   try {
     var audio = new Audio(MATRIX_RAIN_AMBIENCE_SOUND_URL);
     audio.preload = 'auto';
@@ -1811,6 +1930,7 @@ function stopMatrixRainThunder() {
 }
 
 function playMatrixRainThunderFallback(intensity, key) {
+  if (!soundEnabled) return;
   var url = /** @type {Record<string, string>} */ (MATRIX_RAIN_THUNDER_ASSETS)[key];
   if (!url) return;
   var t = Math.max(0, Math.min(1, intensity));
@@ -1856,6 +1976,7 @@ function playMatrixRainThunderFallback(intensity, key) {
  * @returns {void}
  */
 function scheduleMatrixRainThunder(intensity, key) {
+  if (!soundEnabled) return;
   var t = Math.max(0, Math.min(1, intensity));
   var k = key || pickThunderAssetKey(t);
   // 距离感：far 更慢、near 更快。再叠加强度（强雷偏近）与少量抖动。
@@ -1868,11 +1989,11 @@ function scheduleMatrixRainThunder(intensity, key) {
   var delayMs = Math.round(baseDelay * (1.05 - 0.35 * t) + (Math.random() * 140 - 70));
   if (delayMs < 260) delayMs = 260;
   var tid = setTimeout(function () {
-    if (stream) return;
+    if (stream || !soundEnabled) return;
     if (!requestRainCanvas || !requestRainCanvas.classList.contains('ascii-request-rain-canvas--visible')) return;
     ensureMatrixRainThunderAssetDecoded(k).then(function (buf) {
-      if (!buf || stream) {
-        if (!buf && !stream && window.location.protocol === 'file:') {
+      if (!buf || stream || !soundEnabled) {
+        if (!buf && !stream && soundEnabled && window.location.protocol === 'file:') {
           playMatrixRainThunderFallback(t, k);
         }
         return;
@@ -1948,7 +2069,7 @@ function scheduleMatrixRainThunder(intensity, key) {
         // 偶尔加一层极弱“远处滚尾”，让 near 事件更像天气系统（概率低，避免变成多轨系统）。
         if ((k === 'nearCrack' || k === 'nearHeavy') && Math.random() < 0.18) {
           ensureMatrixRainThunderAssetDecoded('farRoll').then(function (tailBuf) {
-            if (!tailBuf || stream) return;
+            if (!tailBuf || stream || !soundEnabled) return;
             var tailSrc;
             var tailGain;
             try {
@@ -2023,14 +2144,14 @@ function ensureMatrixRainAmbienceGainNode(ctx) {
  * @returns {void}
  */
 function startMatrixRainAmbiencePlay() {
-  if (stream) return;
+  if (stream || !soundEnabled) return;
   if (window.location.protocol === 'file:') {
     startMatrixRainAmbienceFallbackPlay();
     return;
   }
   if (matrixRainAmbienceSourceNode) return;
   ensureMatrixRainAmbienceBufferDecoded().then(function (buf) {
-    if (!buf || stream) return;
+    if (!buf || stream || !soundEnabled) return;
     if (matrixRainAmbienceSourceNode) return;
     var ctx = ensureMatrixRainAmbienceAudioContext();
     if (!ctx) return;
@@ -2041,7 +2162,7 @@ function startMatrixRainAmbiencePlay() {
     resumeP
       .catch(function () {})
       .then(function () {
-        if (stream || matrixRainAmbienceSourceNode) return;
+        if (stream || !soundEnabled || matrixRainAmbienceSourceNode) return;
         var src;
         try {
           src = ctx.createBufferSource();
@@ -5905,7 +6026,7 @@ snapBtn.addEventListener('click', async () => {
   primeCountdownBeepAudioInUserGesture();
   try {
     for (let n = 3; n >= 0; n--) {
-      setSnapButtonLabel(String(n), false);
+      setSnapButtonLabel(String(n), true);
       if (n === 2) {
         playCountdownSequenceAudioFromStart();
       }
@@ -6056,6 +6177,9 @@ snapBtn.addEventListener('click', async () => {
       syncAsciiLayout();
       setSnapButtonLabel(videoMode ? SNAP_LABEL_RETAKE_VIDEO : SNAP_LABEL_RETAKE_PHOTO, true);
       snapBtn.disabled = false;
+      window.requestAnimationFrame(function () {
+        animateSnapButtonIcon();
+      });
     } else {
       restartLiveAsciiPreview();
       AsciiCameraUi.syncVideoProgressBarForMode();
