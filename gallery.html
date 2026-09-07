@@ -1352,6 +1352,7 @@
   /** 成功态用标题旁呼吸绿点；此处仅展示拉取/上传错误 */
   #cloud-sync-status { display: none; font-size: 10px; line-height: 1.55; letter-spacing: 0.35px; max-width: 760px; margin: 0 auto 14px; padding: 8px 12px; border-radius: 4px; box-sizing: border-box; width: 100%; }
   #cloud-sync-status.cloud-sync-err { color: #ff9999; border: 1px solid rgba(255,100,100,0.35); background: rgba(255,68,68,0.06); }
+  #cloud-sync-status.cloud-sync-warn { color: #ffcc66; border: 1px solid rgba(255,204,102,0.32); background: rgba(255,184,77,0.06); }
   /**
    * 画廊第二行：左侧 All / Loop（仅 Supabase 时显示容器）；右侧「Exit Curate」链式链接（策展态）。
    * 活动项：64px×4px 下划线在标签文字下水平居中；标签文案在自身命中区内居中。
@@ -6360,7 +6361,7 @@ function syncGalleryFeedPollContext() {
 }
 
 /**
- * 重置并加载当前标签下全部作品，全部完成后只刷新一次网格。
+ * 重置并加载当前标签首屏；失败时立即回退到上次缓存并结束 Loading。
  * @returns {Promise<void>}
  */
 function loadFirstGalleryFeedPage() {
@@ -6374,26 +6375,19 @@ function loadFirstGalleryFeedPage() {
     refreshGallery({ keepLoading: true });
   }
   galleryFeedLoadingMore = true;
-  var pageSize = sync.GALLERY_PAGE_SIZE || 60;
-  var allRows = [];
-  function fetchNextPage(offset) {
-    return sync.fetchGalleryPage(offset, pageSize, galleryFeedTabLoop).then(function (rows) {
-      var list = Array.isArray(rows) ? rows : [];
-      allRows = allRows.concat(list);
-      if (list.length < pageSize) return;
-      return fetchNextPage(offset + list.length);
-    });
-  }
-  return fetchNextPage(0)
-    .then(function () {
-      sync.replaceSupabaseGalleryUserCache(allRows);
-      galleryFeedNextOffset = allRows.length;
-      galleryFeedHasMore = false;
+  var pageSize = sync.GALLERY_PAGE_SIZE || 20;
+  return sync.fetchGalleryPage(0, pageSize, galleryFeedTabLoop)
+    .then(function (rows) {
+      var firstPage = Array.isArray(rows) ? rows : [];
+      sync.replaceSupabaseGalleryUserCache(firstPage);
+      galleryFeedNextOffset = firstPage.length;
+      galleryFeedHasMore = firstPage.length >= pageSize;
       syncGalleryFeedPollContext();
       refreshGallery();
     })
     .catch(function () {
-      /* 失败时保留上次缓存；由调用方决定是否 refresh */
+      // 重新渲染缓存并结束 Loading；否则 `.gallery--preparing` 会让已有 Grid 卡片持续透明。
+      refreshGallery();
     })
     .finally(function () {
       galleryFeedLoadingMore = false;
@@ -6411,7 +6405,7 @@ function loadMoreGalleryFeedPage() {
   }
   if (galleryFeedLoadingMore || !galleryFeedHasMore) return Promise.resolve();
   galleryFeedLoadingMore = true;
-  var pageSize = sync.GALLERY_PAGE_SIZE || 60;
+  var pageSize = sync.GALLERY_PAGE_SIZE || 20;
   return sync
     .fetchGalleryPage(galleryFeedNextOffset, pageSize, galleryFeedTabLoop)
     .then(function (rows) {
@@ -6429,6 +6423,9 @@ function loadMoreGalleryFeedPage() {
           ? sync.getPhotosForGalleryRender().photos.length
           : beforeCount;
       if (afterCount > beforeCount) refreshGallery();
+    })
+    .catch(function () {
+      /* 分页失败时保留已显示内容，等待下一次用户滚动或轮询重试。 */
     })
     .finally(function () {
       galleryFeedLoadingMore = false;
@@ -6480,7 +6477,7 @@ function setupGalleryFeedTabs() {
 }
 
 /**
- * 窗口滚动接近底部时加载下一批 60 条。
+ * 窗口滚动接近底部时加载下一批 20 条。
  * @returns {void}
  */
 function setupGalleryFeedInfiniteScroll() {
@@ -7759,6 +7756,9 @@ function setupGalleryViewControls() {
   if (window._galleryViewControlsBound) return;
   window._galleryViewControlsBound = true;
   if (galleryViewGridBtn) galleryViewGridBtn.addEventListener('click', function () {
+    if (lightbox && (lightbox.classList.contains('open') || document.getElementById('lightbox-shared-fly'))) {
+      closeLightbox();
+    }
     var selectedIndex = galleryCoverFlowIndex;
     galleryShowcaseViewGeneration += 1;
     hideGalleryShowcaseLoading();
@@ -7771,6 +7771,9 @@ function setupGalleryViewControls() {
   });
   if (galleryViewCoverFlowBtn) galleryViewCoverFlowBtn.addEventListener('click', function () {
     if (!galleryIsCoverFlowAvailable()) return;
+    if (lightbox && (lightbox.classList.contains('open') || document.getElementById('lightbox-shared-fly'))) {
+      closeLightbox();
+    }
     var enteringShowcase = galleryViewMode !== 'coverflow';
     if (!galleryCoverFlowHeight) galleryCoverFlowHeight = 0;
     if (enteringShowcase) {
@@ -7838,6 +7841,9 @@ function setupGalleryViewControls() {
     galleryListBodyViewport.addEventListener('scroll', function () {
       syncGalleryListSelectionFill();
       syncGalleryListLeftRail();
+      if (!isSupabaseGalleryCloudEnabled() || galleryFeedLoadingMore || !galleryFeedHasMore) return;
+      var scrollBottom = galleryListBodyViewport.scrollHeight - galleryListBodyViewport.clientHeight - galleryListBodyViewport.scrollTop;
+      if (scrollBottom < 480) loadMoreGalleryFeedPage();
     }, { passive: true });
   }
   document.querySelectorAll('.gallery-list-sort').forEach(function (button) {
@@ -8315,11 +8321,11 @@ window.addEventListener('message', function (ev) {
           var pushErr = s.lastPushError && String(s.lastPushError);
           if (pullErr) {
             el.style.display = 'block';
-            el.className = 'cloud-sync-err';
-            el.textContent =
-              "Cloud pull failed (others' work may be missing): " +
-              pullErr +
-              '. In Notion embeds, check whether requests to *.supabase.co are blocked (DevTools → Network).';
+            var isCloudTimeout = /(?:\b504\b|timeout)/i.test(pullErr);
+            el.className = isCloudTimeout ? 'cloud-sync-warn' : 'cloud-sync-err';
+            el.textContent = isCloudTimeout
+              ? 'Cloud is temporarily slow. Showing the saved Gallery and retrying automatically.'
+              : "Cloud pull failed (others' work may be missing): " + pullErr;
             return;
           }
           if (pushErr) {

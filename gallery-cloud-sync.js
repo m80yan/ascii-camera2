@@ -8,6 +8,9 @@
   var JSONBIN_BASE = 'https://api.jsonbin.io/v3/b';
   /** @type {number | null} */
   var pollTimerId = null;
+  /** @type {(() => void) | null} */
+  var pollVisibilityHandler = null;
+  var pollGeneration = 0;
   /** @type {number | null} */
   var pushDebounceId = null;
   var PUSH_DEBOUNCE_MS = 700;
@@ -53,7 +56,9 @@
   /**
    * 仅用于 Supabase `ascii_photos` 列表 GET 的 `limit` / 画廊分页每批条数。
    */
-  var SUPABASE_ASCII_PHOTOS_FETCH_LIMIT = 60;
+  var SUPABASE_ASCII_PHOTOS_FETCH_LIMIT = 20;
+  /** 避免网关/数据库查询长期 pending，保证 Gallery 能及时回退到本地缓存。 */
+  var SUPABASE_ASCII_PHOTOS_FETCH_TIMEOUT_MS = 10000;
   /**
    * `ascii_photos.preview_ascii` 最大长度（由完整 `ascii` 截断生成；与插入逻辑一致）。
    * @type {number}
@@ -629,7 +634,11 @@
     if (loopOnly === true) {
       url += '&is_animated=eq.true';
     }
-    return fetch(url, {
+    var controller = typeof global.AbortController === 'function' ? new global.AbortController() : null;
+    var timeoutId = controller
+      ? global.setTimeout(function () { controller.abort(); }, SUPABASE_ASCII_PHOTOS_FETCH_TIMEOUT_MS)
+      : null;
+    var requestOptions = {
       method: 'GET',
       cache: 'no-store',
       headers: {
@@ -637,7 +646,9 @@
         Authorization: 'Bearer ' + c.anonKey,
         Accept: 'application/json'
       }
-    })
+    };
+    if (controller) requestOptions.signal = controller.signal;
+    return fetch(url, requestOptions)
       .then(function (res) {
         if (!res.ok) {
           return readFetchErrorText(res).then(function (detail) {
@@ -665,6 +676,17 @@
           );
         }
         return out;
+      })
+      .catch(function (err) {
+        if (controller && controller.signal.aborted) {
+          return Promise.reject(
+            new Error('Supabase ascii_photos GET timeout after ' + SUPABASE_ASCII_PHOTOS_FETCH_TIMEOUT_MS + 'ms')
+          );
+        }
+        return Promise.reject(err);
+      })
+      .finally(function () {
+        if (timeoutId !== null) global.clearTimeout(timeoutId);
       });
   }
 
@@ -1672,7 +1694,17 @@
     stopPolling();
     if (!isEnabled() || typeof onRemoteChanged !== 'function') return;
     var ms = typeof intervalMs === 'number' && intervalMs >= 5000 ? intervalMs : DEFAULT_POLL_MS;
+    var generation = ++pollGeneration;
+    var failureCount = 0;
+    var pollInFlight = false;
+    function schedule(delay) {
+      if (generation !== pollGeneration) return;
+      pollTimerId = setTimeout(tick, delay);
+    }
     function tick() {
+      pollTimerId = null;
+      if (generation !== pollGeneration) return;
+      if (pollInFlight) return;
       if (typeof global.console !== 'undefined' && global.console.info) {
         global.console.info('[gallery-sync poll] tick');
       }
@@ -1680,8 +1712,10 @@
         if (typeof global.console !== 'undefined' && global.console.info) {
           global.console.info('[gallery-sync poll] tick skipped (document hidden)');
         }
+        schedule(ms);
         return;
       }
+      pollInFlight = true;
       pullOnce().then(function (changed) {
         if (typeof global.console !== 'undefined' && global.console.info) {
           global.console.info('[gallery-sync poll] tick complete', {
@@ -1692,13 +1726,28 @@
         if (changed) {
           onRemoteChanged();
         }
+      }).catch(function (err) {
+        if (typeof global.console !== 'undefined' && global.console.warn) {
+          global.console.warn('[gallery-sync poll] tick failed', err);
+        }
+      }).finally(function () {
+        if (generation !== pollGeneration) return;
+        pollInFlight = false;
+        failureCount = syncStatus.lastPullOk === false ? Math.min(failureCount + 1, 4) : 0;
+        schedule(ms * Math.pow(2, failureCount));
       });
     }
-    pollTimerId = setInterval(tick, ms);
+    schedule(ms);
     if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', function () {
-        if (document.visibilityState === 'visible') tick();
-      });
+      pollVisibilityHandler = function () {
+        if (document.visibilityState !== 'visible' || pollInFlight) return;
+        if (pollTimerId != null) {
+          clearTimeout(pollTimerId);
+          pollTimerId = null;
+        }
+        tick();
+      };
+      document.addEventListener('visibilitychange', pollVisibilityHandler);
     }
   }
 
@@ -1706,9 +1755,14 @@
    * @returns {void}
    */
   function stopPolling() {
+    pollGeneration += 1;
     if (pollTimerId != null) {
-      clearInterval(pollTimerId);
+      clearTimeout(pollTimerId);
       pollTimerId = null;
+    }
+    if (pollVisibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', pollVisibilityHandler);
+      pollVisibilityHandler = null;
     }
   }
 
