@@ -7461,7 +7461,8 @@ function updateGalleryCoverFlowGeometry() {
     var progress = Math.max(0, Math.min(1, 1 - Math.abs(distance) / radius));
     var direction = distance < 0 ? 1 : -1;
     var rotate = (1 - progress) * 45 * direction;
-    var translate = (1 - progress) * 25 * direction;
+    // 中央图片放大时，将两侧 3D 卡片向外展开，避免遮住相邻作品。
+    var translate = -(1 - progress) * 55 * direction;
     var scale = 0.8 + progress * 0.7;
     visual.style.transform = 'translateX(' + translate + '%) rotateY(' + rotate + 'deg) scale(' + scale + ')';
     visual.style.opacity = '1';
