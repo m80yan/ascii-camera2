@@ -31,16 +31,22 @@
     transition: opacity 180ms ease, visibility 0s linear 180ms;
   }
   #gallery-loading.is-hidden {
+    display: none !important;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
   }
   #gallery-loading.is-showcase-loading {
+    left: -16px;
+    right: -16px;
+    top: 0;
     z-index: 5000;
+    display: flex;
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
     transition: none;
+    background: #050505;
   }
   .gallery-loading-inner {
     position: absolute;
@@ -136,7 +142,7 @@
     justify-content: flex-start;
     position: sticky;
     top: 0;
-    z-index: 50;
+    z-index: 10000;
     margin: -24px -16px 20px -16px;
     padding: 26px 18px 18px 18px;
     background: rgba(10, 10, 10, 0.62);
@@ -170,7 +176,7 @@
   }
   /** 与 `#header` 的 margin 无关，仅标题行内对齐 ASCII 状态标记 */
   h1 { font-size: 14px; letter-spacing: 4px; text-transform: uppercase; opacity: 0.6; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  #gallery-cloud-dot-wrap { display: none; align-items: center; flex-shrink: 0; }
+  #gallery-cloud-dot-wrap { display: inline-flex; align-items: center; flex-shrink: 0; position: relative; z-index: 1; }
   /** 云端状态：用绿色 ASCII 字符轮播，不使用圆形状态点 */
   .gallery-cloud-dot {
     display: inline-block;
@@ -728,7 +734,8 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 0;
+    /* 操作按钮整体上移一个按钮高度，避免贴住视口底边。 */
+    bottom: 36px;
     z-index: 3;
     display: flex;
     flex-wrap: wrap;
@@ -1495,18 +1502,50 @@
   #gallery-coverflow-view[hidden] { display: none !important; }
   #gallery-coverflow-view {
     --cover-flow-height: 260px;
+    position: relative;
     width: 100%;
     display: flex;
     flex-direction: column;
     min-height: 320px;
   }
+  #gallery-list-left-rail {
+    display: none;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 16px;
+    height: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .gallery-list-left-rail-line {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: rgba(0, 255, 65, 0.1);
+  }
+  #gallery-list-header-left-rail {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 1px;
+    background: rgba(0, 255, 65, 0.1);
+    pointer-events: none;
+    z-index: 3;
+  }
   #gallery-coverflow-panel {
     position: relative;
+    width: calc(100% + 32px);
+    margin-left: -16px;
     height: var(--cover-flow-height);
     min-height: 260px;
     overflow: hidden;
     border-bottom: 1px solid rgba(0, 255, 65, 0.1);
     background: #050505;
+    box-shadow: 0 -24px 0 #050505;
   }
   #gallery-coverflow-viewport {
     width: 100%;
@@ -1663,7 +1702,10 @@
     width: max-content;
     z-index: 1000;
     transform: translateX(-50%) translateZ(1px);
-    bottom: 0;
+    transform-origin: center center;
+    will-change: transform, opacity;
+    /* 放在卡片上沿，避免按钮落入图片的倒影区域；动作仍由 JS 与图片同步旋转。 */
+    top: 0;
     height: 28px;
     display: flex;
     align-items: center;
@@ -1673,7 +1715,7 @@
     pointer-events: none;
     transition: opacity 180ms ease;
   }
-  .cover-flow-card--active .cover-flow-card-actions {
+  .cover-flow-card--centered .cover-flow-card-actions {
     opacity: 1;
     pointer-events: auto;
   }
@@ -1755,11 +1797,13 @@
   #gallery-list-panel {
     position: relative;
     z-index: 2;
+    width: calc(100% + 32px);
+    margin-left: -16px;
     flex: 1 1 auto;
     height: auto;
     min-height: 180px;
     max-height: none;
-    overflow: hidden;
+    overflow: visible;
     pointer-events: auto;
   }
   #gallery-list-horizontal-scroll {
@@ -1819,6 +1863,11 @@
     text-align: left;
     white-space: nowrap;
   }
+  /* 仅移动第一列内容；行的 hover/selected 背景仍保持贴到最左侧。 */
+  #gallery-list-header-table th:first-child,
+  #gallery-list-table td:first-child {
+    padding-left: 18px;
+  }
   #gallery-list-header-table th {
     position: relative;
     z-index: 1;
@@ -1831,11 +1880,11 @@
     content: '|';
     position: absolute;
     top: calc(50% - 2px);
-    right: 0;
+    left: var(--gallery-list-separator-left, 100%);
     color: #00ff41;
     font-weight: bold;
     opacity: 0.4;
-    transform: translate(50%, -50%);
+    transform: translate(-50%, -50%);
     pointer-events: none;
   }
   .gallery-list-sort {
@@ -1857,6 +1906,7 @@
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
+    scrollbar-gutter: stable;
     scrollbar-color: auto;
     scrollbar-width: auto;
   }
@@ -1867,13 +1917,19 @@
   .gallery-list-row:hover,
   .gallery-list-row[aria-selected="true"] { background: rgba(0, 255, 65, 0.08); }
   .gallery-list-color {
-    display: inline-block;
-    width: 1ch;
-    color: inherit;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     font-family: monospace, ui-monospace, "Courier New", monospace;
     font-size: 12px;
     line-height: 1;
     vertical-align: middle;
+  }
+  .gallery-list-color-block {
+    display: block;
+    width: 1ch;
+    color: inherit;
+    line-height: 1;
   }
   @media (max-width: 720px) {
     #gallery-view-toggle { display: none !important; }
@@ -1958,6 +2014,8 @@
   </section>
   <button id="gallery-view-resizer" type="button" aria-label="Resize Showcase and list areas"></button>
   <section id="gallery-list-panel" aria-label="Gallery list">
+    <div id="gallery-list-header-left-rail" aria-hidden="true"></div>
+    <div id="gallery-list-left-rail" aria-hidden="true"></div>
     <div id="gallery-list-horizontal-scroll">
       <div id="gallery-list-scroll-content">
         <table id="gallery-list-header-table">
@@ -2280,6 +2338,8 @@ const galleryViewResizer = document.getElementById('gallery-view-resizer');
 const galleryListPanel = document.getElementById('gallery-list-panel');
 const galleryListBodyViewport = document.getElementById('gallery-list-body-viewport');
 const galleryListBody = document.getElementById('gallery-list-body');
+const galleryListLeftRail = document.getElementById('gallery-list-left-rail');
+const galleryListHeaderLeftRail = document.getElementById('gallery-list-header-left-rail');
 const lightbox = document.getElementById('lightbox');
 const lightboxPre = document.getElementById('lightbox-pre');
 const lightboxLikeBtn = document.getElementById('lightbox-like');
@@ -6186,7 +6246,13 @@ function startGalleryEntrance() {
 
 function hideGalleryLoading() {
   var loading = document.getElementById('gallery-loading');
-  if (loading) loading.classList.add('is-hidden');
+  if (loading) {
+    loading.classList.add('is-hidden');
+    loading.classList.remove('is-showcase-loading');
+    loading.style.removeProperty('top');
+    loading.style.removeProperty('height');
+    loading.style.removeProperty('min-height');
+  }
   showCameraAudioTip();
   if (galleryEntrancePending) {
     if (galleryEntranceTimer !== null) window.clearTimeout(galleryEntranceTimer);
@@ -6202,7 +6268,9 @@ function hideGalleryLoading() {
   window.addEventListener('resize', syncGalleryLoadingPosition);
 })();
 
-function refreshGallery() {
+function refreshGallery(options) {
+  options = options || {};
+  var keepLoading = options.keepLoading === true;
   if (typeof console !== 'undefined' && console.info) {
     console.info('[gallery] refreshGallery() called');
   }
@@ -6224,12 +6292,12 @@ function refreshGallery() {
       );
     }
     renderGallery(pack.photos, pack.userCount);
-    hideGalleryLoading();
+    if (!keepLoading) hideGalleryLoading();
     return;
   }
   var merged = AsciiCameraGalleryStorage.getMergedGalleryPhotos();
   renderGallery(merged, AsciiCameraGalleryStorage.getUserPhotoCount());
-  hideGalleryLoading();
+  if (!keepLoading) hideGalleryLoading();
 }
 
 /**
@@ -6264,6 +6332,10 @@ function loadFirstGalleryFeedPage() {
     return Promise.resolve();
   }
   if (galleryFeedLoadingMore) return Promise.resolve();
+  // 请求期间保留已有缓存内容；loading 层只覆盖 Showcase 面板。
+  if (!photosCache.length && typeof sync.getPhotosForGalleryRender === 'function') {
+    refreshGallery({ keepLoading: true });
+  }
   galleryFeedLoadingMore = true;
   var pageSize = sync.GALLERY_PAGE_SIZE || 60;
   var allRows = [];
@@ -6395,10 +6467,12 @@ function setupGalleryFeedInfiniteScroll() {
 
 setupGalleryViewControls();
 // 刷新后先恢复已保存的视图状态；云端数据加载完成前也不要短暂回到 Grid。
-if (galleryViewMode === 'coverflow' && galleryIsCoverFlowAvailable()) {
+var shouldRestoreShowcase = galleryViewMode === 'coverflow' && galleryIsCoverFlowAvailable();
+if (shouldRestoreShowcase) {
   setGalleryLoadingLabel('Preparing Showcase…');
 }
 applyGalleryViewMode();
+if (shouldRestoreShowcase && galleryViewMode === 'coverflow') showGalleryShowcaseLoading(true);
 
 function timeAgo(ts) {
   const s = Math.floor((Date.now() - ts) / 1000);
@@ -6699,7 +6773,10 @@ function galleryListDisplayValue(photo, key) {
     var color = photo && typeof photo.color === 'string' ? photo.color : '#00ff41';
     var safeColor = /^#[0-9a-f]{3,8}$/i.test(color) ? color : '#00ff41';
     var colorName = escapeHtml(galleryColorName(color));
-    return '<span class="gallery-list-color" style="color:' + safeColor + '" title="' + colorName + '" aria-label="' + colorName + '">█</span>';
+    var depthBlocks = [1, 0.8, 0.6, 0.4, 0.2].map(function (opacity) {
+      return '<span class="gallery-list-color-block" style="opacity:' + opacity + '" aria-hidden="true">█</span>';
+    }).join('');
+    return '<span class="gallery-list-color" style="color:' + safeColor + '" title="' + colorName + '" aria-label="' + colorName + '">' + depthBlocks + '</span>';
   }
   if (key === 'aspect') return escapeHtml(galleryPhotoAspect(photo));
   if (key === 'resolution') {
@@ -6710,6 +6787,90 @@ function galleryListDisplayValue(photo, key) {
   if (key === 'time') return escapeHtml(galleryPhotoTimeLabel(photo));
   var count = galleryListValue(photo, key);
   return count == null ? '—' : escapeHtml(String(count));
+}
+
+function syncGalleryListHeaderSeparators() {
+  var headerCells = document.querySelectorAll('#gallery-list-header-table th');
+  for (var i = 0; i < headerCells.length - 1; i++) {
+    var currentCell = headerCells[i];
+    var currentButton = currentCell.querySelector('.gallery-list-sort');
+    var nextButton = headerCells[i + 1].querySelector('.gallery-list-sort');
+    if (!currentButton || !nextButton) continue;
+    var cellRect = currentCell.getBoundingClientRect();
+    if (!(cellRect.width > 0)) continue;
+    var currentRect = currentButton.getBoundingClientRect();
+    var nextRect = nextButton.getBoundingClientRect();
+    var separatorCenter = (currentRect.right + nextRect.left) / 2;
+    currentCell.style.setProperty('--gallery-list-separator-left', (separatorCenter - cellRect.left) + 'px');
+  }
+}
+
+function syncGalleryListSelectionFill() {
+  if (!galleryListPanel || !galleryListBody || !galleryListBodyViewport) return;
+  var selectedRow = galleryListBody.querySelector('[aria-selected="true"]');
+  if (!selectedRow || galleryCoverflowView.hidden) {
+    galleryListPanel.style.setProperty('--gallery-selected-row-top', '-9999px');
+    galleryListPanel.style.setProperty('--gallery-selected-row-height', '0px');
+    return;
+  }
+  var panelRect = galleryListPanel.getBoundingClientRect();
+  var bodyRect = galleryListBodyViewport.getBoundingClientRect();
+  var rowRect = selectedRow.getBoundingClientRect();
+  if (!(rowRect.width > 0) || !(rowRect.height > 0)) return;
+  var bodyTop = bodyRect.top - panelRect.top;
+  var bodyBottom = bodyRect.bottom - panelRect.top;
+  var selectedTop = Math.max(bodyTop, Math.min(bodyBottom - rowRect.height, rowRect.top - panelRect.top));
+  galleryListPanel.style.setProperty('--gallery-selected-row-top', selectedTop + 'px');
+  galleryListPanel.style.setProperty('--gallery-selected-row-height', rowRect.height + 'px');
+}
+
+function syncGalleryListLeftRail() {
+  if (!galleryListLeftRail || !galleryListPanel || !galleryListBodyViewport || !galleryListBody) return;
+  var panelRect = galleryListPanel.getBoundingClientRect();
+  var bodyRect = galleryListBodyViewport.getBoundingClientRect();
+  galleryListLeftRail.style.top = (bodyRect.top - panelRect.top) + 'px';
+  galleryListLeftRail.style.height = bodyRect.height + 'px';
+  galleryListLeftRail.innerHTML = Array.prototype.map.call(
+    galleryListBody.querySelectorAll('.gallery-list-row'),
+    function (row) {
+      var rowRect = row.getBoundingClientRect();
+      var lineTop = rowRect.bottom - bodyRect.top - 1;
+      return '<i class="gallery-list-left-rail-line" style="top:' + lineTop + 'px"></i>';
+    }
+  ).join('');
+}
+
+function syncGalleryListHeaderLeftRail() {
+  if (!galleryListHeaderLeftRail || !galleryListPanel) return;
+  var headerTable = document.getElementById('gallery-list-header-table');
+  if (!headerTable) return;
+  var panelRect = galleryListPanel.getBoundingClientRect();
+  var headerRect = headerTable.getBoundingClientRect();
+  if (!(headerRect.width > 0) || !(headerRect.height > 0)) return;
+  galleryListHeaderLeftRail.style.top = (headerRect.bottom - panelRect.top - 1) + 'px';
+}
+
+function syncGalleryListHoverFill(row) {
+  if (!galleryListPanel || !galleryListBodyViewport || !row || galleryCoverflowView.hidden) return;
+  if (row.getAttribute('aria-selected') === 'true') {
+    clearGalleryListHoverFill();
+    return;
+  }
+  var panelRect = galleryListPanel.getBoundingClientRect();
+  var bodyRect = galleryListBodyViewport.getBoundingClientRect();
+  var rowRect = row.getBoundingClientRect();
+  if (!(rowRect.width > 0) || !(rowRect.height > 0)) return;
+  var bodyTop = bodyRect.top - panelRect.top;
+  var bodyBottom = bodyRect.bottom - panelRect.top;
+  var hoverTop = Math.max(bodyTop, Math.min(bodyBottom - rowRect.height, rowRect.top - panelRect.top));
+  galleryListPanel.style.setProperty('--gallery-hover-row-top', hoverTop + 'px');
+  galleryListPanel.style.setProperty('--gallery-hover-row-height', rowRect.height + 'px');
+}
+
+function clearGalleryListHoverFill() {
+  if (!galleryListPanel) return;
+  galleryListPanel.style.setProperty('--gallery-hover-row-top', '-9999px');
+  galleryListPanel.style.setProperty('--gallery-hover-row-height', '0px');
 }
 
 function syncGalleryListColumnWidths() {
@@ -6746,6 +6907,9 @@ function syncGalleryListColumnWidths() {
     });
   });
   content.style.width = total + 'px';
+  syncGalleryListHeaderSeparators();
+  syncGalleryListSelectionFill();
+  syncGalleryListHeaderLeftRail();
 }
 
 function getGalleryShowcaseRows() {
@@ -6833,8 +6997,11 @@ function showGalleryShowcaseLoading(panelOnly) {
   loading.classList.add('is-showcase-loading');
   if (panelOnly && galleryCoverflowPanel) {
     loading.style.minHeight = '0';
-    loading.style.height = galleryCoverflowPanel.offsetHeight + 'px';
+    loading.style.top = '0';
+    // 留出 Showcase 底部边框，让拖拽柄上方的绿线在刷新时仍可见。
+    loading.style.height = Math.max(0, galleryCoverflowPanel.offsetHeight - 1) + 'px';
   } else {
+    loading.style.removeProperty('top');
     loading.style.removeProperty('min-height');
     syncGalleryLoadingPosition();
   }
@@ -6843,8 +7010,9 @@ function showGalleryShowcaseLoading(panelOnly) {
 function hideGalleryShowcaseLoading() {
   var loading = document.getElementById('gallery-loading');
   if (!loading) return;
-  loading.classList.remove('is-showcase-loading');
   loading.classList.add('is-hidden');
+  loading.classList.remove('is-showcase-loading');
+  loading.style.removeProperty('top');
   loading.style.removeProperty('height');
   loading.style.removeProperty('min-height');
   setGalleryLoadingLabel('Loading Gallery…');
@@ -6852,10 +7020,12 @@ function hideGalleryShowcaseLoading() {
 
 function applyGalleryShowcaseViewWithLoading(resetPageScroll) {
   var generation = ++galleryShowcaseViewGeneration;
-  showGalleryShowcaseLoading();
+  if (gallery) gallery.style.display = 'none';
+  if (galleryCoverflowView) galleryCoverflowView.hidden = false;
+  applyGalleryCoverFlowHeight();
+  showGalleryShowcaseLoading(true);
   if (resetPageScroll) {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    syncGalleryLoadingPosition();
   }
   window.requestAnimationFrame(function () {
     window.requestAnimationFrame(function () {
@@ -6909,15 +7079,20 @@ function renderGalleryList() {
   }).join('');
   updateGalleryListSortHeaders();
   syncGalleryListColumnWidths();
+  syncGalleryListSelectionFill();
+  syncGalleryListLeftRail();
+  syncGalleryListHeaderLeftRail();
 }
 
 function updateGalleryListSelection() {
   if (!galleryListBody) return;
+  clearGalleryListHoverFill();
   galleryListBody.querySelectorAll('.gallery-list-row').forEach(function (row) {
     var index = parseInt(row.getAttribute('data-index') || '-1', 10);
     row.setAttribute('aria-selected', index === galleryCoverFlowIndex ? 'true' : 'false');
   });
   ensureGalleryListSelectionVisible();
+  syncGalleryListSelectionFill();
 }
 
 /**
@@ -7241,7 +7416,7 @@ function fitGalleryCoverFlowCards() {
   var resizeScale = isEmbeddedInThirdPartyFrame() ? 1 : galleryCoverFlowScale;
   var gridWidth = getGalleryGridReferenceWidth();
   var preferredWidth = Math.max(180, gridWidth * 2);
-  var availableWidth = galleryCoverflowView ? galleryCoverflowView.clientWidth : window.innerWidth;
+  var availableWidth = galleryCoverflowPanel.clientWidth || (galleryCoverflowView ? galleryCoverflowView.clientWidth : window.innerWidth);
   var cardWidth = Math.max(96, Math.min(preferredWidth / 1.5, availableWidth / 7));
   var cardHeight = Math.max(180, galleryCoverflowPanel.clientHeight - 42);
   galleryCoverflowViewport.style.maxWidth = Math.min(availableWidth, cardWidth * 7) + 'px';
@@ -7290,6 +7465,14 @@ function updateGalleryCoverFlowGeometry() {
     var scale = 0.8 + progress * 0.7;
     visual.style.transform = 'translateX(' + translate + '%) rotateY(' + rotate + 'deg) scale(' + scale + ')';
     visual.style.opacity = '1';
+    var actions = card.querySelector('.cover-flow-card-actions');
+    if (actions) {
+      actions.style.transform = 'translateX(-50%) translateZ(1px) rotateY(' + rotate + 'deg)';
+    }
+    card.classList.toggle(
+      'cover-flow-card--centered',
+      card.classList.contains('cover-flow-card--active') && Math.abs(distance) <= 1
+    );
     var pre = visual.querySelector('.cover-flow-card-surface pre');
     var textTarget = pre && pre.querySelector('.cover-flow-card-ascii-text');
     if (textTarget) textTarget.style.opacity = String(0.54 + progress * 0.46);
@@ -7358,6 +7541,7 @@ function scrollGalleryCoverFlowToIndex(index, smooth) {
   var distance = target - start;
   if (Math.abs(distance) < 1) {
     galleryCoverflowViewport.scrollLeft = target;
+    updateGalleryCoverFlowGeometry();
     galleryCoverFlowScrollAnimFrame = 0;
     galleryCoverFlowProgrammaticScroll = false;
     return;
@@ -7401,7 +7585,8 @@ function renderGalleryCoverFlow() {
     var ascii = typeof photo.ascii === 'string' ? photo.ascii : '';
     var color = typeof photo.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(photo.color) ? photo.color : '#00ff41';
     var ironBars = isGalleryCoverFlowIronBarsPhoto(photo, ascii);
-    var shape = ironBars ? 'square' : getGalleryCoverFlowShape(photo, ascii);
+    // Iron Bar 只负责黑色背板；保留原始圆形/椭圆遮罩，避免组合滤镜退化成矩形。
+    var shape = getGalleryCoverFlowShape(photo, ascii);
     var characterMask = shape === 'character' ? buildGalleryCoverFlowCharacterMask(ascii) : '';
     return '<article class="cover-flow-card" data-index="' + index + '" tabindex="0" aria-selected="false">' +
       '<div class="cover-flow-card-visual">' +
@@ -7566,6 +7751,16 @@ function setupGalleryViewControls() {
     applyGalleryShowcaseViewWithLoading(enteringShowcase);
   });
   if (galleryListBody) {
+    galleryListBody.addEventListener('mouseover', function (event) {
+      var target = event.target;
+      var row = target && target.closest ? target.closest('.gallery-list-row') : null;
+      if (row && galleryListBody.contains(row)) syncGalleryListHoverFill(row);
+    });
+    galleryListBody.addEventListener('mouseout', function (event) {
+      var related = event.relatedTarget;
+      var row = related && related.closest ? related.closest('.gallery-list-row') : null;
+      if (!row || !galleryListBody.contains(row)) clearGalleryListHoverFill();
+    });
     galleryListBody.addEventListener('click', function (event) {
       var target = event.target;
       var row = target && target.closest ? target.closest('.gallery-list-row') : null;
@@ -7599,6 +7794,12 @@ function setupGalleryViewControls() {
         if (galleryCoverflowViewport) galleryCoverflowViewport.focus();
       }
     });
+  }
+  if (galleryListBodyViewport) {
+    galleryListBodyViewport.addEventListener('scroll', function () {
+      syncGalleryListSelectionFill();
+      syncGalleryListLeftRail();
+    }, { passive: true });
   }
   document.querySelectorAll('.gallery-list-sort').forEach(function (button) {
     button.addEventListener('click', function () {

@@ -776,6 +776,10 @@
    */
   function getPhotosForGalleryRender() {
     var user = supabaseGalleryUserCache.slice();
+    // 页面刷新后云端首屏尚未返回时，先用本地快照维持 List 内容。
+    if (!user.length && global.AsciiCameraGalleryStorage && typeof global.AsciiCameraGalleryStorage.loadUserPhotos === 'function') {
+      user = global.AsciiCameraGalleryStorage.loadUserPhotos();
+    }
     return { photos: user, userCount: user.length };
   }
 
