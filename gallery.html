@@ -372,6 +372,19 @@
     min-height: 0;
     width: 100%;
   }
+  /* 最新上传的用户图片占据 2×2 个网格单元，总显示面积为普通卡片的约 4 倍。 */
+  .photo-card--latest {
+    grid-column: span 2;
+    grid-row: span 2;
+    aspect-ratio: auto;
+    align-self: stretch;
+  }
+  @media (max-width: 520px) {
+    .photo-card--latest {
+      grid-column: span 1;
+      grid-row: span 1;
+    }
+  }
   .photo-card:hover { border-color: rgba(0,255,65,0.5); }
   .photo-thumb {
     flex: 1 1 auto;
@@ -447,6 +460,12 @@
     letter-spacing: 1px;
     white-space: nowrap;
   }
+  .photo-meta--3col .photo-meta-gif {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
   .photo-meta--3col .photo-meta-right {
     justify-self: end;
     text-align: right;
@@ -460,6 +479,24 @@
   }
   .photo-meta--3col .photo-meta-right .delete-btn {
     margin: 0;
+  }
+  /* 普通模式的时间居中；管理员模式保留原有左侧时间布局。 */
+  body:not(.gallery-curator-mode) .photo-meta--3col {
+    position: relative;
+  }
+  body:not(.gallery-curator-mode) .photo-meta--3col .photo-meta-left {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+  }
+  body:not(.gallery-curator-mode) .photo-meta:not(.photo-meta--3col) {
+    position: relative;
+  }
+  body:not(.gallery-curator-mode) .photo-meta:not(.photo-meta--3col) .photo-time {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
   }
   .photo-time { font-size: 10px; opacity: 0.4; letter-spacing: 1px; white-space: nowrap; }
   .delete-btn { background: transparent; border: none; color: #ff4444; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 10px; cursor: pointer; opacity: 0.5; letter-spacing: 1px; padding: 0; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
@@ -1779,7 +1816,7 @@
     left: 50%;
     top: 50%;
     width: 3px;
-    height: 3px;
+    height: 2px;
     background: #00ff41;
     box-shadow:
       6px 0 #00ff41,
@@ -1789,7 +1826,7 @@
       6px 6px #00ff41,
       12px 6px #00ff41,
       18px 6px #00ff41;
-    transform: translate(-10.5px, -4.5px);
+    transform: translate(-10.5px, -4px);
     opacity: 0.7;
   }
   #gallery-view-resizer:hover::before,
@@ -6592,7 +6629,8 @@ function galleryIsCoverFlowAvailable() {
 }
 
 function getGalleryGridReferenceWidth() {
-  var card = gallery.querySelector('.photo-card');
+  // 最新卡片会跨 2×2；缩放基准必须取普通卡片，避免所有缩略图一起放大。
+  var card = gallery.querySelector('.photo-card:not(.photo-card--latest)') || gallery.querySelector('.photo-card');
   if (card) {
     var rect = card.getBoundingClientRect();
     if (rect.width > 0) return rect.width;
@@ -6773,8 +6811,8 @@ function galleryListDisplayValue(photo, key) {
     var color = photo && typeof photo.color === 'string' ? photo.color : '#00ff41';
     var safeColor = /^#[0-9a-f]{3,8}$/i.test(color) ? color : '#00ff41';
     var colorName = escapeHtml(galleryColorName(color));
-    var depthBlocks = [1, 0.8, 0.6, 0.4, 0.2].map(function (opacity) {
-      return '<span class="gallery-list-color-block" style="opacity:' + opacity + '" aria-hidden="true">█</span>';
+    var depthBlocks = CHAR_SETS.detailed.replace(/\s/g, '').split('').map(function (character) {
+      return '<span class="gallery-list-color-block" aria-hidden="true">' + character + '</span>';
     }).join('');
     return '<span class="gallery-list-color" style="color:' + safeColor + '" title="' + colorName + '" aria-label="' + colorName + '">' + depthBlocks + '</span>';
   }
@@ -7992,6 +8030,7 @@ function renderGallery(photos, userCountOverride) {
     return (
       '<div class="photo-card' +
         (isDeleted ? ' photo-card--deleted' : '') +
+        (isUser && i === 0 ? ' photo-card--latest' : '') +
         '" data-index="' +
         i +
         '" style="--gallery-enter-delay:' +
