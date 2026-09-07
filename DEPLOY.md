@@ -61,6 +61,58 @@ create policy "ascii_photo_likes_insert" on public.ascii_photo_likes
   for insert with check (true);
 create policy "ascii_photo_likes_delete" on public.ascii_photo_likes
   for delete using (true);
+
+-- 画廊列表真实统计字段；只向前端开放聚合数字，不开放 analytics_events 的
+-- visitor_id、user_agent 等原始埋点。
+alter table public.ascii_photos
+  add column if not exists likes_count bigint not null default 0,
+  add column if not exists downloads_count bigint not null default 0,
+  add column if not exists views_count bigint not null default 0;
+
+-- 下面三项回填已有历史数据；之后由触发器持续维护。
+update public.ascii_photos as p
+set likes_count = (select count(*) from public.ascii_photo_likes as l where l.photo_id = p.id::text),
+    downloads_count = (select count(*) from public.analytics_events as e where e.photo_id = p.id::text and e.event_name in ('download_png', 'download_gif')),
+    views_count = (select count(*) from public.analytics_events as e where e.photo_id = p.id::text and e.event_name = 'photo_view');
+
+create or replace function public.sync_ascii_photo_like_count()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+begin
+  if tg_op = 'INSERT' then
+    update public.ascii_photos set likes_count = likes_count + 1 where id::text = new.photo_id;
+    return new;
+  end if;
+  update public.ascii_photos set likes_count = greatest(0, likes_count - 1) where id::text = old.photo_id;
+  return old;
+end;
+$$;
+
+create or replace function public.sync_ascii_photo_event_count()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+declare
+  delta integer := case when tg_op = 'DELETE' then -1 else 1 end;
+  event_photo_id text := case when tg_op = 'DELETE' then old.photo_id else new.photo_id end;
+  event_name_value text := case when tg_op = 'DELETE' then old.event_name else new.event_name end;
+begin
+  if event_photo_id is null then return case when tg_op = 'DELETE' then old else new end; end if;
+  update public.ascii_photos
+  set downloads_count = case when event_name_value in ('download_png', 'download_gif') then greatest(0, downloads_count + delta) else downloads_count end,
+      views_count = case when event_name_value = 'photo_view' then greatest(0, views_count + delta) else views_count end
+  where id::text = event_photo_id;
+  return case when tg_op = 'DELETE' then old else new end;
+end;
+$$;
+
+drop trigger if exists ascii_photo_likes_count_trigger on public.ascii_photo_likes;
+create trigger ascii_photo_likes_count_trigger after insert or delete on public.ascii_photo_likes
+for each row execute function public.sync_ascii_photo_like_count();
+drop trigger if exists analytics_events_photo_count_trigger on public.analytics_events;
+create trigger analytics_events_photo_count_trigger after insert or delete on public.analytics_events
+for each row execute function public.sync_ascii_photo_event_count();
+revoke execute on function public.sync_ascii_photo_like_count() from public, anon, authenticated;
+revoke execute on function public.sync_ascii_photo_event_count() from public, anon, authenticated;
 ```
 
 **已有 `ascii_photos` 表、尚无 `owner_id` 时** 在 SQL Editor 执行：`alter table public.ascii_photos add column if not exists owner_id text;` 旧行 `owner_id` 为空时前端不视为本人作品，无法自助删除（策展模式仍可删）。

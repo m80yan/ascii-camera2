@@ -5778,7 +5778,13 @@ async function persistPhotoToGallery(payload) {
     var photoPayload = {
       ascii: asciiStr,
       color: colorPicker.value,
-      time: Date.now()
+      time: Date.now(),
+      ironBars: !!(
+        payload &&
+        typeof payload === 'object' &&
+        payload.isPhotoPreview === true &&
+        payload.ironBarsSpec
+      )
     };
     if (isAnim) {
       photoPayload.isAnimated = true;
@@ -5799,6 +5805,7 @@ async function persistPhotoToGallery(payload) {
           time: savedRow ? savedRow.time : photoPayload.time
         };
         if (savedRow && typeof savedRow.id === 'string' && savedRow.id) msgPhoto.id = savedRow.id;
+        if (photoPayload.ironBars === true) msgPhoto.ironBars = true;
         if (isAnim) {
           msgPhoto.isAnimated = true;
           msgPhoto.frameCount = photoPayload.frameCount;

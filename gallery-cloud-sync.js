@@ -549,8 +549,8 @@
    * 将 `ascii_photos` 行转为画廊 UI 用条目：`time` 来自 `created_at`；列表拉取不含 `frames`（悬停时再取）。
    * 列表请求不 select `preview_ascii`，仅用完整 `ascii` 渲染，与灯箱一致。
    * `owner_id` 缺失或空时 `mine` 为 false（不猜测历史行归属）。
-   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown, is_animated?: unknown, frame_count?: unknown, fps?: unknown, duration_ms?: unknown, is_deleted?: unknown }} row
-   * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number } | null}
+   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown, is_animated?: unknown, frame_count?: unknown, fps?: unknown, duration_ms?: unknown, is_deleted?: unknown, likes_count?: unknown, downloads_count?: unknown, views_count?: unknown }} row
+   * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number } | null}
    */
   function mapAsciiPhotoRow(row) {
     if (!row || typeof row.ascii !== 'string') return null;
@@ -565,13 +565,20 @@
     var mine = owner.length > 0 && owner === cur;
     var isAnimated = row.is_animated === true;
     var isDel = row.is_deleted === true;
-    /** @type {{ id: string, ascii: string, color: string, time: number, mine: boolean, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }} */
+    var toCount = function (value) {
+      var count = typeof value === 'number' ? value : Number(value);
+      return Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0;
+    };
+    /** @type {{ id: string, ascii: string, color: string, time: number, mine: boolean, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }} */
     var out = {
       id: id,
       ascii: row.ascii,
       color: typeof row.color === 'string' ? row.color : '#00ff41',
       time: t,
-      mine: mine
+      mine: mine,
+      likesCount: toCount(row.likes_count),
+      downloadsCount: toCount(row.downloads_count),
+      viewsCount: toCount(row.views_count)
     };
     if (isDel) {
       out.isDeleted = true;
@@ -594,7 +601,7 @@
    * @param {number} limit
    * @param {number} [offset]
    * @param {boolean} [loopOnly]
-   * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }>>}
+   * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }>>}
    */
   function fetchAsciiPhotosPageFromSupabase(limit, offset, loopOnly, includeDeleted) {
     var c = getSupabaseConfig();
@@ -605,7 +612,7 @@
     );
     var off = Math.max(0, typeof offset === 'number' && Number.isFinite(offset) ? offset : 0);
     var cols =
-      'id,ascii,color,created_at,owner_id,is_animated,frame_count,fps,duration_ms,is_deleted';
+      'id,ascii,color,created_at,owner_id,is_animated,frame_count,fps,duration_ms,is_deleted,likes_count,downloads_count,views_count';
     var url =
       c.url +
       '/rest/v1/' +
@@ -1354,9 +1361,9 @@
         } else {
           supabaseGalleryUserCache = first.slice();
         }
-        save(supabaseGalleryUserCache);
         var afterSnap = JSON.stringify(supabaseGalleryUserCache);
         var changed = beforeSnap !== afterSnap;
+        if (changed) save(supabaseGalleryUserCache);
         var afterCount = supabaseGalleryUserCache.length;
         var afterFirstId = firstRowIdForPollLog(supabaseGalleryUserCache);
         if (typeof global.console !== 'undefined' && global.console.info) {
