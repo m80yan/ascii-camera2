@@ -466,7 +466,7 @@
     min-height: 0;
     width: 100%;
   }
-  /* 最新上传的用户图片占据 2×2 个网格单元，总显示面积为普通卡片的约 4 倍。 */
+  /* 当前 Grid 排序的首张用户图片占据 2×2 个网格单元，总显示面积为普通卡片的约 4 倍。 */
   .photo-card--latest {
     grid-column: span 2;
     grid-row: span 2;
@@ -508,18 +508,75 @@
     transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s;
     will-change: transform;
   }
-  .gallery-drag-source { opacity: 0.35; }
+  .gallery-drag-source { opacity: 0; }
+  body.gallery-reordering #gallery-coverflow-curator-toolbar {
+    visibility: hidden !important;
+  }
   body.gallery-reordering #gallery .photo-card.gallery-reorder-shift,
   body.gallery-reordering #gallery-coverflow-track .cover-flow-card.gallery-reorder-shift {
-    transform: translate3d(var(--gallery-reorder-x, 0px), var(--gallery-reorder-y, 0px), 0);
+    transform-origin: top left;
+    transform: translate3d(var(--gallery-reorder-x, 0px), var(--gallery-reorder-y, 0px), 0)
+      scale(var(--gallery-reorder-scale-x, 1), var(--gallery-reorder-scale-y, 1));
   }
   .gallery-drop-before { box-shadow: -3px 0 #00ff41; }
   .gallery-drop-after { box-shadow: 3px 0 #00ff41; }
+  #gallery-coverflow-track .gallery-drop-before,
+  #gallery-coverflow-track .gallery-drop-after { box-shadow: none; }
+  .gallery-coverflow-drop-placeholder {
+    position: fixed;
+    z-index: 1900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    perspective: 40em;
+    transform-style: preserve-3d;
+  }
+  .gallery-coverflow-drop-placeholder-visual {
+    position: relative;
+    width: 100%;
+    height: calc(100% - 32px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform-origin: center;
+    transform-style: preserve-3d;
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .gallery-coverflow-drop-placeholder-shape {
+    position: absolute;
+    display: block;
+    width: var(--gallery-drop-shape-width, 1px);
+    height: var(--gallery-drop-shape-height, 1px);
+    left: var(--gallery-drop-shape-left, 0px);
+    top: var(--gallery-drop-shape-top, 0px);
+    background: #00ff41;
+    opacity: 0.5;
+    overflow: hidden;
+  }
+  .gallery-coverflow-drop-placeholder-shape--circle,
+  .gallery-coverflow-drop-placeholder-shape--oval { border-radius: 50%; }
+  .gallery-coverflow-drop-placeholder-shape--character { background: transparent; }
+  .gallery-coverflow-drop-placeholder-shape--character .cover-flow-card-ascii-mask {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .gallery-coverflow-drop-placeholder-shape--character .cover-flow-card-ascii-mask rect {
+    fill: #00ff41 !important;
+  }
+  .gallery-coverflow-drop-placeholder--fading .gallery-coverflow-drop-placeholder-shape {
+    opacity: 0;
+    transition: opacity 150ms linear;
+  }
+  .gallery-coverflow-drop-placeholder--following .gallery-coverflow-drop-placeholder-visual {
+    transition: none;
+  }
   .gallery-drag-ghost {
     position: fixed;
     z-index: 30000;
-    width: 112px;
-    height: 112px;
+    width: var(--gallery-drag-ghost-width, 112px);
+    height: var(--gallery-drag-ghost-height, 112px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -527,7 +584,53 @@
     border: 1px solid #00ff41;
     pointer-events: none;
     overflow: hidden;
-    opacity: 0.85;
+    opacity: 0.95;
+    transform-origin: center;
+  }
+  .gallery-drag-ghost--entering {
+    transition: left 160ms cubic-bezier(0.22, 1, 0.36, 1),
+      top 160ms cubic-bezier(0.22, 1, 0.36, 1),
+      width 160ms cubic-bezier(0.22, 1, 0.36, 1),
+      height 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .gallery-drag-ghost--releasing {
+    transition: left 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      top 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      width 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .gallery-drag-ghost--grid .photo-thumb {
+    width: 100%;
+    height: 100%;
+    flex: 0 0 100%;
+  }
+  .gallery-drag-ghost--coverflow {
+    overflow: visible;
+    border-color: transparent;
+    background: transparent;
+    perspective: 40em;
+  }
+  .gallery-drag-ghost--coverflow .cover-flow-card-visual {
+    height: 100%;
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .gallery-drag-ghost--coverflow.gallery-drag-ghost--releasing {
+    transition-duration: 320ms;
+  }
+  .gallery-drag-ghost--coverflow.gallery-drag-ghost--releasing .cover-flow-card-visual {
+    transition-duration: 320ms;
+  }
+  .gallery-drag-ghost--coverflow .gallery-drag-ghost-frame {
+    position: absolute;
+    z-index: 2;
+    display: block;
+    border: 1px solid rgba(0, 255, 65, 0.7);
+    pointer-events: none;
+  }
+  .gallery-drag-ghost--coverflow .gallery-drag-ghost-frame--circle,
+  .gallery-drag-ghost--coverflow .gallery-drag-ghost-frame--oval {
+    border-radius: 50%;
   }
   .gallery-drag-ghost pre { margin: 0; line-height: 1; letter-spacing: 0; }
   #gallery-order-status {
@@ -6675,16 +6778,12 @@ function reindexGalleryGridAfterPurge(removedIndex) {
       handle.setAttribute('data-gallery-drag', String(nextIndex));
     });
   });
-  var userCount = inferUserPhotoCountFromPhotos(photosCache);
-  var latest = photosCache.slice(0, userCount).reduce(function (current, photo) {
-    return !current || photo.time > current.time ? photo : current;
-  }, null);
   gallery.querySelectorAll('.photo-card--latest').forEach(function (card) {
     card.classList.remove('photo-card--latest');
   });
-  var latestIndex = latest ? photosCache.indexOf(latest) : -1;
-  var latestCard = latestIndex >= 0
-    ? gallery.querySelector('.photo-card[data-index="' + latestIndex + '"]')
+  var userCount = inferUserPhotoCountFromPhotos(photosCache);
+  var latestCard = userCount > 0
+    ? gallery.querySelector('.photo-card[data-index="0"]')
     : null;
   if (latestCard) latestCard.classList.add('photo-card--latest');
   setupGalleryThumbResize();
@@ -7620,7 +7719,8 @@ function galleryDragHandle(index) {
     '" aria-label="Drag to reorder" title="Drag to reorder; use arrow keys to move">⠿</button>';
 }
 
-function commitGalleryMove(operation) {
+function commitGalleryMove(operation, options) {
+  options = options || {};
   var rows = galleryOrderQueue.apply(AsciiCameraGalleryCloudSync.getPhotosForGalleryRender().photos);
   var next = AsciiGalleryOrder.move(rows, operation);
   var changed = !next.every(function (p, index) { return p.id === rows[index].id; });
@@ -7634,10 +7734,31 @@ function commitGalleryMove(operation) {
   if (galleryViewMode === 'coverflow') {
     galleryCoverFlowRestorePosition = false;
     updateGalleryCoverFlowSelection(false);
-    centerGalleryCoverFlowCard(true);
-    ensureGalleryListSelectionVisible();
+    if (options.suppressCoverFlowSource) {
+      suppressGalleryCoverFlowCardByPhotoId(operation.id);
+    }
+    if (typeof options.onCoverFlowCentering === 'function') {
+      options.onCoverFlowCentering();
+    }
+    centerGalleryCoverFlowCard(true, function () {
+      if (options.suppressCoverFlowSource) {
+        suppressGalleryCoverFlowCardByPhotoId(operation.id);
+      }
+      ensureGalleryListSelectionVisible();
+      if (typeof options.onCoverFlowCentered === 'function') options.onCoverFlowCentered();
+    });
+    if (typeof options.onCoverFlowCentered !== 'function') ensureGalleryListSelectionVisible();
   }
   return true;
+}
+
+function suppressGalleryCoverFlowCardByPhotoId(photoId) {
+  if (!galleryCoverflowTrack || !photoId) return null;
+  var index = findGalleryIndexByPhotoId(photoId);
+  if (index < 0) return null;
+  var card = galleryCoverflowTrack.querySelector('.cover-flow-card[data-index="' + index + '"]');
+  if (card) card.classList.add('photo-card--fly-source-suppressed');
+  return card;
 }
 
 function clearGalleryDropMarkers() {
@@ -7651,7 +7772,122 @@ function clearGalleryReorderOffsets() {
     el.classList.remove('gallery-reorder-shift');
     el.style.removeProperty('--gallery-reorder-x');
     el.style.removeProperty('--gallery-reorder-y');
+    el.style.removeProperty('--gallery-reorder-scale-x');
+    el.style.removeProperty('--gallery-reorder-scale-y');
   });
+}
+
+function clearGalleryCoverFlowDropPlaceholder(drag) {
+  if (!drag) return;
+  if (drag.dropPlaceholderFrame) cancelAnimationFrame(drag.dropPlaceholderFrame);
+  drag.dropPlaceholderFrame = 0;
+  if (drag.dropPlaceholder) drag.dropPlaceholder.remove();
+  drag.dropPlaceholder = null;
+  drag.dropPosition = null;
+}
+
+function getGalleryCoverFlowDropPlaceholderTransform(left, width) {
+  if (!galleryCoverflowViewport) return '';
+  var center = galleryCoverflowViewport.scrollLeft + galleryCoverflowViewport.clientWidth / 2;
+  var cardCenter = left + width / 2;
+  var distance = cardCenter - center;
+  var radius = Math.max(1, width * 1.05);
+  var progress = Math.max(0, Math.min(1, 1 - Math.abs(distance) / radius));
+  var direction = distance < 0 ? 1 : -1;
+  var rotate = (1 - progress) * 45 * direction;
+  var translate = -(1 - progress) * 55 * direction;
+  var scale = 0.8 + progress * 0.7;
+  return 'translateX(' + translate + '%) rotateY(' + rotate + 'deg) scale(' + scale + ')';
+}
+
+function getGalleryCoverFlowDropPlaceholderSourceCard(drag) {
+  if (!drag || !galleryCoverflowTrack) return null;
+  return galleryCoverflowTrack.querySelector('.cover-flow-card[data-index="' + drag.index + '"]');
+}
+
+function createGalleryCoverFlowDropPlaceholder(drag) {
+  if (!drag || drag.view !== 'coverflow') return null;
+  var shape = getGalleryCoverFlowShape(drag.photo, drag.photo && drag.photo.ascii || '');
+  var characterMask = shape === 'character'
+    ? buildGalleryCoverFlowCharacterMask(drag.photo && drag.photo.ascii || '')
+    : '';
+  var placeholder = document.createElement('div');
+  placeholder.className = 'gallery-coverflow-drop-placeholder';
+  placeholder.setAttribute('aria-hidden', 'true');
+  placeholder.innerHTML = '<div class="gallery-coverflow-drop-placeholder-visual">' +
+    '<span class="gallery-coverflow-drop-placeholder-shape gallery-coverflow-drop-placeholder-shape--' + shape + '">' +
+    characterMask + '</span></div>';
+  document.body.appendChild(placeholder);
+  drag.dropPlaceholder = placeholder;
+  return placeholder;
+}
+
+function syncGalleryCoverFlowDropPlaceholderShape(placeholder, pre) {
+  if (!placeholder || !pre) return;
+  placeholder.style.setProperty('--gallery-drop-shape-width', pre.offsetWidth + 'px');
+  placeholder.style.setProperty('--gallery-drop-shape-height', pre.offsetHeight + 'px');
+  placeholder.style.setProperty('--gallery-drop-shape-left', pre.offsetLeft + 'px');
+  placeholder.style.setProperty('--gallery-drop-shape-top', pre.offsetTop + 'px');
+}
+
+function updateGalleryCoverFlowDropPlaceholder(drag, position) {
+  if (!drag || drag.view !== 'coverflow') return;
+  if (position) drag.dropPosition = position;
+  var target = drag.dropPosition;
+  if (!target || !galleryCoverflowTrack) {
+    clearGalleryCoverFlowDropPlaceholder(drag);
+    return;
+  }
+  var placeholder = drag.dropPlaceholder || createGalleryCoverFlowDropPlaceholder(drag);
+  var sourceCard = getGalleryCoverFlowDropPlaceholderSourceCard(drag);
+  var sourcePre = sourceCard && sourceCard.querySelector('.cover-flow-card-surface pre');
+  var rootRect = galleryCoverflowTrack.getBoundingClientRect();
+  if (!placeholder || !sourcePre) return;
+  placeholder.style.left = (rootRect.left + target.left) + 'px';
+  placeholder.style.top = (rootRect.top + target.top) + 'px';
+  placeholder.style.width = target.width + 'px';
+  placeholder.style.height = target.height + 'px';
+  syncGalleryCoverFlowDropPlaceholderShape(placeholder, sourcePre);
+  var visual = placeholder.querySelector('.gallery-coverflow-drop-placeholder-visual');
+  if (visual) visual.style.transform = getGalleryCoverFlowDropPlaceholderTransform(target.left, target.width);
+}
+
+function followGalleryCoverFlowDropPlaceholder(drag, photoId) {
+  if (!drag || !drag.dropPlaceholder || !photoId || !galleryCoverflowTrack) return;
+  var follow = function () {
+    var placeholder = drag.dropPlaceholder;
+    var index = findGalleryIndexByPhotoId(photoId);
+    var card = index >= 0 && galleryCoverflowTrack.querySelector('.cover-flow-card[data-index="' + index + '"]');
+    var visual = card && card.querySelector('.cover-flow-card-visual');
+    var pre = card && card.querySelector('.cover-flow-card-surface pre');
+    if (!placeholder || !card || !visual || !pre) return;
+    var cardRect = card.getBoundingClientRect();
+    placeholder.classList.add('gallery-coverflow-drop-placeholder--following');
+    placeholder.style.left = cardRect.left + 'px';
+    placeholder.style.top = cardRect.top + 'px';
+    placeholder.style.width = card.offsetWidth + 'px';
+    placeholder.style.height = card.offsetHeight + 'px';
+    syncGalleryCoverFlowDropPlaceholderShape(placeholder, pre);
+    var placeholderVisual = placeholder.querySelector('.gallery-coverflow-drop-placeholder-visual');
+    if (placeholderVisual) placeholderVisual.style.transform = visual.style.transform;
+    drag.dropPlaceholderFrame = requestAnimationFrame(follow);
+  };
+  follow();
+}
+
+function fadeGalleryCoverFlowDropPlaceholder(drag, done) {
+  if (!drag || !drag.dropPlaceholder) {
+    done();
+    return;
+  }
+  if (drag.dropPlaceholderFrame) cancelAnimationFrame(drag.dropPlaceholderFrame);
+  drag.dropPlaceholderFrame = 0;
+  drag.dropPlaceholder.classList.remove('gallery-coverflow-drop-placeholder--following');
+  drag.dropPlaceholder.classList.add('gallery-coverflow-drop-placeholder--fading');
+  window.setTimeout(function () {
+    clearGalleryCoverFlowDropPlaceholder(drag);
+    done();
+  }, 150);
 }
 
 function applyGalleryReorderOffsetList(offsets) {
@@ -7659,6 +7895,8 @@ function applyGalleryReorderOffsetList(offsets) {
     if (!offset.card || !offset.card.isConnected) return;
     offset.card.style.setProperty('--gallery-reorder-x', offset.dx + 'px');
     offset.card.style.setProperty('--gallery-reorder-y', offset.dy + 'px');
+    offset.card.style.setProperty('--gallery-reorder-scale-x', offset.sx);
+    offset.card.style.setProperty('--gallery-reorder-scale-y', offset.sy);
     offset.card.classList.add('gallery-reorder-shift');
   });
 }
@@ -7677,7 +7915,18 @@ function getGalleryDragItems(drag) {
   });
 }
 
-function getGalleryDragItemRect(rootRect, card) {
+function getGalleryDragItemRect(rootRect, card, rendered) {
+  if (rendered) {
+    var rect = card.getBoundingClientRect();
+    return {
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height
+    };
+  }
   var left = rootRect.left + card.offsetLeft;
   var top = rootRect.top + card.offsetTop;
   var width = card.offsetWidth;
@@ -7726,7 +7975,9 @@ function measureGalleryDragFinalPositions(drag, root, items, finalItems) {
   items.forEach(function (item) {
     currentPositions.set(item.card, {
       left: item.card.offsetLeft,
-      top: item.card.offsetTop
+      top: item.card.offsetTop,
+      width: item.card.offsetWidth,
+      height: item.card.offsetHeight
     });
   });
 
@@ -7735,7 +7986,7 @@ function measureGalleryDragFinalPositions(drag, root, items, finalItems) {
   cloneRoot.classList.remove('gallery--preparing', 'gallery--entering');
   cloneRoot.setAttribute('aria-hidden', 'true');
   copyGalleryDragMeasureStyle(root, cloneRoot, drag.view);
-  finalItems.forEach(function (item) {
+  finalItems.forEach(function (item, index) {
     var cloneCard = item.card.cloneNode(true);
     cloneCard.classList.remove(
       'gallery-drop-before',
@@ -7745,6 +7996,11 @@ function measureGalleryDragFinalPositions(drag, root, items, finalItems) {
     );
     cloneCard.style.removeProperty('--gallery-reorder-x');
     cloneCard.style.removeProperty('--gallery-reorder-y');
+    cloneCard.style.removeProperty('--gallery-reorder-scale-x');
+    cloneCard.style.removeProperty('--gallery-reorder-scale-y');
+    if (drag.view === 'grid' && cloneCard.classList.contains('photo-card')) {
+      cloneCard.classList.toggle('photo-card--latest', index === 0 && item.photo && item.photo.isDefault !== true);
+    }
     cloneRoot.appendChild(cloneCard);
   });
   document.body.appendChild(cloneRoot);
@@ -7756,7 +8012,9 @@ function measureGalleryDragFinalPositions(drag, root, items, finalItems) {
     if (!cloneCard) return;
     finalPositions.set(item.card, {
       left: cloneCard.offsetLeft,
-      top: cloneCard.offsetTop
+      top: cloneCard.offsetTop,
+      width: cloneCard.offsetWidth,
+      height: cloneCard.offsetHeight
     });
   });
   cloneRoot.remove();
@@ -7781,8 +8039,13 @@ function applyGalleryDragReorderOffsets(drag, items, fromPosition, anchorPositio
   ].join(':');
   if (drag.reorderSignature === signature && drag.reorderOffsets) {
     applyGalleryReorderOffsetList(drag.reorderOffsets);
+    if (drag.view === 'coverflow') updateGalleryCoverFlowDropPlaceholder(drag);
     return;
   }
+  // Each drop target owns a complete layout snapshot. Clear the previous
+  // snapshot before calculating the next one so cards that no longer need to
+  // yield do not keep an old transform when the curator drags back.
+  clearGalleryReorderOffsets();
   drag.reorderSignature = signature;
   drag.reorderOffsets = [];
 
@@ -7791,10 +8054,31 @@ function applyGalleryDragReorderOffsets(drag, items, fromPosition, anchorPositio
   var insertPosition = anchorPosition + (after ? 1 : 0);
   if (insertPosition > fromPosition) insertPosition -= 1;
   insertPosition = Math.max(0, Math.min(finalItems.length, insertPosition));
-  if (insertPosition === fromPosition) return;
+  if (insertPosition === fromPosition) {
+    if (drag.view === 'coverflow') clearGalleryCoverFlowDropPlaceholder(drag);
+    return;
+  }
   finalItems.splice(insertPosition, 0, moved);
 
   var positions = measureGalleryDragFinalPositions(drag, root, items, finalItems);
+  var movedFinal = positions.final.get(moved.card);
+  if (movedFinal) {
+    var rootRect = root.getBoundingClientRect();
+    drag.releaseRect = {
+      left: rootRect.left + movedFinal.left,
+      top: rootRect.top + movedFinal.top,
+      width: movedFinal.width || moved.card.offsetWidth,
+      height: movedFinal.height || moved.card.offsetHeight
+    };
+    if (drag.view === 'coverflow') {
+      updateGalleryCoverFlowDropPlaceholder(drag, {
+        left: movedFinal.left,
+        top: movedFinal.top,
+        width: movedFinal.width || moved.card.offsetWidth,
+        height: movedFinal.height || moved.card.offsetHeight
+      });
+    }
+  }
   items.forEach(function (item) {
     if (item === moved) return;
     var current = positions.current.get(item.card);
@@ -7802,10 +8086,248 @@ function applyGalleryDragReorderOffsets(drag, items, fromPosition, anchorPositio
     if (!current || !final) return;
     var dx = Math.round((final.left - current.left) * 100) / 100;
     var dy = Math.round((final.top - current.top) * 100) / 100;
-    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
-    drag.reorderOffsets.push({ card: item.card, dx: dx, dy: dy });
+    var sx = Math.round((final.width || current.width || 1) / Math.max(1, current.width || 1) * 1000) / 1000;
+    var sy = Math.round((final.height || current.height || 1) / Math.max(1, current.height || 1) * 1000) / 1000;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && Math.abs(sx - 1) < 0.001 && Math.abs(sy - 1) < 0.001) return;
+    drag.reorderOffsets.push({ card: item.card, dx: dx, dy: dy, sx: String(sx), sy: String(sy) });
   });
   applyGalleryReorderOffsetList(drag.reorderOffsets);
+}
+
+function getGalleryDragThumbSize(drag) {
+  if (drag.view === 'coverflow') return { width: 132, height: 132 };
+  return { width: 112, height: 112 };
+}
+
+function fitGalleryDragGhostText(ghost, photo) {
+  if (!ghost || !photo) return;
+  var pre = ghost.querySelector('pre');
+  if (!pre) return;
+  var dims = getAsciiDims(photo.ascii || '');
+  var metrics = getGalleryAsciiCellMetrics();
+  var width = Math.max(1, ghost.getBoundingClientRect().width);
+  var height = Math.max(1, ghost.getBoundingClientRect().height);
+  var maxWidth = Math.max(1, width - 12);
+  var maxHeight = Math.max(1, height - (ghost.classList.contains('gallery-drag-ghost--coverflow') ? 0 : 12));
+  var fontSize = Math.min(
+    maxWidth / Math.max(1, dims.cols * metrics.cellAspect),
+    maxHeight / Math.max(1, dims.rows)
+  );
+  fontSize = Math.round(Math.max(0.45, fontSize) * 100) / 100;
+  if (ghost.classList.contains('gallery-drag-ghost--coverflow')) {
+    ghost.style.setProperty('--cover-flow-font-size', fontSize + 'px');
+  } else {
+    pre.style.fontSize = fontSize + 'px';
+    pre.style.lineHeight = fontSize + 'px';
+  }
+}
+
+function buildGalleryCoverFlowSurfaceHtml(photo) {
+  var ascii = typeof photo.ascii === 'string' ? photo.ascii : '';
+  var color = typeof photo.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(photo.color) ? photo.color : '#00ff41';
+  var ironBars = isGalleryCoverFlowIronBarsPhoto(photo, ascii);
+  var shape = getGalleryCoverFlowShape(photo, ascii);
+  var characterMask = shape === 'character' ? buildGalleryCoverFlowCharacterMask(ascii) : '';
+  return '<div class="cover-flow-card-visual gallery-drag-ghost-visual">' +
+    '<div class="cover-flow-card-surface" style="--cover-flow-color:' + color + '">' +
+    '<span class="gallery-drag-ghost-frame gallery-drag-ghost-frame--' + shape + '" aria-hidden="true"></span>' +
+    '<pre class="cover-flow-card-ascii--' + shape + (ironBars ? ' cover-flow-card-ascii--iron-bars' : '') + '">' +
+    characterMask +
+    '<span class="cover-flow-card-ascii-text">' + escapeHtml(ascii) + '</span></pre>' +
+    '</div></div>';
+}
+
+function syncGalleryDragGhostCoverFlowBackdrop(ghost) {
+  if (!ghost || !ghost.classList.contains('gallery-drag-ghost--coverflow')) return;
+  var surface = ghost.querySelector('.cover-flow-card-surface');
+  var pre = surface && surface.querySelector('pre');
+  var reflectionBackdrop = surface && surface.querySelector('.cover-flow-card-reflection-backdrop');
+  var ghostFrame = surface && surface.querySelector('.gallery-drag-ghost-frame');
+  if (!surface || !pre) return;
+  if (ghostFrame) {
+    ghostFrame.style.width = pre.offsetWidth + 'px';
+    ghostFrame.style.height = pre.offsetHeight + 'px';
+    ghostFrame.style.left = pre.offsetLeft + 'px';
+    ghostFrame.style.top = pre.offsetTop + 'px';
+  }
+  if (!reflectionBackdrop) return;
+  var reflectionGap = parseFloat(window.getComputedStyle(pre).fontSize) * 0.5;
+  reflectionBackdrop.style.width = pre.offsetWidth + 'px';
+  reflectionBackdrop.style.height = pre.offsetHeight + 'px';
+  reflectionBackdrop.style.left = pre.offsetLeft + 'px';
+  reflectionBackdrop.style.top = (pre.offsetTop + pre.offsetHeight + reflectionGap) + 'px';
+}
+
+function syncGalleryDragGhostCoverFlowDuringTransition(ghost, photo, duration) {
+  if (!ghost || !ghost.classList.contains('gallery-drag-ghost--coverflow')) return;
+  var startedAt = performance.now();
+  var frame = function (now) {
+    if (!ghost.isConnected) return;
+    fitGalleryDragGhostText(ghost, photo);
+    syncGalleryDragGhostCoverFlowBackdrop(ghost);
+    if (now - startedAt < duration) requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
+function updateGalleryDragGhostCoverFlowShape(drag, releasing) {
+  if (!drag || !drag.ghost || drag.view !== 'coverflow') return;
+  var visual = drag.ghost.querySelector('.gallery-drag-ghost-visual');
+  if (!visual || !galleryCoverflowViewport) return;
+  var viewportRect = galleryCoverflowViewport.getBoundingClientRect();
+  var center = viewportRect.left + viewportRect.width / 2;
+  var distance = releasing ? 0 : drag.x - center;
+  var progress = Math.min(1, Math.abs(distance) / Math.max(1, viewportRect.width * 0.28));
+  var direction = distance < 0 ? 1 : -1;
+  var rotate = progress * 45 * direction;
+  var translate = -progress * 55 * direction;
+  var scale = 1 - progress * 0.12;
+  visual.style.transform = 'translateX(' + translate + '%) rotateY(' + rotate + 'deg) scale(' + scale + ')';
+}
+
+function createGalleryDragGhost(drag) {
+  var sourceCard = drag.view === 'coverflow'
+    ? galleryCoverflowTrack && galleryCoverflowTrack.querySelector('.cover-flow-card[data-index="' + drag.index + '"]')
+    : drag.sourceCard;
+  var sourceRect = null;
+  if (drag.view === 'coverflow' && sourceCard) {
+    var sourcePre = sourceCard.querySelector('.cover-flow-card-surface pre');
+    sourceRect = sourcePre ? sourcePre.getBoundingClientRect() : sourceCard.getBoundingClientRect();
+  } else if (sourceCard) {
+    sourceRect = sourceCard.getBoundingClientRect();
+  }
+  if (!sourceRect) sourceRect = { left: drag.x, top: drag.y, width: 112, height: 112 };
+  var ghost = document.createElement('div');
+  ghost.className = 'gallery-drag-ghost gallery-drag-ghost--entering gallery-drag-ghost--' +
+    (drag.view === 'coverflow' ? 'coverflow' : 'grid');
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.setAttribute('data-index', String(drag.index));
+  ghost.style.left = sourceRect.left + 'px';
+  ghost.style.top = sourceRect.top + 'px';
+  ghost.style.setProperty('--gallery-drag-ghost-width', sourceRect.width + 'px');
+  ghost.style.setProperty('--gallery-drag-ghost-height', sourceRect.height + 'px');
+  if (drag.view === 'coverflow') {
+    ghost.innerHTML = buildGalleryCoverFlowSurfaceHtml(drag.photo);
+  } else {
+    ghost.innerHTML = '<div class="photo-thumb"><pre style="color:' +
+      (drag.photo.color || '#00ff41') + '">' + escapeHtml(drag.photo.ascii || '') + '</pre></div>';
+  }
+  document.body.appendChild(ghost);
+  drag.ghost = ghost;
+  fitGalleryDragGhostText(ghost, drag.photo);
+  syncGalleryDragGhostCoverFlowBackdrop(ghost);
+  window.requestAnimationFrame(function () {
+    if (!drag.ghost || drag.ghost !== ghost) return;
+    updateGalleryDragGhost(drag);
+    window.setTimeout(function () {
+      if (ghost.isConnected) ghost.classList.remove('gallery-drag-ghost--entering');
+    }, 180);
+  });
+  var textTarget = ghost.querySelector('.cover-flow-card-ascii-text') || ghost.querySelector('.photo-thumb pre');
+  if (isLightboxPhotoAnimatedForDownload(drag.photo) && textTarget) {
+    playGalleryLoopCard(ghost, drag.photo, textTarget);
+  }
+}
+
+function updateGalleryDragGhost(drag) {
+  if (!drag || !drag.ghost) return;
+  var size = getGalleryDragThumbSize(drag);
+  var left = Math.max(0, Math.min(innerWidth - size.width, drag.x + 14));
+  var top = Math.max(0, Math.min(innerHeight - size.height, drag.y + 14));
+  drag.ghost.style.left = left + 'px';
+  drag.ghost.style.top = top + 'px';
+  drag.ghost.style.setProperty('--gallery-drag-ghost-width', size.width + 'px');
+  drag.ghost.style.setProperty('--gallery-drag-ghost-height', size.height + 'px');
+  drag.ghost.style.opacity = drag.valid ? '0.95' : '0.35';
+  fitGalleryDragGhostText(drag.ghost, drag.photo);
+  updateGalleryDragGhostCoverFlowShape(drag, false);
+  syncGalleryDragGhostCoverFlowBackdrop(drag.ghost);
+}
+
+function getGalleryDragReleaseRect(drag) {
+  if (!drag) return null;
+  if (drag.view === 'coverflow') {
+    var centered = galleryCoverflowTrack && galleryCoverflowTrack.querySelector('.cover-flow-card--centered');
+    var pre = centered && centered.querySelector('.cover-flow-card-surface pre');
+    if (pre) return pre.getBoundingClientRect();
+    if (centered) return centered.getBoundingClientRect();
+  }
+  if (drag.releaseRect) return drag.releaseRect;
+  if (drag.sourceCard && drag.sourceCard.isConnected) return drag.sourceCard.getBoundingClientRect();
+  return null;
+}
+
+function animateGalleryDragRelease(drag, done) {
+  if (!drag || !drag.ghost) {
+    done();
+    return;
+  }
+  var duration = drag.view === 'coverflow' ? 320 : 240;
+  var rect = getGalleryDragReleaseRect(drag);
+  if (!rect) {
+    done();
+    return;
+  }
+  var ghost = drag.ghost;
+  ghost.classList.remove('gallery-drag-ghost--entering');
+  ghost.classList.add('gallery-drag-ghost--releasing');
+  ghost.style.left = rect.left + 'px';
+  ghost.style.top = rect.top + 'px';
+  ghost.style.setProperty('--gallery-drag-ghost-width', rect.width + 'px');
+  ghost.style.setProperty('--gallery-drag-ghost-height', rect.height + 'px');
+  ghost.style.opacity = '1';
+  updateGalleryDragGhostCoverFlowShape(drag, true);
+  fitGalleryDragGhostText(ghost, drag.photo);
+  syncGalleryDragGhostCoverFlowBackdrop(ghost);
+  syncGalleryDragGhostCoverFlowDuringTransition(ghost, drag.photo, duration);
+  window.setTimeout(done, duration);
+}
+
+function cleanupGalleryDragVisuals(drag) {
+  clearGalleryCoverFlowDropPlaceholder(drag);
+  if (drag && drag.ghost) {
+    stopGalleryLoopCard(drag.ghost);
+    drag.ghost.remove();
+  }
+  document.querySelectorAll('.photo-card--fly-source-suppressed').forEach(function (card) {
+    card.classList.remove('photo-card--fly-source-suppressed');
+  });
+  document.body.classList.remove('gallery-reordering');
+  clearGalleryDropMarkers();
+  clearGalleryReorderOffsets();
+}
+
+function finishGalleryCoverFlowDragCommit(drag, operation) {
+  clearGalleryDropMarkers();
+  clearGalleryReorderOffsets();
+  var committed = commitGalleryMove(operation, {
+    suppressCoverFlowSource: true,
+    onCoverFlowCentering: function () {
+      // The placeholder is now attached to the freshly rendered destination
+      // card's geometry, so it follows the same 3D-to-2D Cover Flow motion as
+      // its surrounding cards while the selected work moves to the center.
+      followGalleryCoverFlowDropPlaceholder(drag, operation.id);
+    },
+    onCoverFlowCentered: function () {
+      var target = suppressGalleryCoverFlowCardByPhotoId(operation.id);
+      var pre = target && target.querySelector('.cover-flow-card-surface pre');
+      if (pre) drag.releaseRect = pre.getBoundingClientRect();
+      fadeGalleryCoverFlowDropPlaceholder(drag, function () {
+        animateGalleryDragRelease(drag, function () {
+          cleanupGalleryDragVisuals(drag);
+          galleryOrderQueue.hold(false);
+          ensureGalleryListSelectionVisible();
+        });
+      });
+    }
+  });
+  if (!committed) {
+    animateGalleryDragRelease(drag, function () {
+      cleanupGalleryDragVisuals(drag);
+      galleryOrderQueue.hold(false);
+      ensureGalleryListSelectionVisible();
+    });
+  }
 }
 
 function finishGalleryDrag(commit) {
@@ -7813,21 +8335,31 @@ function finishGalleryDrag(commit) {
   if (!drag) return;
   galleryDrag = null;
   cancelAnimationFrame(drag.frame);
-  if (drag.ghost) drag.ghost.remove();
-  document.body.classList.remove('gallery-reordering');
-  clearGalleryDropMarkers();
-  clearGalleryReorderOffsets();
   if (galleryCoverflowViewport) galleryCoverflowViewport.style.removeProperty('scroll-snap-type');
   if (document.body.hasPointerCapture(drag.pointerId)) document.body.releasePointerCapture(drag.pointerId);
   if (drag.started) gallerySuppressClickUntil = Date.now() + 400;
-  if (commit && drag.valid && drag.anchor) {
-    commitGalleryMove({ id: drag.id, anchor: drag.anchor, after: drag.after });
-  } else if (drag.view === 'coverflow') {
-    var index = findGalleryIndexByPhotoId(drag.id);
-    if (index >= 0) setGalleryCoverFlowIndex(index, false);
+  var shouldCommit = commit && drag.valid && drag.anchor;
+  var operation = shouldCommit ? { id: drag.id, anchor: drag.anchor, after: drag.after } : null;
+  var complete = function () {
+    cleanupGalleryDragVisuals(drag);
+    galleryOrderQueue.hold(false);
+    if (shouldCommit) {
+      commitGalleryMove(operation);
+    } else if (drag.view === 'coverflow') {
+      var index = findGalleryIndexByPhotoId(drag.id);
+      if (index >= 0) setGalleryCoverFlowIndex(index, false);
+    }
+    if (drag.view === 'coverflow') ensureGalleryListSelectionVisible();
+  };
+  if (shouldCommit && drag.started && drag.ghost) {
+    if (drag.view === 'coverflow') {
+      finishGalleryCoverFlowDragCommit(drag, operation);
+      return;
+    }
+    animateGalleryDragRelease(drag, complete);
+    return;
   }
-  galleryOrderQueue.hold(false);
-  if (drag.view === 'coverflow') ensureGalleryListSelectionVisible();
+  complete();
 }
 
 function updateGalleryDragTarget() {
@@ -7838,10 +8370,6 @@ function updateGalleryDragTarget() {
     : { left: 0, right: innerWidth, top: document.getElementById('header').getBoundingClientRect().bottom, bottom: innerHeight };
   drag.valid = drag.x >= rect.left && drag.x <= rect.right && drag.y >= rect.top && drag.y <= rect.bottom;
   drag.anchor = null;
-  var ghostY = Math.max(rect.top, Math.min(rect.bottom - 40, drag.y));
-  drag.ghost.style.left = Math.max(0, Math.min(innerWidth - 114, drag.x + 14)) + 'px';
-  drag.ghost.style.top = ghostY + 'px';
-  drag.ghost.style.opacity = drag.valid ? '0.85' : '0.35';
   var candidates = getGalleryDragItems(drag);
   var best = null;
   var bestDistance = Infinity;
@@ -7858,7 +8386,11 @@ function updateGalleryDragTarget() {
       return;
     }
     if (!containerRect) return;
-    var r = getGalleryDragItemRect(containerRect, card);
+    // Hit-test against the untransformed slot. The visible card can be
+    // temporarily displaced by the yielding animation; using that rendered
+    // position makes reverse dragging select the already-shifted neighbour
+    // instead of the logical next gap.
+    var r = getGalleryDragItemRect(containerRect, card, false);
     if (!drag.valid || r.bottom < rect.top || r.top > rect.bottom || r.right < rect.left || r.left > rect.right) return;
     var cx = r.left + r.width / 2;
     var cy = r.top + r.height / 2;
@@ -7872,6 +8404,8 @@ function updateGalleryDragTarget() {
     drag.reorderSignature = '';
     drag.reorderOffsets = [];
     clearGalleryReorderOffsets();
+    if (drag.view === 'coverflow') clearGalleryCoverFlowDropPlaceholder(drag);
+    if (drag.ghost) updateGalleryDragGhost(drag);
     return;
   }
   drag.anchor = best.photo.id;
@@ -7879,6 +8413,7 @@ function updateGalleryDragTarget() {
     ? drag.y > best.cy : drag.x > best.cx;
   best.card.classList.add(drag.after ? 'gallery-drop-after' : 'gallery-drop-before');
   applyGalleryDragReorderOffsets(drag, candidates, fromPosition, best.position, drag.after);
+  if (drag.ghost) updateGalleryDragGhost(drag);
 }
 
 function galleryDragFrame(time) {
@@ -7914,13 +8449,14 @@ function setupGalleryDragSorting() {
   document.addEventListener('pointerdown', function (event) {
     var handle = event.target.closest('.gallery-drag-handle');
     if (!handle || event.button !== 0 || !curatorModeActive || curatorPreviewActive || galleryDeleteFadeInFlight || lightbox.classList.contains('open')) return;
-    var photo = photosCache[Number(handle.dataset.galleryDrag)];
+    var index = Number(handle.dataset.galleryDrag);
+    var photo = photosCache[index];
     if (!photo) return;
     event.preventDefault();
     galleryOrderQueue.hold(true);
     galleryDrag = { id: photo.id, photo: photo, view: galleryViewMode, pointerId: event.pointerId,
       x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY,
-      started: false, valid: false, nextLoad: 0, frame: 0 };
+      started: false, valid: false, nextLoad: 0, frame: 0, index: index, sourceCard: handle.closest('.photo-card') };
     document.body.setPointerCapture(event.pointerId);
   });
   document.addEventListener('pointermove', function (event) {
@@ -7935,17 +8471,7 @@ function setupGalleryDragSorting() {
       cancelGalleryCoverFlowScroll();
       document.body.classList.add('gallery-reordering');
       if (drag.view === 'coverflow') galleryCoverflowViewport.style.scrollSnapType = 'none';
-      var ghost = document.createElement('div');
-      ghost.className = 'gallery-drag-ghost';
-      ghost.setAttribute('aria-hidden', 'true');
-      var pre = document.createElement('pre');
-      pre.textContent = drag.photo.ascii;
-      pre.style.color = drag.photo.color;
-      var dims = getAsciiDims(drag.photo.ascii);
-      pre.style.fontSize = Math.min(100 / Math.max(1, dims.rows), 100 / Math.max(1, dims.cols * 0.61)) + 'px';
-      ghost.appendChild(pre);
-      document.body.appendChild(ghost);
-      drag.ghost = ghost;
+      createGalleryDragGhost(drag);
       drag.frame = requestAnimationFrame(galleryDragFrame);
     }
     if (drag.started) { event.preventDefault(); updateGalleryDragTarget(); }
@@ -9172,8 +9698,8 @@ function updateGalleryCoverFlowSelection(shouldScroll) {
   startGalleryCoverFlowAnimation();
 }
 
-function centerGalleryCoverFlowCard(smooth) {
-  scrollGalleryCoverFlowToIndex(galleryCoverFlowIndex, smooth);
+function centerGalleryCoverFlowCard(smooth, onDone) {
+  scrollGalleryCoverFlowToIndex(galleryCoverFlowIndex, smooth, onDone);
 }
 
 function cancelGalleryCoverFlowScroll() {
@@ -9184,9 +9710,15 @@ function cancelGalleryCoverFlowScroll() {
 }
 
 function scrollGalleryCoverFlowToIndex(index, smooth, onDone) {
-  if (!galleryCoverflowViewport || !galleryCoverflowTrack) return;
+  if (!galleryCoverflowViewport || !galleryCoverflowTrack) {
+    if (onDone) onDone();
+    return;
+  }
   var active = galleryCoverflowTrack.querySelector('.cover-flow-card[data-index="' + index + '"]');
-  if (!active) return;
+  if (!active) {
+    if (onDone) onDone();
+    return;
+  }
   cancelGalleryCoverFlowScroll();
   var target = active.offsetLeft + active.offsetWidth / 2 - galleryCoverflowViewport.clientWidth / 2;
   var maxScroll = Math.max(0, galleryCoverflowViewport.scrollWidth - galleryCoverflowViewport.clientWidth);
@@ -9649,9 +10181,6 @@ function renderGallery(photos, userCountOverride) {
     typeof userCountOverride === 'number' && Number.isFinite(userCountOverride)
       ? userCountOverride
       : inferUserPhotoCountFromPhotos(photos);
-  var latestPhoto = photos.slice(0, userCount).reduce(function (latest, p) {
-    return !latest || p.time > latest.time ? p : latest;
-  }, null);
   gallery.innerHTML = photos.map((p, i) => {
     const isUser = i < userCount;
     const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
@@ -9708,7 +10237,7 @@ function renderGallery(photos, userCountOverride) {
     return (
       '<div class="photo-card' +
         (isDeleted ? ' photo-card--deleted' : '') +
-        (isUser && p === latestPhoto ? ' photo-card--latest' : '') +
+        (isUser && i === 0 ? ' photo-card--latest' : '') +
         '" data-index="' +
         i +
         '" style="--gallery-enter-delay:' +
