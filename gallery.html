@@ -479,6 +479,60 @@
     }
   }
   .photo-card:hover { border-color: rgba(0,255,65,0.5); }
+  .gallery-drag-handle {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 4;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid rgba(0,255,65,0.3);
+    background: #080808;
+    color: #00ff41;
+    font: 18px monospace;
+    cursor: grab;
+    touch-action: none;
+    pointer-events: auto;
+  }
+  .gallery-drag-handle:focus-visible { outline: 1px solid #00ff41; }
+  #gallery-coverflow-curator-toolbar .gallery-drag-handle {
+    position: absolute;
+    transform: none;
+  }
+  body:not(.gallery-curator-mode) .gallery-drag-handle { display: none; }
+  body.gallery-reordering { user-select: none; cursor: grabbing; }
+  .gallery-drag-source { opacity: 0.35; }
+  .gallery-drop-before { box-shadow: -3px 0 #00ff41; }
+  .gallery-drop-after { box-shadow: 3px 0 #00ff41; }
+  .gallery-drag-ghost {
+    position: fixed;
+    z-index: 30000;
+    width: 112px;
+    height: 112px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #050505;
+    border: 1px solid #00ff41;
+    pointer-events: none;
+    overflow: hidden;
+    opacity: 0.85;
+  }
+  .gallery-drag-ghost pre { margin: 0; line-height: 1; letter-spacing: 0; }
+  #gallery-order-status {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    z-index: 20020;
+    max-width: min(420px, calc(100vw - 32px));
+    padding: 8px 12px;
+    background: #080808;
+    border: 1px solid rgba(0,255,65,0.4);
+    color: #00ff41;
+    font: 11px monospace;
+  }
+  #gallery-order-status[hidden] { display: none; }
   .photo-thumb {
     flex: 1 1 auto;
     min-height: 0;
@@ -1515,7 +1569,7 @@
   #cloud-sync-status.cloud-sync-err { color: #ff9999; border: 1px solid rgba(255,100,100,0.35); background: rgba(255,68,68,0.06); }
   #cloud-sync-status.cloud-sync-warn { color: #ffcc66; border: 1px solid rgba(255,204,102,0.32); background: rgba(255,184,77,0.06); }
   /**
-   * 画廊第二行：左侧 All / Loop（仅 Supabase 时显示容器）；右侧「Exit Curate」链式链接（策展态）。
+   * 画廊第二行：左侧 All / Loop（仅 Supabase 时显示容器）；右侧策展操作链接。
    * 活动项：64px×4px 下划线在标签文字下水平居中；标签文案在自身命中区内居中。
    */
   .gallery-feed-bar {
@@ -1609,6 +1663,19 @@
   }
   #curate-mode-btn.exit-curate-link[hidden] {
     display: none !important;
+  }
+  #curator-preview-btn.exit-curate-link[hidden] {
+    display: none !important;
+  }
+  .curator-mode-links {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--hdr-action-gap);
+    margin-left: auto;
+    min-width: 0;
+  }
+  .curator-mode-links .exit-curate-link {
+    margin-left: 0;
   }
   .exit-curate-link {
     color: #00ff41;
@@ -1913,6 +1980,13 @@
     pointer-events: none;
   }
   #gallery-coverflow-curator-toolbar[hidden] { display: none !important; }
+  body.gallery-curator-preview #gallery-coverflow-curator-toolbar,
+  body.gallery-curator-preview .gallery-drag-handle,
+  body.gallery-curator-preview .delete-btn,
+  body.gallery-curator-preview .restore-btn,
+  body.gallery-curator-preview .purge-btn {
+    display: none !important;
+  }
   .cover-flow-card-curator-action {
     grid-row: 1;
     border: none;
@@ -2246,16 +2320,29 @@
         <button type="button" class="gallery-view-toggle-btn" id="gallery-view-cover-flow" role="tab" aria-selected="false" aria-pressed="false">SHOWCASE</button>
       </div>
     </div>
-    <button
-      type="button"
-      id="curate-mode-btn"
-      class="exit-curate-link"
-      hidden
-      aria-hidden="true"
-      title="Curator mode is on — click to exit"
-    >
-      Exit Curate
-    </button>
+    <div class="curator-mode-links" aria-label="Curator controls">
+      <button
+        type="button"
+        id="curator-preview-btn"
+        class="exit-curate-link"
+        hidden
+        aria-hidden="true"
+        aria-pressed="false"
+        title="Preview the Gallery as a visitor"
+      >
+        Preview as Visitor
+      </button>
+      <button
+        type="button"
+        id="curate-mode-btn"
+        class="exit-curate-link"
+        hidden
+        aria-hidden="true"
+        title="Curator mode is on — click to exit"
+      >
+        Exit Curate
+      </button>
+    </div>
   </div>
 </div>
 <p id="cloud-status-banner" role="status"></p>
@@ -2481,6 +2568,7 @@ window.__ASCII_CONFIG_SCRIPT_ERROR__ = false;
 </script>
 <script src="gallery-storage.js"></script>
 <script src="gallery-cloud-sync.js"></script>
+<script src="gallery-order.js"></script>
 <script>
 /** 由 `gallery-storage.js` 挂载 */
 var AsciiCameraGalleryStorage = window.AsciiCameraGalleryStorage;
@@ -2758,6 +2846,8 @@ let pendingDeleteIndex = null;
 let pendingPurgeIndex = null;
 /** 删除 ASCII 的 5 色阶消散期间，阻止轮询或其它异步回调提前刷新并重排 Grid。 */
 let galleryDeleteFadeInFlight = 0;
+/** Curator 物理删除进行中：保留现有 DOM，直到目标卡片完成局部消散与补位。 */
+let galleryPurgeInFlight = false;
 let photosCache = [];
 /** 灯箱内当前条目在 `photosCache`（当前可见 feed）中的下标；-1 表示未关联列表 */
 let lightboxFeedIndex = -1;
@@ -2802,14 +2892,14 @@ let galleryCoverFlowHeight = 0;
 let galleryCoverFlowScale = 1;
 let galleryCoverFlowUserResized = false;
 /** 下部列表当前排序字段与方向。 */
-const GALLERY_SHOWCASE_SORT_LS_KEY = 'ascii_gallery_showcase_sort';
+const GALLERY_SHOWCASE_SORT_LS_KEY = 'ascii_gallery_showcase_sort_v2';
 const GALLERY_SHOWCASE_SORT_KEYS = ['color', 'aspect', 'resolution', 'style', 'evilQueen', 'time', 'likes', 'downloads', 'views'];
 const gallerySavedShowcaseSort = (function () {
   try {
     var saved = JSON.parse(window.localStorage.getItem(GALLERY_SHOWCASE_SORT_LS_KEY) || 'null');
     if (
       saved &&
-      GALLERY_SHOWCASE_SORT_KEYS.indexOf(saved.key) >= 0 &&
+      (saved.key === '' || GALLERY_SHOWCASE_SORT_KEYS.indexOf(saved.key) >= 0) &&
       (saved.direction === 'asc' || saved.direction === 'desc')
     ) {
       return saved;
@@ -2817,10 +2907,32 @@ const gallerySavedShowcaseSort = (function () {
   } catch (e) {
     /* ignore invalid or unavailable local storage */
   }
-  return { key: 'time', direction: 'desc' };
+  return { key: '', direction: 'asc' };
 })();
 let galleryListSortKey = gallerySavedShowcaseSort.key;
 let galleryListSortDirection = gallerySavedShowcaseSort.direction;
+let galleryFeedRevision = null;
+let galleryDrag = null;
+let gallerySuppressClickUntil = 0;
+let galleryOrderStatusTimer = null;
+const galleryOrderQueue = new AsciiGalleryOrder.Queue({
+  busy: function (busy) { AsciiCameraGalleryCloudSync.setGalleryOrderBusy(busy); },
+  wait: function () { return galleryFeedLoadingMore; },
+  save: function (moves) { return AsciiCameraGalleryCloudSync.saveGalleryOrder(moves); },
+  status: showGalleryOrderStatus,
+  changed: function () {
+    galleryFeedRevision = AsciiCameraGalleryCloudSync.getGalleryOrderRevision();
+    refreshGallery();
+  },
+  failed: function (error) {
+    finishGalleryDrag(false);
+    refreshGallery();
+    showGalleryOrderStatus(error.status === 409
+      ? 'Order changed in another window. Your changes were not saved.'
+      : 'Could not save the order. Restoring the saved order.');
+    loadFirstGalleryFeedPage();
+  }
+});
 let galleryShowcaseSortGeneration = 0;
 let galleryShowcaseViewGeneration = 0;
 /** Cover Flow 中央作品的点赞状态；与 Grid 的 Lightbox 点赞 API 共用。 */
@@ -2886,6 +2998,12 @@ function initCuratorModeFromUrl() {
 
 /** 为 true 时：用户区所有卡片显示 Remove（含他人作品）。普通访客仅对自己 `mine:true` 的作品显示 Remove。 */
 let curatorModeActive = initCuratorModeFromUrl();
+/** Curator 内的普通访客预览；不改变策展身份或持久化排序。 */
+let curatorPreviewActive = false;
+/** 预览切换期间锁住重复点击与异步刷新，避免布局动画被中途重绘。 */
+let curatorPreviewTransitionInFlight = false;
+/** 进入预览前的 Curator 首屏快照；仅用于网络失败时恢复 Removed 卡片。 */
+let curatorPreviewCuratorSnapshot = [];
 
 /**
  * 筛选行「Exit Curate」显隐与 `body.gallery-curator-mode`（悬停显删）。
@@ -2894,7 +3012,26 @@ let curatorModeActive = initCuratorModeFromUrl();
 function syncCuratorChrome() {
   var gsync = window.AsciiCameraGalleryCloudSync;
   if (gsync && typeof gsync.setGalleryCuratorIncludeDeleted === 'function') {
-    gsync.setGalleryCuratorIncludeDeleted(curatorModeActive);
+    gsync.setGalleryCuratorIncludeDeleted(curatorModeActive && !curatorPreviewActive);
+  }
+  var previewBtn = document.getElementById('curator-preview-btn');
+  if (previewBtn) {
+    if (curatorModeActive) {
+      previewBtn.hidden = false;
+      previewBtn.setAttribute('aria-hidden', 'false');
+      previewBtn.setAttribute('aria-pressed', curatorPreviewActive ? 'true' : 'false');
+      previewBtn.textContent = curatorPreviewActive ? 'Back to Curate' : 'Preview as Visitor';
+      previewBtn.title = curatorPreviewActive
+        ? 'Return to Curator controls'
+        : 'Preview the Gallery as a visitor';
+      previewBtn.setAttribute('aria-label', curatorPreviewActive
+        ? 'Visitor preview on. Return to Curator controls.'
+        : 'Preview the Gallery as a visitor.');
+    } else {
+      previewBtn.hidden = true;
+      previewBtn.setAttribute('aria-hidden', 'true');
+      previewBtn.setAttribute('aria-pressed', 'false');
+    }
   }
   var btn = document.getElementById('curate-mode-btn');
   if (btn) {
@@ -2910,6 +3047,7 @@ function syncCuratorChrome() {
     }
   }
   document.body.classList.toggle('gallery-curator-mode', curatorModeActive);
+  document.body.classList.toggle('gallery-curator-preview', curatorModeActive && curatorPreviewActive);
 }
 
 syncCuratorChrome();
@@ -2919,6 +3057,7 @@ syncCuratorChrome();
   if (!btn) return;
   btn.addEventListener('click', function () {
     curatorModeActive = false;
+    curatorPreviewActive = false;
     writeCuratorModeToStorage(false);
     syncCuratorChrome();
     if (isSupabaseGalleryCloudEnabled()) {
@@ -2927,6 +3066,37 @@ syncCuratorChrome();
       });
     } else {
       refreshGallery();
+    }
+  });
+})();
+
+(function setupCuratorPreviewButton() {
+  var btn = document.getElementById('curator-preview-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async function () {
+    if (!curatorModeActive || curatorPreviewTransitionInFlight) return;
+    curatorPreviewTransitionInFlight = true;
+    btn.disabled = true;
+    var viewButtons = [
+      document.getElementById('gallery-view-grid'),
+      document.getElementById('gallery-view-cover-flow')
+    ].filter(Boolean);
+    viewButtons.forEach(function (viewButton) { viewButton.disabled = true; });
+    var nextPreview = !curatorPreviewActive;
+    var beforeLayout = captureCuratorPreviewCardLayout();
+    try {
+      if (nextPreview) curatorPreviewCuratorSnapshot = photosCache.slice();
+      if (nextPreview) await animateCuratorPreviewRemovedExit();
+      curatorPreviewActive = nextPreview;
+      syncCuratorChrome();
+      await loadCuratorPreviewTransitionPage();
+      var restoredCards = nextPreview ? [] : prepareCuratorPreviewRestoredCards();
+      await animateCuratorPreviewLayout(beforeLayout, nextPreview);
+      if (!nextPreview) await animateCuratorPreviewRestoredAscii(restoredCards);
+    } finally {
+      curatorPreviewTransitionInFlight = false;
+      btn.disabled = false;
+      viewButtons.forEach(function (viewButton) { viewButton.disabled = false; });
     }
   });
 })();
@@ -6428,6 +6598,136 @@ function animateGalleryPhotoDeleteFade(userIndex) {
 }
 
 /**
+ * 记录当前视图卡片的位置。物理删除后仅让被删项之后的既有卡片补位，
+ * 避免重新创建前面的卡片或跳回页面顶部。
+ * @returns {Map<string, {element:Element,index:number,left:number,top:number}>}
+ */
+function captureGalleryPurgeCardLayout() {
+  var selector = galleryViewMode === 'coverflow' ? '.cover-flow-card' : '.photo-card';
+  var container = galleryViewMode === 'coverflow' ? galleryCoverflowTrack : gallery;
+  var layout = new Map();
+  if (!container) return layout;
+  container.querySelectorAll(selector).forEach(function (card) {
+    var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+    var photo = index >= 0 ? photosCache[index] : null;
+    if (!photo || photo.id == null) return;
+    var rect = card.getBoundingClientRect();
+    layout.set(String(photo.id), { element: card, index: index, left: rect.left, top: rect.top });
+  });
+  return layout;
+}
+
+/** @param {Map<string, {element:Element,index:number,left:number,top:number}>} before @param {number} removedIndex */
+function animateGalleryPurgeCompaction(before, removedIndex) {
+  var selector = galleryViewMode === 'coverflow' ? '.cover-flow-card' : '.photo-card';
+  var container = galleryViewMode === 'coverflow' ? galleryCoverflowTrack : gallery;
+  if (!container || !before || !before.size) return;
+  var reduceMotion = false;
+  try {
+    reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (e) {}
+  if (reduceMotion) return;
+  window.requestAnimationFrame(function () {
+    container.querySelectorAll(selector).forEach(function (card) {
+      var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+      var photo = index >= 0 ? photosCache[index] : null;
+      var previous = photo && photo.id != null ? before.get(String(photo.id)) : null;
+      // 目标之前的 DOM 节点不参与动画，也不重建；只让后续卡片补位。
+      if (!previous || previous.index <= removedIndex || typeof card.animate !== 'function') return;
+      var rect = card.getBoundingClientRect();
+      var dx = previous.left - rect.left;
+      var dy = previous.top - rect.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      card.animate([
+        { transform: 'translate(' + dx + 'px, ' + dy + 'px)' },
+        { transform: 'translate(0, 0)' }
+      ], { duration: 300, easing: 'cubic-bezier(.2,.75,.25,1)' });
+    });
+  });
+}
+
+/** 物理删除后更新仍留在 Grid 中的索引和卡片上的管理控件索引。 */
+function reindexGalleryGridAfterPurge(removedIndex) {
+  if (!gallery) return;
+  gallery.querySelectorAll('.photo-card').forEach(function (card) {
+    var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+    if (index <= removedIndex) return;
+    var nextIndex = index - 1;
+    card.setAttribute('data-index', String(nextIndex));
+    card.querySelectorAll('[data-user-index]').forEach(function (control) {
+      control.setAttribute('data-user-index', String(nextIndex));
+    });
+    card.querySelectorAll('[data-gallery-drag]').forEach(function (handle) {
+      handle.setAttribute('data-gallery-drag', String(nextIndex));
+    });
+  });
+  var userCount = inferUserPhotoCountFromPhotos(photosCache);
+  var latest = photosCache.slice(0, userCount).reduce(function (current, photo) {
+    return !current || photo.time > current.time ? photo : current;
+  }, null);
+  gallery.querySelectorAll('.photo-card--latest').forEach(function (card) {
+    card.classList.remove('photo-card--latest');
+  });
+  var latestIndex = latest ? photosCache.indexOf(latest) : -1;
+  var latestCard = latestIndex >= 0
+    ? gallery.querySelector('.photo-card[data-index="' + latestIndex + '"]')
+    : null;
+  if (latestCard) latestCard.classList.add('photo-card--latest');
+  setupGalleryThumbResize();
+  requestAnimationFrame(function () { layoutGalleryThumbs(); });
+}
+
+/**
+ * Curator 的物理删除：目标卡片消散后，仅从当前 DOM/缓存移除该行，
+ * 保留用户的页面滚动与其它已加载卡片。
+ * @param {number} userIndex
+ * @param {string} photoId
+ */
+function removePurgedGalleryPhotoInPlace(userIndex, photoId) {
+  var row = photosCache[userIndex];
+  if (!row || String(row.id) !== String(photoId)) return;
+  var before = captureGalleryPurgeCardLayout();
+  var pageTop = window.scrollY;
+  var selectedId = photosCache[galleryCoverFlowIndex] && photosCache[galleryCoverFlowIndex].id;
+  var selector = galleryViewMode === 'coverflow'
+    ? '.cover-flow-card[data-index="' + userIndex + '"]'
+    : '.photo-card[data-index="' + userIndex + '"]';
+  var container = galleryViewMode === 'coverflow' ? galleryCoverflowTrack : gallery;
+  var target = container && container.querySelector(selector);
+  if (target) target.remove();
+  photosCache.splice(userIndex, 1);
+  var sync = window.AsciiCameraGalleryCloudSync;
+  if (sync && typeof sync.removePhotoFromGalleryCacheById === 'function') {
+    sync.removePhotoFromGalleryCacheById(photoId);
+  }
+  galleryFeedNextOffset = Math.max(0, galleryFeedNextOffset - 1);
+  syncGalleryFeedPollContext();
+
+  if (galleryViewMode === 'coverflow') {
+    if (selectedId) {
+      var selectedIndex = photosCache.findIndex(function (photo) { return photo.id === selectedId; });
+      galleryCoverFlowIndex = selectedIndex >= 0
+        ? selectedIndex
+        : Math.max(0, Math.min(userIndex, photosCache.length - 1));
+    } else {
+      galleryCoverFlowIndex = Math.max(0, Math.min(galleryCoverFlowIndex, photosCache.length - 1));
+    }
+    container.querySelectorAll('.cover-flow-card').forEach(function (card) {
+      var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+      if (index > userIndex) card.setAttribute('data-index', String(index - 1));
+    });
+    fitGalleryCoverFlowCards();
+    updateGalleryCoverFlowSelection(false);
+    centerGalleryCoverFlowCard(false);
+  } else {
+    reindexGalleryGridAfterPurge(userIndex);
+  }
+  // The page coordinate is intentionally unchanged; only the affected cards compact.
+  window.scrollTo({ top: pageTop, left: window.scrollX, behavior: 'auto' });
+  animateGalleryPurgeCompaction(before, userIndex);
+}
+
+/**
  * @param {number} userIndex `loadUserPhotos()` 中的下标（与网格中前 `userCount` 张卡片一一对应）
  * @returns {Promise<void>}
  */
@@ -6468,7 +6768,10 @@ async function deletePhoto(userIndex) {
       var delOk = await sync.deletePhotoRow(photoIdForLikes, {
         hardDelete: false,
         bypassOwnershipCheck: curatorModeActive,
-        deleteReason: delReason
+        deleteReason: delReason,
+        // Curator Remove remains in the current cache so the same card can
+        // fade once and settle into its deleted (20% opacity) state.
+        retainDeletedCache: curatorModeActive
       });
       if (!delOk) {
         var st2 = typeof sync.getSyncStatus === 'function' ? sync.getSyncStatus() : null;
@@ -6599,25 +6902,35 @@ async function executePurgeGalleryPhoto(userIndex) {
     if (!photoId || (typeof sync.isUuidPhotoId === 'function' && !sync.isUuidPhotoId(photoId))) {
       return;
     }
-    var delOk = await sync.deletePhotoRow(photoId, {
-      hardDelete: true,
-      bypassOwnershipCheck: true
-    });
-    if (!delOk) {
-      var st = typeof sync.getSyncStatus === 'function' ? sync.getSyncStatus() : null;
-      var detail = st && st.lastPushError ? String(st.lastPushError) : '';
-      window.alert('Could not delete photo.\n\n' + (detail ? 'Error: ' + detail : ''));
-      return;
-    }
-    if (photoId && typeof sync.deleteAllLikesForPhotoId === 'function') {
-      try {
-        await sync.deleteAllLikesForPhotoId(photoId);
-      } catch (eL) {
-        console.warn('[gallery] cloud likes cleanup failed', eL);
+    galleryPurgeInFlight = true;
+    if (typeof sync.setGalleryOrderBusy === 'function') sync.setGalleryOrderBusy(true);
+    try {
+      var delOk = await sync.deletePhotoRow(photoId, {
+        hardDelete: true,
+        bypassOwnershipCheck: true,
+        // Keep the source row until its one-time ASCII fade ends; do not
+        // perform the historical cache removal + pullOnce full refresh.
+        deferCacheRefresh: true
+      });
+      if (!delOk) {
+        var st = typeof sync.getSyncStatus === 'function' ? sync.getSyncStatus() : null;
+        var detail = st && st.lastPushError ? String(st.lastPushError) : '';
+        window.alert('Could not delete photo.\n\n' + (detail ? 'Error: ' + detail : ''));
+        return;
       }
+      await animateGalleryPhotoDeleteFade(userIndex);
+      removePurgedGalleryPhotoInPlace(userIndex, photoId);
+      if (photoId && typeof sync.deleteAllLikesForPhotoId === 'function') {
+        try {
+          await sync.deleteAllLikesForPhotoId(photoId);
+        } catch (eL) {
+          console.warn('[gallery] cloud likes cleanup failed', eL);
+        }
+      }
+    } finally {
+      if (typeof sync.setGalleryOrderBusy === 'function') sync.setGalleryOrderBusy(false);
+      galleryPurgeInFlight = false;
     }
-    await animateGalleryPhotoDeleteFade(userIndex);
-    refreshGallery();
   } catch (e) {
     console.error(e);
   }
@@ -6747,12 +7060,244 @@ function galleryPhotoMatchesCurrentFilter(photo) {
  * @returns {Array<object>}
  */
 function filterGalleryPhotos(photos) {
-  return galleryFeedFilter === 'all' ? photos : photos.filter(galleryPhotoMatchesCurrentFilter);
+  var visible = curatorPreviewActive
+    ? photos.filter(function (photo) { return photo.isDeleted !== true; })
+    : photos;
+  return galleryFeedFilter === 'all' ? visible : visible.filter(galleryPhotoMatchesCurrentFilter);
+}
+
+const CURATOR_PREVIEW_LAYOUT_MS = 460;
+
+function curatorPreviewReducedMotion() {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (e) {
+    return false;
+  }
+}
+
+function getCuratorPreviewCards() {
+  var root = galleryViewMode === 'coverflow' ? galleryCoverflowTrack : gallery;
+  var selector = galleryViewMode === 'coverflow' ? '.cover-flow-card' : '.photo-card';
+  return root ? Array.prototype.slice.call(root.querySelectorAll(selector)) : [];
+}
+
+function getCuratorPreviewCardPhoto(card) {
+  var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+  return index >= 0 ? photosCache[index] : null;
+}
+
+function getCuratorPreviewPhotoKey(photo, index) {
+  if (photo && photo.id != null) return 'id:' + String(photo.id);
+  return 'fallback:' + String(photo && photo.time || '') + ':' + String(index);
+}
+
+function captureCuratorPreviewCardLayout() {
+  var layout = new Map();
+  getCuratorPreviewCards().forEach(function (card) {
+    var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+    var photo = index >= 0 ? photosCache[index] : null;
+    if (!photo) return;
+    var rect = card.getBoundingClientRect();
+    layout.set(getCuratorPreviewPhotoKey(photo, index), {
+      left: rect.left,
+      top: rect.top
+    });
+  });
+  return layout;
+}
+
+function waitForGalleryAnimation(animation) {
+  return animation.finished.catch(function () {});
+}
+
+/** Removed 卡片先退出，但保持布局占位，待下一次渲染后再由其它卡片补位。 */
+function animateCuratorPreviewRemovedExit() {
+  var duration = curatorPreviewReducedMotion() ? 80 : 220;
+  var animations = getCuratorPreviewCards().map(function (card) {
+    var photo = getCuratorPreviewCardPhoto(card);
+    if (!photo || photo.isDeleted !== true || typeof card.animate !== 'function') return null;
+    return waitForGalleryAnimation(card.animate([
+      { opacity: 1, transform: 'scale(1)' },
+      { opacity: 0, transform: 'scale(0.97)' }
+    ], { duration: duration, easing: 'ease-in', fill: 'forwards' }));
+  }).filter(Boolean);
+  return Promise.all(animations);
+}
+
+/**
+ * 重新获取当前预览态对应的第一页，然后在同一帧交给布局动画处理。
+ * 请求失败时仍使用本地缓存完成切换。
+ */
+function mergeCuratorPreviewPageRows(currentRows, freshRows) {
+  var rowsById = new Map();
+  var keep = function (photo) {
+    return photo && (!curatorPreviewActive || photo.isDeleted !== true);
+  };
+  (Array.isArray(currentRows) ? currentRows : []).forEach(function (photo) {
+    if (keep(photo) && photo.id != null) rowsById.set(String(photo.id), photo);
+  });
+  (Array.isArray(freshRows) ? freshRows : []).forEach(function (photo) {
+    if (keep(photo) && photo.id != null) rowsById.set(String(photo.id), photo);
+  });
+  return Array.from(rowsById.values()).sort(function (a, b) {
+    var ar = Number(a.curatorRank);
+    var br = Number(b.curatorRank);
+    if (Number.isFinite(ar) && Number.isFinite(br) && ar !== br) return ar - br;
+    return String(a.id).localeCompare(String(b.id));
+  });
+}
+
+async function loadCuratorPreviewTransitionPage() {
+  var sync = window.AsciiCameraGalleryCloudSync;
+  if (
+    isSupabaseGalleryCloudEnabled() &&
+    sync &&
+    typeof sync.fetchGalleryPage === 'function'
+  ) {
+    var requestGeneration = ++galleryFeedRequestGeneration;
+    var requestFilter = galleryFeedFilter;
+    var pageSize = sync.GALLERY_PAGE_SIZE || 20;
+    galleryFeedLoadingMore = true;
+    syncGalleryFeedPollContext();
+    try {
+      var rows = await sync.fetchGalleryPage(0, pageSize, requestFilter);
+      if (requestGeneration !== galleryFeedRequestGeneration || requestFilter !== galleryFeedFilter) {
+        refreshGallery({ allowDuringCuratorPreviewTransition: true });
+        return;
+      }
+      var firstPage = Array.isArray(rows) ? rows : [];
+      var currentRows = typeof sync.getPhotosForGalleryRender === 'function'
+        ? sync.getPhotosForGalleryRender().photos
+        : [];
+      var mergedRows = mergeCuratorPreviewPageRows(currentRows, firstPage);
+      sync.replaceSupabaseGalleryUserCache(mergedRows);
+      galleryFeedRevision = sync.getGalleryOrderRevision();
+      // Keep already-loaded right-side Showcase cards; the next page begins
+      // after the contiguous union rather than forcing a blank tail.
+      galleryFeedNextOffset = mergedRows.length;
+      galleryFeedHasMore = firstPage.length >= pageSize;
+      syncGalleryFeedPollContext();
+    } catch (e) {
+      if (!curatorPreviewActive && curatorPreviewCuratorSnapshot.length) {
+        var current = typeof sync.getPhotosForGalleryRender === 'function'
+          ? sync.getPhotosForGalleryRender().photos
+          : [];
+        var currentById = new Map(current.map(function (photo) { return [String(photo.id), photo]; }));
+        var restored = curatorPreviewCuratorSnapshot.map(function (photo) {
+          return currentById.get(String(photo.id)) || photo;
+        });
+        var restoredIds = new Set(restored.map(function (photo) { return String(photo.id); }));
+        current.forEach(function (photo) {
+          if (!restoredIds.has(String(photo.id))) restored.push(photo);
+        });
+        sync.replaceSupabaseGalleryUserCache(restored);
+      }
+      // Keep the current cache; filterGalleryPhotos still provides a usable transition.
+    } finally {
+      if (requestGeneration === galleryFeedRequestGeneration) galleryFeedLoadingMore = false;
+    }
+  }
+  refreshGallery({ allowDuringCuratorPreviewTransition: true });
+}
+
+/** Existing cards move from their previous viewport position into the new Grid/Coverflow slot. */
+function animateCuratorPreviewLayout(beforeLayout, enteringPreview) {
+  var duration = curatorPreviewReducedMotion() ? 90 : CURATOR_PREVIEW_LAYOUT_MS;
+  var animations = [];
+  getCuratorPreviewCards().forEach(function (card) {
+    var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+    var photo = index >= 0 ? photosCache[index] : null;
+    if (!photo || photo.isDeleted === true || typeof card.animate !== 'function') return;
+    var first = beforeLayout.get(getCuratorPreviewPhotoKey(photo, index));
+    var last = card.getBoundingClientRect();
+    if (!first) {
+      if (enteringPreview) {
+        animations.push(waitForGalleryAnimation(card.animate([
+          { opacity: 0 },
+          { opacity: 1 }
+        ], { duration: duration, easing: 'ease-out' })));
+      }
+      return;
+    }
+    var dx = first.left - last.left;
+    var dy = first.top - last.top;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+    animations.push(waitForGalleryAnimation(card.animate([
+      { transform: 'translate(' + dx + 'px,' + dy + 'px)' },
+      { transform: 'translate(0,0)' }
+    ], { duration: duration, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' })));
+  });
+  return Promise.all(animations);
+}
+
+/** Hide the returning Removed cards while existing cards animate aside. */
+function prepareCuratorPreviewRestoredCards() {
+  return getCuratorPreviewCards().filter(function (card) {
+    var photo = getCuratorPreviewCardPhoto(card);
+    if (!photo || photo.isDeleted !== true) return false;
+    card.style.opacity = '0';
+    card.style.pointerEvents = 'none';
+    return true;
+  });
+}
+
+/** Build Removed images from dense to light ASCII layers: █ → ▓ → ▒ → ░ → ·. */
+function animateCuratorPreviewRestoredAscii(cards) {
+  var reduced = curatorPreviewReducedMotion();
+  var stepMs = reduced ? 24 : GALLERY_DELETE_FADE_STEP_MS;
+  var cardDelay = reduced ? 0 : 35;
+  var promises = cards.map(function (card, cardIndex) {
+    var isCoverFlow = card.classList.contains('cover-flow-card');
+    var host = isCoverFlow
+      ? card.querySelector('.cover-flow-card-surface')
+      : card.querySelector('.photo-thumb');
+    var sourcePre = host && host.querySelector('pre');
+    var sourceText = sourcePre && sourcePre.querySelector('.cover-flow-card-ascii-text');
+    if (!host || !sourcePre) {
+      card.style.opacity = '';
+      card.style.pointerEvents = '';
+      return Promise.resolve();
+    }
+    var sourceAscii = (sourceText || sourcePre).textContent || '';
+    var layers = GALLERY_DELETE_FADE_SHADES.map(function (shade, shadeIndex) {
+      var layer = sourcePre.cloneNode(false);
+      layer.classList.remove('photo-delete-fade-source');
+      layer.classList.add('photo-delete-fade-layer');
+      layer.setAttribute('aria-hidden', 'true');
+      layer.setAttribute('data-delete-fade-step', String(shadeIndex));
+      layer.style.opacity = '0';
+      layer.style.setProperty('--gallery-delete-fade-step-ms', stepMs + 'ms');
+      layer.textContent = buildGalleryDeleteFadeLayer(sourceAscii, shade, shadeIndex);
+      host.appendChild(layer);
+      return layer;
+    });
+    sourcePre.classList.add('photo-delete-fade-source');
+    card.style.opacity = '';
+    return new Promise(function (resolve) {
+      var baseDelay = cardIndex * cardDelay;
+      window.requestAnimationFrame(function () {
+        layers.forEach(function (layer, shadeIndex) {
+          window.setTimeout(function () { layer.style.opacity = '1'; }, baseDelay + shadeIndex * stepMs);
+        });
+        window.setTimeout(function () {
+          sourcePre.classList.remove('photo-delete-fade-source');
+          layers.forEach(function (layer) { layer.remove(); });
+          card.style.pointerEvents = '';
+          resolve();
+        }, baseDelay + GALLERY_DELETE_FADE_SHADES.length * stepMs);
+      });
+    });
+  });
+  return Promise.all(promises);
 }
 
 function refreshGallery(options) {
   options = options || {};
+  if (galleryDrag && options.allowDuringDrag !== true) return;
   if (galleryDeleteFadeInFlight > 0 && options.allowDuringDeleteFade !== true) return;
+  if (galleryPurgeInFlight && options.allowDuringPurge !== true) return;
+  if (curatorPreviewTransitionInFlight && options.allowDuringCuratorPreviewTransition !== true) return;
   var keepLoading = options.keepLoading === true;
   if (typeof console !== 'undefined' && console.info) {
     console.info('[gallery] refreshGallery() called');
@@ -6765,6 +7310,12 @@ function refreshGallery(options) {
     typeof sync.getPhotosForGalleryRender === 'function'
   ) {
     var pack = sync.getPhotosForGalleryRender();
+    if (galleryFeedRevision !== pack.revision && !galleryOrderQueue.busy()) {
+      galleryFeedRevision = pack.revision;
+      galleryFeedNextOffset = pack.photos.length;
+      galleryFeedHasMore = pack.photos.length >= (sync.GALLERY_PAGE_SIZE || 20);
+      syncGalleryFeedPollContext();
+    }
     if (typeof console !== 'undefined' && console.info) {
       console.info(
         '[gallery] render source=ascii_photos userRows=' +
@@ -6826,6 +7377,7 @@ function loadFirstGalleryFeedPage() {
   }
   var requestGeneration = ++galleryFeedRequestGeneration;
   var requestFilter = galleryFeedFilter;
+  syncGalleryFeedPollContext();
   // 请求期间保留已有缓存内容；loading 层只覆盖 Showcase 面板。
   if (!photosCache.length && typeof sync.getPhotosForGalleryRender === 'function') {
     refreshGallery({ keepLoading: true });
@@ -6837,6 +7389,7 @@ function loadFirstGalleryFeedPage() {
       if (requestGeneration !== galleryFeedRequestGeneration || requestFilter !== galleryFeedFilter) return;
       var firstPage = Array.isArray(rows) ? rows : [];
       sync.replaceSupabaseGalleryUserCache(firstPage);
+      galleryFeedRevision = sync.getGalleryOrderRevision();
       galleryFeedNextOffset = firstPage.length;
       galleryFeedHasMore = firstPage.length >= pageSize;
       syncGalleryFeedPollContext();
@@ -6861,7 +7414,7 @@ function loadMoreGalleryFeedPage() {
   if (!isSupabaseGalleryCloudEnabled() || typeof sync.fetchGalleryPage !== 'function') {
     return Promise.resolve();
   }
-  if (galleryFeedLoadingMore || !galleryFeedHasMore) return Promise.resolve();
+  if (galleryPurgeInFlight || galleryFeedLoadingMore || !galleryFeedHasMore || galleryOrderQueue.inflight.length) return Promise.resolve();
   galleryFeedLoadingMore = true;
   var requestGeneration = galleryFeedRequestGeneration;
   var requestFilter = galleryFeedFilter;
@@ -6883,9 +7436,14 @@ function loadMoreGalleryFeedPage() {
         typeof sync.getPhotosForGalleryRender === 'function'
           ? sync.getPhotosForGalleryRender().photos.length
           : beforeCount;
-      if (afterCount > beforeCount) refreshGallery();
+      if (afterCount > beforeCount) refreshGallery({ allowDuringDrag: true });
     })
-    .catch(function () {
+    .catch(function (error) {
+      if (error.status === 409 && requestGeneration === galleryFeedRequestGeneration) {
+        finishGalleryDrag(false);
+        showGalleryOrderStatus('Gallery changed. Loading the latest order…');
+        loadFirstGalleryFeedPage();
+      }
       /* 分页失败时保留已显示内容，等待下一次用户滚动或轮询重试。 */
     })
     .finally(function () {
@@ -6945,6 +7503,7 @@ function setupGalleryFeedFilter() {
    * @returns {void}
    */
   function switchFilter(nextFilter) {
+    if (galleryOrderQueue.busy()) { showGalleryOrderStatus('Finish saving the order before changing the filter.'); return; }
     if (nextFilter !== 'image' && nextFilter !== 'loop') nextFilter = 'all';
     if (galleryFeedFilter === nextFilter) {
       setMenuOpen(false);
@@ -7027,9 +7586,244 @@ function setupGalleryFeedInfiniteScroll() {
   );
 }
 
+function showGalleryOrderStatus(message) {
+  var status = document.getElementById('gallery-order-status');
+  if (!status) {
+    status = document.createElement('div');
+    status.id = 'gallery-order-status';
+    status.setAttribute('role', 'status');
+    document.body.appendChild(status);
+  }
+  clearTimeout(galleryOrderStatusTimer);
+  status.textContent = message;
+  status.hidden = false;
+  galleryOrderStatusTimer = setTimeout(function () { status.hidden = true; }, 5000);
+}
+
+function galleryDragHandle(index) {
+  if (!curatorModeActive || curatorPreviewActive || !isSupabaseGalleryCloudEnabled()) return '';
+  return '<button type="button" class="gallery-drag-handle" data-gallery-drag="' + index +
+    '" aria-label="Drag to reorder" title="Drag to reorder; use arrow keys to move">⠿</button>';
+}
+
+function commitGalleryMove(operation) {
+  var rows = galleryOrderQueue.apply(AsciiCameraGalleryCloudSync.getPhotosForGalleryRender().photos);
+  var next = AsciiGalleryOrder.move(rows, operation);
+  var changed = !next.every(function (p, index) { return p.id === rows[index].id; });
+  if (!changed && !galleryListSortKey) return false;
+  galleryListSortKey = '';
+  galleryListSortDirection = 'asc';
+  saveGalleryShowcaseSort();
+  if (changed) galleryOrderQueue.add(operation);
+  refreshGallery();
+  galleryCoverFlowIndex = Math.max(0, findGalleryIndexByPhotoId(operation.id));
+  if (galleryViewMode === 'coverflow') {
+    galleryCoverFlowRestorePosition = false;
+    updateGalleryCoverFlowSelection(false);
+    centerGalleryCoverFlowCard(true);
+    ensureGalleryListSelectionVisible();
+  }
+  return true;
+}
+
+function clearGalleryDropMarkers() {
+  document.querySelectorAll('.gallery-drop-before, .gallery-drop-after, .gallery-drag-source').forEach(function (el) {
+    el.classList.remove('gallery-drop-before', 'gallery-drop-after', 'gallery-drag-source');
+  });
+}
+
+function finishGalleryDrag(commit) {
+  var drag = galleryDrag;
+  if (!drag) return;
+  galleryDrag = null;
+  cancelAnimationFrame(drag.frame);
+  if (drag.ghost) drag.ghost.remove();
+  document.body.classList.remove('gallery-reordering');
+  clearGalleryDropMarkers();
+  if (galleryCoverflowViewport) galleryCoverflowViewport.style.removeProperty('scroll-snap-type');
+  if (document.body.hasPointerCapture(drag.pointerId)) document.body.releasePointerCapture(drag.pointerId);
+  if (drag.started) gallerySuppressClickUntil = Date.now() + 400;
+  if (commit && drag.valid && drag.anchor) {
+    commitGalleryMove({ id: drag.id, anchor: drag.anchor, after: drag.after });
+  } else if (drag.view === 'coverflow') {
+    var index = findGalleryIndexByPhotoId(drag.id);
+    if (index >= 0) setGalleryCoverFlowIndex(index, false);
+  }
+  galleryOrderQueue.hold(false);
+  if (drag.view === 'coverflow') ensureGalleryListSelectionVisible();
+}
+
+function updateGalleryDragTarget() {
+  var drag = galleryDrag;
+  if (!drag || !drag.started) return;
+  clearGalleryDropMarkers();
+  var rect = drag.view === 'coverflow' ? galleryCoverflowViewport.getBoundingClientRect()
+    : { left: 0, right: innerWidth, top: document.getElementById('header').getBoundingClientRect().bottom, bottom: innerHeight };
+  drag.valid = drag.x >= rect.left && drag.x <= rect.right && drag.y >= rect.top && drag.y <= rect.bottom;
+  drag.anchor = null;
+  var ghostY = Math.max(rect.top, Math.min(rect.bottom - 40, drag.y));
+  drag.ghost.style.left = Math.max(0, Math.min(innerWidth - 114, drag.x + 14)) + 'px';
+  drag.ghost.style.top = ghostY + 'px';
+  drag.ghost.style.opacity = drag.valid ? '0.85' : '0.35';
+  var container = drag.view === 'coverflow' ? galleryCoverflowTrack : gallery;
+  var candidates = container.querySelectorAll(drag.view === 'coverflow' ? '.cover-flow-card' : '.photo-card');
+  var best = null;
+  var bestDistance = Infinity;
+  candidates.forEach(function (card) {
+    var photo = photosCache[Number(card.dataset.index)];
+    if (!photo) return;
+    if (photo.id === drag.id) { card.classList.add('gallery-drag-source'); return; }
+    var r = card.getBoundingClientRect();
+    if (!drag.valid || r.bottom < rect.top || r.top > rect.bottom || r.right < rect.left || r.left > rect.right) return;
+    var cx = r.left + r.width / 2;
+    var cy = r.top + r.height / 2;
+    var distance = Math.pow(drag.x - cx, 2) + (drag.view === 'grid' ? Math.pow(drag.y - cy, 2) : 0);
+    if (distance < bestDistance) { best = { card: card, photo: photo, rect: r, cx: cx, cy: cy }; bestDistance = distance; }
+  });
+  if (!best) return;
+  drag.anchor = best.photo.id;
+  drag.after = drag.view === 'grid' && (drag.y < best.rect.top || drag.y > best.rect.bottom)
+    ? drag.y > best.cy : drag.x > best.cx;
+  best.card.classList.add(drag.after ? 'gallery-drop-after' : 'gallery-drop-before');
+}
+
+function galleryDragFrame(time) {
+  var drag = galleryDrag;
+  if (!drag || !drag.started) return;
+  var dt = Math.min(32, drag.lastTime ? time - drag.lastTime : 16);
+  drag.lastTime = time;
+  updateGalleryDragTarget();
+  if (drag.valid) {
+    var rect = drag.view === 'coverflow' ? galleryCoverflowViewport.getBoundingClientRect()
+      : { top: document.getElementById('header').getBoundingClientRect().bottom, bottom: innerHeight };
+    var low = drag.view === 'coverflow' ? rect.left : rect.top;
+    var high = drag.view === 'coverflow' ? rect.right : rect.bottom;
+    var position = drag.view === 'coverflow' ? drag.x : drag.y;
+    var speed = position < low + 64 ? -Math.min(1, (low + 64 - position) / 64)
+      : position > high - 64 ? Math.min(1, (position - high + 64) / 64) : 0;
+    if (speed) {
+      if (drag.view === 'coverflow') galleryCoverflowViewport.scrollLeft += speed * dt * 0.7;
+      else window.scrollBy(0, speed * dt * 0.7);
+      var remaining = drag.view === 'coverflow'
+        ? galleryCoverflowViewport.scrollWidth - galleryCoverflowViewport.clientWidth - galleryCoverflowViewport.scrollLeft
+        : document.documentElement.scrollHeight - innerHeight - scrollY;
+      if (speed > 0 && remaining < 260 && time > drag.nextLoad) {
+        drag.nextLoad = time + 1000;
+        loadMoreGalleryFeedPage();
+      }
+    }
+  }
+  drag.frame = requestAnimationFrame(galleryDragFrame);
+}
+
+function setupGalleryDragSorting() {
+  document.addEventListener('pointerdown', function (event) {
+    var handle = event.target.closest('.gallery-drag-handle');
+    if (!handle || event.button !== 0 || !curatorModeActive || curatorPreviewActive || galleryDeleteFadeInFlight || lightbox.classList.contains('open')) return;
+    var photo = photosCache[Number(handle.dataset.galleryDrag)];
+    if (!photo) return;
+    event.preventDefault();
+    galleryOrderQueue.hold(true);
+    galleryDrag = { id: photo.id, photo: photo, view: galleryViewMode, pointerId: event.pointerId,
+      x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY,
+      started: false, valid: false, nextLoad: 0, frame: 0 };
+    document.body.setPointerCapture(event.pointerId);
+  });
+  document.addEventListener('pointermove', function (event) {
+    var drag = galleryDrag;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    if (!drag.started && Math.hypot(drag.x - drag.startX, drag.y - drag.startY) >= 6) {
+      drag.started = true;
+      clearGalleryThumbAnim();
+      stopGalleryCoverFlowAnimation();
+      cancelGalleryCoverFlowScroll();
+      document.body.classList.add('gallery-reordering');
+      if (drag.view === 'coverflow') galleryCoverflowViewport.style.scrollSnapType = 'none';
+      var ghost = document.createElement('div');
+      ghost.className = 'gallery-drag-ghost';
+      ghost.setAttribute('aria-hidden', 'true');
+      var pre = document.createElement('pre');
+      pre.textContent = drag.photo.ascii;
+      pre.style.color = drag.photo.color;
+      var dims = getAsciiDims(drag.photo.ascii);
+      pre.style.fontSize = Math.min(100 / Math.max(1, dims.rows), 100 / Math.max(1, dims.cols * 0.61)) + 'px';
+      ghost.appendChild(pre);
+      document.body.appendChild(ghost);
+      drag.ghost = ghost;
+      drag.frame = requestAnimationFrame(galleryDragFrame);
+    }
+    if (drag.started) { event.preventDefault(); updateGalleryDragTarget(); }
+  }, { passive: false });
+  document.addEventListener('pointerup', function (event) {
+    if (galleryDrag && galleryDrag.pointerId === event.pointerId) {
+      galleryDrag.x = event.clientX; galleryDrag.y = event.clientY;
+      updateGalleryDragTarget();
+      finishGalleryDrag(true);
+    }
+  });
+  document.addEventListener('pointercancel', function () { finishGalleryDrag(false); });
+  window.addEventListener('blur', function () { finishGalleryDrag(false); });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && galleryDrag) {
+      event.preventDefault(); event.stopImmediatePropagation(); finishGalleryDrag(false); return;
+    }
+    var handle = event.target.closest('.gallery-drag-handle');
+    if (!handle || !/^Arrow(Left|Right|Up|Down)$/.test(event.key) || !curatorModeActive || curatorPreviewActive) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    var index = Number(handle.dataset.galleryDrag);
+    var forward = event.key === 'ArrowRight' || event.key === 'ArrowDown';
+    var adjacent = photosCache[index + (forward ? 1 : -1)];
+    if (!adjacent) { if (forward) loadMoreGalleryFeedPage(); return; }
+    var id = photosCache[index].id;
+    commitGalleryMove({ id: id, anchor: adjacent.id, after: forward });
+    var selector = galleryViewMode === 'coverflow' ? '#gallery-coverflow-curator-toolbar' : '#gallery';
+    var nextHandle = document.querySelector(selector + ' [data-gallery-drag="' + findGalleryIndexByPhotoId(id) + '"]');
+    if (nextHandle) nextHandle.focus({ preventScroll: true });
+  }, true);
+  // A pending request must not silently disappear when the tab closes.
+  window.addEventListener('beforeunload', function (event) {
+    if (galleryOrderQueue.pending.length || galleryOrderQueue.inflight.length) {
+      event.preventDefault(); event.returnValue = '';
+    }
+  });
+  // Mouse swipe is browsing. Touch/trackpad retain the viewport's native pan-x.
+  var swipe = null;
+  galleryCoverflowViewport.addEventListener('pointerdown', function (event) {
+    if (event.pointerType !== 'mouse' || event.button !== 0 || event.target.closest('button') || galleryDrag) return;
+    swipe = { x: event.clientX, y: event.clientY, left: galleryCoverflowViewport.scrollLeft, id: event.pointerId, moved: false };
+  });
+  galleryCoverflowViewport.addEventListener('pointermove', function (event) {
+    if (!swipe || event.pointerId !== swipe.id) return;
+    var dx = event.clientX - swipe.x;
+    if (!swipe.moved && Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(event.clientY - swipe.y)) {
+      swipe.moved = true;
+      cancelGalleryCoverFlowScroll();
+      galleryCoverflowViewport.setPointerCapture(event.pointerId);
+      galleryCoverflowViewport.style.scrollSnapType = 'none';
+    }
+    if (swipe.moved) { event.preventDefault(); galleryCoverflowViewport.scrollLeft = swipe.left - dx; }
+  });
+  function endSwipe() {
+    if (!swipe) return;
+    if (swipe.moved) {
+      gallerySuppressClickUntil = Date.now() + 400;
+      if (galleryCoverflowViewport.hasPointerCapture(swipe.id)) galleryCoverflowViewport.releasePointerCapture(swipe.id);
+      galleryCoverflowViewport.style.removeProperty('scroll-snap-type');
+      centerGalleryCoverFlowCard(true);
+    }
+    swipe = null;
+  }
+  window.addEventListener('pointerup', endSwipe);
+  window.addEventListener('pointercancel', endSwipe);
+  window.addEventListener('blur', endSwipe);
+}
+
 setupGalleryFeedInfiniteScroll();
 setupGalleryFeedFilter();
 setupGalleryViewControls();
+setupGalleryDragSorting();
 // 刷新后先恢复已保存的视图状态；云端数据加载完成前也不要短暂回到 Grid。
 var shouldRestoreShowcase = galleryViewMode === 'coverflow' && galleryIsCoverFlowAvailable();
 if (shouldRestoreShowcase) {
@@ -7482,6 +8276,7 @@ function getGalleryShowcaseRows() {
     return { photo: photo, index: index };
   });
   var key = galleryListSortKey;
+  if (!key) return rows;
   var direction = galleryListSortDirection === 'asc' ? 1 : -1;
   rows.sort(function (a, b) {
     var av = galleryListValue(a.photo, key);
@@ -7531,6 +8326,10 @@ function updateGalleryListSortHeaders() {
       'aria-sort',
       selected ? galleryListSortDirection === 'asc' ? 'ascending' : 'descending' : 'none'
     );
+    if (button.closest('th')) button.closest('th').setAttribute('aria-sort', selected ?
+      (galleryListSortDirection === 'asc' ? 'ascending' : 'descending') : 'none');
+    button.title = selected && galleryListSortDirection === 'desc'
+      ? 'Click to restore the default order' : 'Click to sort';
   });
 }
 
@@ -7614,8 +8413,7 @@ function applyGalleryShowcaseSort() {
       if (generation !== galleryShowcaseSortGeneration) return;
       try {
         galleryCoverFlowRestorePosition = false;
-        renderGalleryList();
-        renderGalleryCoverFlow();
+        refreshGallery();
       } finally {
         window.requestAnimationFrame(function () {
           if (generation === galleryShowcaseSortGeneration) hideGalleryShowcaseLoading();
@@ -7665,6 +8463,7 @@ function updateGalleryListSelection() {
  * @returns {void}
  */
 function ensureGalleryListSelectionVisible() {
+  if (galleryDrag) return;
   if (!galleryListPanel || !galleryListBody) return;
   var row = galleryListBody.querySelector('[data-index="' + galleryCoverFlowIndex + '"]');
   if (!row) return;
@@ -8021,6 +8820,7 @@ function updateGalleryCoverFlowCuratorToolbar() {
   var userCount = inferUserPhotoCountFromPhotos(photosCache);
   if (
     !curatorModeActive ||
+    curatorPreviewActive ||
     galleryViewMode !== 'coverflow' ||
     !card ||
     card.classList.contains('cover-flow-card--delete-fading') ||
@@ -8040,7 +8840,7 @@ function updateGalleryCoverFlowCuratorToolbar() {
         '<button type="button" class="cover-flow-card-curator-action cover-flow-card-curator-action--purge" data-coverflow-curator-action="purge" data-user-index="' + index + '">Delete</button>'
       : '<button type="button" class="cover-flow-card-curator-action cover-flow-card-curator-action--remove" data-coverflow-curator-action="remove" data-user-index="' + index + '">Remove</button>';
     galleryCoverflowCuratorToolbar.innerHTML = actionHtml +
-      (isLoop ? '<span class="cover-flow-card-loop-marker">.gif</span>' : '');
+      (isLoop ? '<span class="cover-flow-card-loop-marker">.gif</span>' : '') + galleryDragHandle(index);
     galleryCoverflowCuratorToolbar.setAttribute('data-state', signature);
     galleryCoverflowCuratorToolbar.querySelectorAll('[data-coverflow-curator-action]').forEach(function (button) {
       button.addEventListener('click', function (event) {
@@ -8074,6 +8874,15 @@ function updateGalleryCoverFlowCuratorToolbar() {
   galleryCoverflowCuratorToolbar.style.left = preRect.left + 'px';
   galleryCoverflowCuratorToolbar.style.top =
     (visibleImageTop - galleryCoverflowCuratorToolbar.offsetHeight - 8) + 'px';
+  var dragHandle = galleryCoverflowCuratorToolbar.querySelector('.gallery-drag-handle');
+  if (dragHandle) {
+    // The toolbar sits above the image for its action buttons. Position its
+    // child against the actual image bounds so the drag control stays inside
+    // the central 2D image at a constant 8px inset.
+    var toolbarRect = galleryCoverflowCuratorToolbar.getBoundingClientRect();
+    dragHandle.style.left = Math.round(preRect.left + 8 - toolbarRect.left) + 'px';
+    dragHandle.style.top = Math.round(visibleImageTop + 8 - toolbarRect.top) + 'px';
+  }
   galleryCoverflowCuratorToolbar.style.visibility = 'visible';
 }
 
@@ -8136,6 +8945,7 @@ function updateGalleryCoverFlowSelection(shouldScroll) {
   } else {
     updateGalleryListSelection();
   }
+  if (!galleryDrag && !galleryPurgeInFlight && galleryFeedHasMore && galleryCoverFlowIndex >= photosCache.length - 3) loadMoreGalleryFeedPage();
   updateGalleryCoverFlowGeometry();
   startGalleryCoverFlowAnimation();
 }
@@ -8236,8 +9046,10 @@ function renderGalleryCoverFlow() {
       '</article>';
   }).join('');
   galleryCoverflowTrack.querySelectorAll('.cover-flow-card').forEach(function (card) {
-    var index = parseInt(card.getAttribute('data-index') || '-1', 10);
     card.addEventListener('click', function (event) {
+      var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+      if (index < 0 || index >= photosCache.length) return;
+      if (Date.now() < gallerySuppressClickUntil) return;
       if (index !== galleryCoverFlowIndex) {
         setGalleryCoverFlowIndex(index, true);
         return;
@@ -8252,6 +9064,8 @@ function renderGalleryCoverFlow() {
       }
     });
     card.addEventListener('keydown', function (event) {
+      var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+      if (index < 0 || index >= photosCache.length) return;
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         event.stopPropagation();
@@ -8327,6 +9141,7 @@ function applyGalleryViewMode() {
   }
   if (cover) {
     applyGalleryCoverFlowHeight();
+    renderGalleryList();
     renderGalleryCoverFlow();
   }
 }
@@ -8361,6 +9176,7 @@ function setupGalleryViewControls() {
   if (window._galleryViewControlsBound) return;
   window._galleryViewControlsBound = true;
   if (galleryViewGridBtn) galleryViewGridBtn.addEventListener('click', function () {
+    finishGalleryDrag(false);
     var selectedPhotoId = lightbox.classList.contains('open') ? resolveLightboxPhotoId(lightboxOpenPhoto) : '';
     var selectedIndex = lightbox.classList.contains('open')
       ? findGalleryIndexByPhotoId(selectedPhotoId)
@@ -8380,6 +9196,7 @@ function setupGalleryViewControls() {
     scrollGridToGalleryIndex(selectedIndex);
   });
   if (galleryViewCoverFlowBtn) galleryViewCoverFlowBtn.addEventListener('click', function () {
+    finishGalleryDrag(false);
     if (!galleryIsCoverFlowAvailable()) return;
     if (lightbox && (lightbox.classList.contains('open') || document.getElementById('lightbox-shared-fly'))) {
       closeLightbox();
@@ -8458,11 +9275,13 @@ function setupGalleryViewControls() {
   }
   document.querySelectorAll('.gallery-list-sort').forEach(function (button) {
     button.addEventListener('click', function () {
+      if (galleryOrderQueue.busy()) { showGalleryOrderStatus('Finish saving the order before changing the sort.'); return; }
       var key = button.getAttribute('data-sort-key') || 'time';
-      if (galleryListSortKey === key) galleryListSortDirection = galleryListSortDirection === 'asc' ? 'desc' : 'asc';
+      if (galleryListSortKey === key && galleryListSortDirection === 'asc') galleryListSortDirection = 'desc';
+      else if (galleryListSortKey === key) { galleryListSortKey = ''; galleryListSortDirection = 'asc'; }
       else {
         galleryListSortKey = key;
-        galleryListSortDirection = key === 'time' || key === 'resolution' || key === 'likes' || key === 'downloads' || key === 'views' ? 'desc' : 'asc';
+        galleryListSortDirection = 'asc';
       }
       saveGalleryShowcaseSort();
       applyGalleryShowcaseSort();
@@ -8576,7 +9395,14 @@ function renderGallery(photos, userCountOverride) {
     galleryCoverFlowScrollLeft = galleryCoverflowViewport.scrollLeft;
     galleryCoverFlowRestorePosition = true;
   }
-  photosCache = photos;
+  var selectedPhotoId = photosCache[galleryCoverFlowIndex] && photosCache[galleryCoverFlowIndex].id;
+  photosCache = galleryOrderQueue.apply(photos);
+  photosCache = getGalleryShowcaseRows().map(function (row) { return row.photo; });
+  photos = photosCache;
+  if (selectedPhotoId) {
+    var selectedIndex = photosCache.findIndex(function (p) { return p.id === selectedPhotoId; });
+    if (selectedIndex >= 0) galleryCoverFlowIndex = selectedIndex;
+  }
   if (photos.length === 0) {
     empty.style.display = 'block';
     gallery.innerHTML = '';
@@ -8601,6 +9427,9 @@ function renderGallery(photos, userCountOverride) {
     typeof userCountOverride === 'number' && Number.isFinite(userCountOverride)
       ? userCountOverride
       : inferUserPhotoCountFromPhotos(photos);
+  var latestPhoto = photos.slice(0, userCount).reduce(function (latest, p) {
+    return !latest || p.time > latest.time ? p : latest;
+  }, null);
   gallery.innerHTML = photos.map((p, i) => {
     const isUser = i < userCount;
     const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
@@ -8608,10 +9437,10 @@ function renderGallery(photos, userCountOverride) {
     const isAnimUser = isUser && isLightboxPhotoAnimatedForDownload(p);
     const enterDelay = Math.min(i, 10) * 45;
     const canRemoveUser =
-      isUser && !isDeleted && (p.mine === true || curatorModeActive);
+      !curatorPreviewActive && isUser && !isDeleted && (p.mine === true || curatorModeActive);
     const showCuratorRestore =
-      isUser && isDeleted && curatorModeActive;
-    const canShowBuiltinRemove = curatorModeActive && !isUser && p.isDefault;
+      isUser && isDeleted && curatorModeActive && !curatorPreviewActive;
+    const canShowBuiltinRemove = curatorModeActive && !curatorPreviewActive && !isUser && p.isDefault;
     let metaHtml = '';
     if (isUser) {
       const centerGif = isAnimUser
@@ -8659,7 +9488,7 @@ function renderGallery(photos, userCountOverride) {
     return (
       '<div class="photo-card' +
         (isDeleted ? ' photo-card--deleted' : '') +
-        (isUser && i === 0 ? ' photo-card--latest' : '') +
+        (isUser && p === latestPhoto ? ' photo-card--latest' : '') +
         '" data-index="' +
         i +
         '" style="--gallery-enter-delay:' +
@@ -8667,6 +9496,7 @@ function renderGallery(photos, userCountOverride) {
         'ms"' +
         (isAnimUser ? ' data-ascii-animated="1"' : '') +
         '>' +
+        (curatorModeActive && !curatorPreviewActive && isUser ? galleryDragHandle(i) : '') +
         '<div class="photo-thumb">' +
         '<pre style="color:' +
         (p.color || '#00ff41') +
@@ -8686,12 +9516,12 @@ function renderGallery(photos, userCountOverride) {
     card.addEventListener('click', (e) => {
       var raw = e.target;
       var el = raw instanceof Element ? raw : raw && /** @type {Node} */ (raw).parentElement;
-      if (el && el.closest('.delete-btn, .restore-btn, .purge-btn')) return;
+      if (Date.now() < gallerySuppressClickUntil || (el && el.closest('.delete-btn, .restore-btn, .purge-btn, .gallery-drag-handle'))) return;
       var ix = parseInt(card.dataset.index, 10);
       openLightbox(photosCache[ix], ix, card);
     });
     card.addEventListener('mouseenter', function () {
-      if (card.classList.contains('photo-card--delete-fading')) return;
+      if (galleryDrag || card.classList.contains('photo-card--delete-fading')) return;
       var idx = parseInt(card.getAttribute('data-index') || '0', 10);
       var ph = photosCache[idx];
       if (ph && isLightboxPhotoAnimatedForDownload(ph)) startGalleryThumbAsciiAnim(card, ph, idx);

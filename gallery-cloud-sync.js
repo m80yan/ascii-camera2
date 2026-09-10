@@ -49,6 +49,9 @@
   var lastSuccessfulPushUpdatedAt = readLastSuccessfulPushUpdatedAtFromStorage();
   /** Supabase：用户作品区与 `ascii_photos` 同步的缓存（画廊渲染读此路径，不读 `ascii_gallery_sync.body`）。 */
   var supabaseGalleryUserCache = [];
+  var galleryOrderRevision = null;
+  var galleryOrderBusy = false;
+  var galleryOrderGeneration = 0;
   /** 是否已打印「仅 ascii_photos」调试说明 */
   var loggedAsciiPhotosSsoNotice = false;
   /** 轮询间隔（毫秒）；嵌入页可较快看到相机页上传的更新 */
@@ -580,6 +583,7 @@
       ascii: row.ascii,
       color: typeof row.color === 'string' ? row.color : '#00ff41',
       time: t,
+      curatorRank: Number(row.curator_rank),
       mine: mine,
       likesCount: toCount(row.likes_count),
       downloadsCount: toCount(row.downloads_count),
@@ -616,53 +620,48 @@
       Math.min(500, typeof limit === 'number' ? limit : SUPABASE_ASCII_PHOTOS_FETCH_LIMIT)
     );
     var off = Math.max(0, typeof offset === 'number' && Number.isFinite(offset) ? offset : 0);
-    var cols =
-      'id,ascii,color,created_at,owner_id,is_animated,frame_count,fps,duration_ms,is_deleted,likes_count,downloads_count,views_count';
-    var url =
-      c.url +
-      '/rest/v1/' +
-      encodeURIComponent(table) +
-      '?select=' +
-      encodeURIComponent(cols) +
-      '&order=created_at.desc&limit=' +
-      encodeURIComponent(String(lim)) +
-      '&offset=' +
-      encodeURIComponent(String(off));
-    if (includeDeleted !== true) {
-      url += '&or=(is_deleted.is.null,is_deleted.eq.false)';
-    }
+    var requestGeneration = galleryOrderGeneration;
+    var url = c.url + '/rest/v1/rpc/gallery_order_page';
     var normalizedFilter = feedFilter === true || feedFilter === 'loop'
       ? 'loop'
       : feedFilter === 'image' ? 'image' : 'all';
-    if (normalizedFilter === 'loop') {
-      url += '&is_animated=eq.true';
-    } else if (normalizedFilter === 'image') {
-      url += '&is_animated=eq.false';
-    }
     var controller = typeof global.AbortController === 'function' ? new global.AbortController() : null;
     var timeoutId = controller
       ? global.setTimeout(function () { controller.abort(); }, SUPABASE_ASCII_PHOTOS_FETCH_TIMEOUT_MS)
       : null;
     var requestOptions = {
-      method: 'GET',
+      method: 'POST',
       cache: 'no-store',
       headers: {
         apikey: c.anonKey,
         Authorization: 'Bearer ' + c.anonKey,
-        Accept: 'application/json'
-      }
+        Accept: 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ page_offset: off, page_limit: lim, media_filter: normalizedFilter,
+        include_deleted: includeDeleted === true, expected_revision: off > 0 ? galleryOrderRevision : null })
     };
     if (controller) requestOptions.signal = controller.signal;
     return fetch(url, requestOptions)
       .then(function (res) {
         if (!res.ok) {
           return readFetchErrorText(res).then(function (detail) {
-            return Promise.reject(
-              new Error('Supabase ascii_photos GET ' + res.status + (detail ? ': ' + detail : ''))
-            );
+            var error = new Error('Supabase gallery page ' + res.status + (detail ? ': ' + detail : ''));
+            error.status = res.status;
+            throw error;
           });
         }
-        return res.json();
+        return res.json().then(function (page) {
+          if (requestGeneration !== galleryOrderGeneration) {
+            var staleError = new Error('Stale gallery page');
+            // A view/filter transition intentionally invalidated this response.
+            // Callers must not surface it as a cloud outage.
+            staleError.code = 'STALE_GALLERY_PAGE';
+            throw staleError;
+          }
+          galleryOrderRevision = page.revision;
+          return page.photos;
+        });
       })
       .then(function (rows) {
         if (!Array.isArray(rows)) return [];
@@ -717,6 +716,7 @@
    * @returns {void}
    */
   function setGalleryCuratorIncludeDeleted(include) {
+    if (galleryCuratorIncludeDeleted !== (include === true)) galleryOrderGeneration++;
     galleryCuratorIncludeDeleted = include === true;
   }
 
@@ -791,9 +791,11 @@
    */
   function setGalleryFeedPollContext(ctx) {
     if (!ctx || typeof ctx !== 'object') return;
+    var previousFilter = galleryFeedFilter;
     galleryFeedFilter = ctx.filter === 'image'
       ? 'image'
       : ctx.filter === 'loop' || ctx.loopOnly === true ? 'loop' : 'all';
+    if (previousFilter !== galleryFeedFilter) galleryOrderGeneration++;
     var n = ctx.nextOffset;
     galleryFeedNextOffset =
       typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
@@ -809,7 +811,54 @@
     if (!user.length && global.AsciiCameraGalleryStorage && typeof global.AsciiCameraGalleryStorage.loadUserPhotos === 'function') {
       user = global.AsciiCameraGalleryStorage.loadUserPhotos();
     }
-    return { photos: user, userCount: user.length };
+    return { photos: user, userCount: user.length, revision: galleryOrderRevision };
+  }
+
+  function setGalleryOrderBusy(busy) {
+    if (galleryOrderBusy !== busy) galleryOrderGeneration++;
+    galleryOrderBusy = busy;
+  }
+
+  /** One transaction per batch. A retry reuses the request id if the response was lost. */
+  async function saveGalleryOrder(moves) {
+    var auth = await getGallerySupabaseAuthForRest();
+    if (!auth) throw new Error('Camera session is not ready. Please try again.');
+    var c = getSupabaseConfig();
+    var body = JSON.stringify({ moves: moves, expected_revision: galleryOrderRevision,
+      request_id: global.crypto.randomUUID() });
+    var result;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        var controller = typeof global.AbortController === 'function' ? new global.AbortController() : null;
+        var timeoutId = controller ? global.setTimeout(function () { controller.abort(); }, 10000) : null;
+        var res = await fetch(c.url + '/rest/v1/rpc/gallery_order_move', {
+          method: 'POST', headers: { apikey: c.anonKey, Authorization: 'Bearer ' + auth.accessToken,
+            'Content-Type': 'application/json' }, body: body,
+          signal: controller ? controller.signal : undefined
+        });
+        if (timeoutId !== null) global.clearTimeout(timeoutId);
+        if (!res.ok) {
+          var error = new Error(await readFetchErrorText(res));
+          error.status = res.status;
+          throw error;
+        }
+        result = await res.json();
+        break;
+      } catch (error) {
+        if (timeoutId !== null) global.clearTimeout(timeoutId);
+        if (error.status || attempt === 1) throw error;
+      }
+    }
+    galleryOrderRevision = result.revision;
+    (result.ranks || []).forEach(function (rank) {
+      var row = supabaseGalleryUserCache.find(function (p) { return p.id === rank.id; });
+      if (row) row.curatorRank = rank.rank;
+    });
+    supabaseGalleryUserCache.sort(function (a, b) {
+      return a.curatorRank - b.curatorRank || a.id.localeCompare(b.id);
+    });
+    replaceSupabaseGalleryUserCache(supabaseGalleryUserCache);
+    return result;
   }
 
   /**
@@ -1179,7 +1228,7 @@
   /**
    * 软删：仅 PATCH，不从点赞表删行。
    * @param {string} photoId
-   * @param {{ bypassOwnershipCheck?: boolean, deleteReason?: string }} [opts]
+   * @param {{ bypassOwnershipCheck?: boolean, deleteReason?: string, retainDeletedCache?: boolean }} [opts]
    * @returns {Promise<boolean>}
    */
   function softDeletePhotoRow(photoId, opts) {
@@ -1214,7 +1263,11 @@
       };
       return patchAsciiPhotoRowSupabase(photoId, body, auth).then(function (ok) {
         if (!ok) return false;
-        removePhotoFromGalleryCacheById(photoId);
+        if (opts.retainDeletedCache === true) {
+          mergePhotoFieldsInGalleryCache(photoId, { isDeleted: true });
+        } else {
+          removePhotoFromGalleryCacheById(photoId);
+        }
         return true;
       });
     });
@@ -1345,7 +1398,7 @@
    * @returns {Promise<boolean>}
    */
   function pullOnceSupabase() {
-    if (pushInFlight) {
+    if (pushInFlight || galleryOrderBusy) {
       if (typeof global.console !== 'undefined' && global.console.info) {
         global.console.info('[gallery-sync] ascii_photos pull skipped (pushInFlight)');
       }
@@ -1363,6 +1416,7 @@
     }
     var save = global.AsciiCameraGalleryStorage.saveUserPhotos;
     var beforeSnap = JSON.stringify(supabaseGalleryUserCache);
+    var beforeRevision = galleryOrderRevision;
     return fetchAsciiPhotosPageFromSupabase(
       SUPABASE_ASCII_PHOTOS_FETCH_LIMIT,
       0,
@@ -1370,13 +1424,13 @@
       galleryCuratorIncludeDeleted === true
     )
       .then(function (remotePhotos) {
-        if (pushInFlight) {
+        if (pushInFlight || galleryOrderBusy) {
           return false;
         }
         var beforeCount = supabaseGalleryUserCache.length;
         var beforeFirstId = firstRowIdForPollLog(supabaseGalleryUserCache);
         var first = Array.isArray(remotePhotos) ? remotePhotos : [];
-        var useMerge = supabaseGalleryUserCache.length > SUPABASE_ASCII_PHOTOS_FETCH_LIMIT;
+        var useMerge = beforeRevision === galleryOrderRevision && supabaseGalleryUserCache.length > SUPABASE_ASCII_PHOTOS_FETCH_LIMIT;
         if (useMerge) {
           var firstIds = {};
           var j;
@@ -1418,6 +1472,11 @@
         return changed;
       })
       .catch(function (err) {
+        if (err && err.code === 'STALE_GALLERY_PAGE') {
+          // A view/filter transition intentionally invalidated this response.
+          // Keep the prior status rather than showing a false cloud failure.
+          return false;
+        }
         if (typeof global.console !== 'undefined' && global.console.warn) {
           global.console.warn(
             '[gallery-sync] ascii_photos pull FAILED — keeping last good cache rows=' +
@@ -1609,9 +1668,10 @@
 
   /**
    * 从 Supabase 删除一行：`hardDelete` 默认 `true` 为物理 DELETE；`hardDelete=false` 为软删 PATCH。
-   * 物理删除前先从缓存移除该行，避免分页 tail 残留旧 id。
+   * 物理删除前先从缓存移除该行，避免分页 tail 残留旧 id。调用方可在
+   * `deferCacheRefresh` 为 true 时自行完成局部 UI 动画与缓存移除。
    * @param {string} photoId
-   * @param {{ bypassOwnershipCheck?: boolean, hardDelete?: boolean, deleteReason?: string }} [opts]
+   * @param {{ bypassOwnershipCheck?: boolean, hardDelete?: boolean, deleteReason?: string, retainDeletedCache?: boolean, deferCacheRefresh?: boolean }} [opts]
    * @returns {Promise<boolean>}
    */
   function deletePhotoRow(photoId, opts) {
@@ -1673,6 +1733,10 @@
       })
       .then(function (ok) {
         if (!ok) return false;
+        // Curator physical delete keeps its current DOM/cache briefly so the
+        // source card can complete its ASCII fade without triggering a full
+        // gallery refresh. The caller removes the row in place afterwards.
+        if (opts.deferCacheRefresh === true) return true;
         removePhotoFromGalleryCacheById(photoId);
         return pullOnce().then(function () {
           return true;
@@ -1952,6 +2016,9 @@
     /** 画廊分页每批条数（与内部 `SUPABASE_ASCII_PHOTOS_FETCH_LIMIT` 相同） */
     GALLERY_PAGE_SIZE: SUPABASE_ASCII_PHOTOS_FETCH_LIMIT,
     fetchGalleryPage: fetchGalleryPage,
+    saveGalleryOrder: saveGalleryOrder,
+    setGalleryOrderBusy: setGalleryOrderBusy,
+    getGalleryOrderRevision: function () { return galleryOrderRevision; },
     replaceSupabaseGalleryUserCache: replaceSupabaseGalleryUserCache,
     appendSupabaseGalleryUserCache: appendSupabaseGalleryUserCache,
     setGalleryFeedPollContext: setGalleryFeedPollContext,
