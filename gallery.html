@@ -2721,8 +2721,12 @@ let lightboxOpenPhoto = null;
 let lightboxOriginView = 'grid';
 let lightboxClosing = false;
 let galleryRenderAfterLightbox = false;
-/** @type {ReturnType<typeof setInterval> | null} 网格悬停 ASCII 动画定时器（同时仅一张在播） */
-let galleryThumbAnimTimer = null;
+/** 可视区域内 Grid Loop 的帧缓存；页面刷新后清空，避免缓存无限增长。 */
+const galleryLoopFrameCache = new Map();
+/** 同一 Loop 的进行中请求，避免 Grid / Showcase 重复请求同一组帧。 */
+const galleryLoopFrameRequests = new Map();
+/** @type {IntersectionObserver | null} */
+let galleryLoopObserver = null;
 /** @type {ReturnType<typeof setInterval> | null} 灯箱内 ASCII 帧动画 */
 let lightboxAsciiAnimTimer = null;
 /** 打开灯箱递增，用于忽略过期的 fetch */
@@ -2938,7 +2942,6 @@ let galleryShowcaseViewGeneration = 0;
 /** Cover Flow 中央作品的点赞状态；与 Grid 的 Lightbox 点赞 API 共用。 */
 let galleryCoverFlowLikeState = { photoId: '', liked: false, count: 0 };
 let galleryCoverFlowLikeRequestGen = 0;
-let galleryCoverFlowAnimTimer = null;
 let galleryCoverFlowAnimGen = 0;
 /** 首屏 Gallery 入场动画是否已经播放过 */
 let galleryEntrancePlayed = false;
@@ -7897,51 +7900,95 @@ function inferUserPhotoCountFromPhotos(photos) {
   return n;
 }
 
-/**
- * 停止缩略图悬停动画并清除定时器。
- * @returns {void}
- */
+/** 停止一张 Loop 的本地播放，并恢复到首帧，避免离开视口后继续占用资源。 */
+function stopGalleryLoopCard(card) {
+  if (!card) return;
+  if (card._galleryLoopTimer != null) clearInterval(card._galleryLoopTimer);
+  card._galleryLoopTimer = null;
+  card._galleryLoopPhotoId = '';
+  var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+  var photo = index >= 0 ? photosCache[index] : null;
+  var textTarget = card.querySelector('.cover-flow-card-ascii-text');
+  var pre = card.querySelector('.photo-thumb pre');
+  if (textTarget && photo && typeof photo.ascii === 'string') textTarget.textContent = photo.ascii;
+  if (pre && photo && typeof photo.ascii === 'string') pre.textContent = photo.ascii;
+}
+
+/** 停止当前页面中所有本地 Loop 播放；删除、拖拽和视图切换时调用。 */
 function clearGalleryThumbAnim() {
-  if (galleryThumbAnimTimer != null) {
-    clearInterval(galleryThumbAnimTimer);
-    galleryThumbAnimTimer = null;
-  }
+  document.querySelectorAll('.photo-card, .cover-flow-card').forEach(stopGalleryLoopCard);
 }
 
 /**
- * 悬停时拉取 `frames`（若尚无）并循环切换 ASCII 帧；仅当前悬停卡播放。
- * @param {HTMLElement} card
- * @param {{ ascii: string, id?: string, isAnimated?: boolean, frames?: string[], fps?: number }} photo
- * @param {number} cacheIndex `photosCache` 下标
- * @returns {void}
+ * 仅在 Loop 进入可视区域时请求完整帧；同一图片在本页只请求一次。
+ * 首帧由卡片原有的 `ascii` 立即显示，不等待这个 Promise。
  */
-function startGalleryThumbAsciiAnim(card, photo, cacheIndex) {
-  clearGalleryThumbAnim();
-  if (!photo || !isLightboxPhotoAnimatedForDownload(photo)) return;
-  var pre = card.querySelector('.photo-thumb pre');
-  if (!pre) return;
-  var fps = typeof photo.fps === 'number' && photo.fps > 0 ? photo.fps : 6;
-  var delay = Math.max(16, Math.round(1000 / fps));
-  var run = function (frames) {
-    if (!frames || !frames.length) return;
-    var idx = 0;
-    galleryThumbAnimTimer = setInterval(function () {
-      idx = (idx + 1) % frames.length;
-      pre.textContent = frames[idx];
-    }, delay);
-  };
+function requestGalleryLoopFrames(photo) {
+  if (!photo || !isLightboxPhotoAnimatedForDownload(photo)) return Promise.resolve(null);
   if (Array.isArray(photo.frames) && photo.frames.length > 0) {
-    run(photo.frames);
-    return;
+    if (photo.id) galleryLoopFrameCache.set(String(photo.id), photo.frames);
+    return Promise.resolve(photo.frames);
   }
   var pid = typeof photo.id === 'string' ? photo.id : '';
+  if (!pid) return Promise.resolve(null);
+  var cached = galleryLoopFrameCache.get(pid);
+  if (cached && cached.length) {
+    photo.frames = cached;
+    return Promise.resolve(cached);
+  }
+  if (galleryLoopFrameRequests.has(pid)) return galleryLoopFrameRequests.get(pid);
   var sync = window.AsciiCameraGalleryCloudSync;
-  if (!pid || !sync || typeof sync.fetchAsciiPhotoFramesById !== 'function') return;
-  sync.fetchAsciiPhotoFramesById(pid).then(function (fr) {
-    if (!fr || !fr.length) return;
-    photo.frames = fr;
-    if (cacheIndex >= 0 && photosCache[cacheIndex]) photosCache[cacheIndex].frames = fr;
-    run(fr);
+  if (!sync || typeof sync.fetchAsciiPhotoFramesById !== 'function') return Promise.resolve(null);
+  var request = sync.fetchAsciiPhotoFramesById(pid).then(function (frames) {
+    if (!frames || !frames.length) return null;
+    galleryLoopFrameCache.set(pid, frames);
+    photo.frames = frames;
+    return frames;
+  }).catch(function () { return null; }).finally(function () {
+    galleryLoopFrameRequests.delete(pid);
+  });
+  galleryLoopFrameRequests.set(pid, request);
+  return request;
+}
+
+/** 在本地循环播放已加载帧；不会向 Supabase 发请求。 */
+function playGalleryLoopCard(card, photo, textTarget) {
+  if (!card || !photo || !textTarget) return;
+  var pid = photo.id != null ? String(photo.id) : '';
+  if (card._galleryLoopPhotoId === pid && card._galleryLoopTimer != null) return;
+  stopGalleryLoopCard(card);
+  card._galleryLoopPhotoId = pid;
+  var run = function (frames) {
+    if (!card.isConnected || !frames || !frames.length || card._galleryLoopPhotoId !== pid) return;
+    textTarget.textContent = frames[0];
+    var fps = typeof photo.fps === 'number' && photo.fps > 0 ? photo.fps : 6;
+    var delay = Math.max(16, Math.round(1000 / fps));
+    var frameIndex = 0;
+    card._galleryLoopTimer = setInterval(function () {
+      if (!card.isConnected) return stopGalleryLoopCard(card);
+      frameIndex = (frameIndex + 1) % frames.length;
+      textTarget.textContent = frames[frameIndex];
+    }, delay);
+  };
+  requestGalleryLoopFrames(photo).then(run);
+}
+
+/** Grid 仅观察可视卡片；首帧已经在 renderGallery 中同步写入。 */
+function setupGalleryLoopObserver() {
+  if (typeof IntersectionObserver === 'undefined') return;
+  if (!galleryLoopObserver) {
+    galleryLoopObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        var card = entry.target;
+        if (!entry.isIntersecting) return stopGalleryLoopCard(card);
+        var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+        var photo = index >= 0 ? photosCache[index] : null;
+        playGalleryLoopCard(card, photo, card.querySelector('.photo-thumb pre'));
+      });
+    }, { threshold: 0.1 });
+  }
+  gallery.querySelectorAll('.photo-card[data-ascii-animated="1"]').forEach(function (card) {
+    galleryLoopObserver.observe(card);
   });
 }
 
@@ -8553,47 +8600,32 @@ function toggleGalleryCoverFlowLike(photo) {
 
 function stopGalleryCoverFlowAnimation() {
   galleryCoverFlowAnimGen += 1;
-  if (galleryCoverFlowAnimTimer !== null) {
-    clearInterval(galleryCoverFlowAnimTimer);
-    galleryCoverFlowAnimTimer = null;
-  }
+  if (!galleryCoverflowTrack) return;
+  galleryCoverflowTrack.querySelectorAll('.cover-flow-card').forEach(stopGalleryLoopCard);
 }
 
 function startGalleryCoverFlowAnimation() {
-  stopGalleryCoverFlowAnimation();
-  if (galleryViewMode !== 'coverflow' || lightbox.classList.contains('open')) return;
-  var photo = photosCache[galleryCoverFlowIndex];
-  var card = galleryCoverflowTrack && galleryCoverflowTrack.querySelector('.cover-flow-card--active');
-  var pre = card && card.querySelector('.cover-flow-card-surface pre');
-  var textTarget = pre && pre.querySelector('.cover-flow-card-ascii-text');
-  if (!photo || !pre || !textTarget || !isLightboxPhotoAnimatedForDownload(photo)) return;
-  var runGen = galleryCoverFlowAnimGen;
-  var run = function (frames) {
-    if (runGen !== galleryCoverFlowAnimGen || !frames || !frames.length) return;
-    var frameIndex = 0;
-    textTarget.textContent = frames[frameIndex];
-    var fps = typeof photo.fps === 'number' && photo.fps > 0 ? photo.fps : 6;
-    var delay = Math.max(16, Math.round(1000 / fps));
-    galleryCoverFlowAnimTimer = setInterval(function () {
-      if (runGen !== galleryCoverFlowAnimGen || galleryViewMode !== 'coverflow') {
-        stopGalleryCoverFlowAnimation();
-        return;
-      }
-      frameIndex = (frameIndex + 1) % frames.length;
-      textTarget.textContent = frames[frameIndex];
-    }, delay);
-  };
-  if (Array.isArray(photo.frames) && photo.frames.length > 0) {
-    run(photo.frames);
+  if (galleryViewMode !== 'coverflow' || lightbox.classList.contains('open') || !galleryCoverflowTrack) {
+    stopGalleryCoverFlowAnimation();
     return;
   }
-  var photoId = typeof photo.id === 'string' ? photo.id : '';
-  var sync = window.AsciiCameraGalleryCloudSync;
-  if (!photoId || !sync || typeof sync.fetchAsciiPhotoFramesById !== 'function') return;
-  sync.fetchAsciiPhotoFramesById(photoId).then(function (frames) {
-    if (frames && frames.length) photo.frames = frames;
-    run(frames);
-  }).catch(function () {});
+  var cards = Array.prototype.slice.call(galleryCoverflowTrack.querySelectorAll('.cover-flow-card'));
+  var activePosition = cards.findIndex(function (card) {
+    return parseInt(card.getAttribute('data-index') || '-1', 10) === galleryCoverFlowIndex;
+  });
+  var viewportRect = galleryCoverflowViewport && galleryCoverflowViewport.getBoundingClientRect();
+  cards.forEach(function (card, position) {
+    var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+    var photo = index >= 0 ? photosCache[index] : null;
+    var rect = card.getBoundingClientRect();
+    var visible = viewportRect && rect.right > viewportRect.left && rect.left < viewportRect.right;
+    var allowed = activePosition >= 0 && Math.abs(position - activePosition) <= 1;
+    if (!visible || !allowed || !photo || !isLightboxPhotoAnimatedForDownload(photo)) {
+      stopGalleryLoopCard(card);
+      return;
+    }
+    playGalleryLoopCard(card, photo, card.querySelector('.cover-flow-card-ascii-text'));
+  });
 }
 
 function inferGalleryCoverFlowShape(ascii) {
@@ -8839,8 +8871,7 @@ function updateGalleryCoverFlowCuratorToolbar() {
       ? '<button type="button" class="cover-flow-card-curator-action cover-flow-card-curator-action--restore" data-coverflow-curator-action="restore" data-user-index="' + index + '">Restore</button>' +
         '<button type="button" class="cover-flow-card-curator-action cover-flow-card-curator-action--purge" data-coverflow-curator-action="purge" data-user-index="' + index + '">Delete</button>'
       : '<button type="button" class="cover-flow-card-curator-action cover-flow-card-curator-action--remove" data-coverflow-curator-action="remove" data-user-index="' + index + '">Remove</button>';
-    galleryCoverflowCuratorToolbar.innerHTML = actionHtml +
-      (isLoop ? '<span class="cover-flow-card-loop-marker">.gif</span>' : '') + galleryDragHandle(index);
+    galleryCoverflowCuratorToolbar.innerHTML = actionHtml + galleryDragHandle(index);
     galleryCoverflowCuratorToolbar.setAttribute('data-state', signature);
     galleryCoverflowCuratorToolbar.querySelectorAll('[data-coverflow-curator-action]').forEach(function (button) {
       button.addEventListener('click', function (event) {
@@ -9443,9 +9474,7 @@ function renderGallery(photos, userCountOverride) {
     const canShowBuiltinRemove = curatorModeActive && !curatorPreviewActive && !isUser && p.isDefault;
     let metaHtml = '';
     if (isUser) {
-      const centerGif = isAnimUser
-        ? '<span class="photo-meta-center photo-meta-gif">.gif</span>'
-        : '<span class="photo-meta-center" aria-hidden="true"></span>';
+      const centerGif = '<span class="photo-meta-center" aria-hidden="true"></span>';
       let rightCell = '';
       if (showCuratorRestore) {
         rightCell =
@@ -9509,6 +9538,7 @@ function renderGallery(photos, userCountOverride) {
     );
   }).join('');
   setupGalleryThumbResize();
+  setupGalleryLoopObserver();
   requestAnimationFrame(function () {
     requestAnimationFrame(layoutGalleryThumbs);
   });
@@ -9519,20 +9549,6 @@ function renderGallery(photos, userCountOverride) {
       if (Date.now() < gallerySuppressClickUntil || (el && el.closest('.delete-btn, .restore-btn, .purge-btn, .gallery-drag-handle'))) return;
       var ix = parseInt(card.dataset.index, 10);
       openLightbox(photosCache[ix], ix, card);
-    });
-    card.addEventListener('mouseenter', function () {
-      if (galleryDrag || card.classList.contains('photo-card--delete-fading')) return;
-      var idx = parseInt(card.getAttribute('data-index') || '0', 10);
-      var ph = photosCache[idx];
-      if (ph && isLightboxPhotoAnimatedForDownload(ph)) startGalleryThumbAsciiAnim(card, ph, idx);
-    });
-    card.addEventListener('mouseleave', function () {
-      clearGalleryThumbAnim();
-      if (card.classList.contains('photo-card--delete-fading')) return;
-      var idx = parseInt(card.getAttribute('data-index') || '0', 10);
-      var ph = photosCache[idx];
-      var pre = card.querySelector('.photo-thumb pre');
-      if (pre && ph && typeof ph.ascii === 'string') pre.textContent = ph.ascii;
     });
   });
   gallery.querySelectorAll('.delete-btn').forEach(btn => {
