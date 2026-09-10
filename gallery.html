@@ -433,6 +433,7 @@
   #empty { text-align: center; opacity: 0.3; margin-top: 80px; font-size: 13px; letter-spacing: 2px; line-height: 2.5; }
   /** 列距保持 16px；行距加倍，减轻卡片纵向拥挤感 */
   #gallery {
+    position: relative;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     column-gap: 16px;
@@ -502,7 +503,16 @@
   }
   body:not(.gallery-curator-mode) .gallery-drag-handle { display: none; }
   body.gallery-reordering { user-select: none; cursor: grabbing; }
+  body.gallery-reordering .photo-card,
+  body.gallery-reordering .cover-flow-card {
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s;
+    will-change: transform;
+  }
   .gallery-drag-source { opacity: 0.35; }
+  body.gallery-reordering #gallery .photo-card.gallery-reorder-shift,
+  body.gallery-reordering #gallery-coverflow-track .cover-flow-card.gallery-reorder-shift {
+    transform: translate3d(var(--gallery-reorder-x, 0px), var(--gallery-reorder-y, 0px), 0);
+  }
   .gallery-drop-before { box-shadow: -3px 0 #00ff41; }
   .gallery-drop-after { box-shadow: 3px 0 #00ff41; }
   .gallery-drag-ghost {
@@ -1843,6 +1853,7 @@
     border-radius: 0 !important;
   }
   #gallery-coverflow-track {
+    position: relative;
     height: 100%;
     width: max-content;
     min-width: 100%;
@@ -7635,6 +7646,168 @@ function clearGalleryDropMarkers() {
   });
 }
 
+function clearGalleryReorderOffsets() {
+  document.querySelectorAll('.gallery-reorder-shift').forEach(function (el) {
+    el.classList.remove('gallery-reorder-shift');
+    el.style.removeProperty('--gallery-reorder-x');
+    el.style.removeProperty('--gallery-reorder-y');
+  });
+}
+
+function applyGalleryReorderOffsetList(offsets) {
+  (offsets || []).forEach(function (offset) {
+    if (!offset.card || !offset.card.isConnected) return;
+    offset.card.style.setProperty('--gallery-reorder-x', offset.dx + 'px');
+    offset.card.style.setProperty('--gallery-reorder-y', offset.dy + 'px');
+    offset.card.classList.add('gallery-reorder-shift');
+  });
+}
+
+function getGalleryDragItems(drag) {
+  var root = drag.view === 'coverflow' ? galleryCoverflowTrack : gallery;
+  var selector = drag.view === 'coverflow' ? '.cover-flow-card' : '.photo-card';
+  if (!root) return [];
+  return Array.prototype.slice.call(root.querySelectorAll(selector)).map(function (card) {
+    var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+    return {
+      card: card,
+      index: index,
+      photo: index >= 0 ? photosCache[index] : null
+    };
+  });
+}
+
+function getGalleryDragItemRect(rootRect, card) {
+  var left = rootRect.left + card.offsetLeft;
+  var top = rootRect.top + card.offsetTop;
+  var width = card.offsetWidth;
+  var height = card.offsetHeight;
+  return {
+    left: left,
+    top: top,
+    right: left + width,
+    bottom: top + height,
+    width: width,
+    height: height
+  };
+}
+
+function copyGalleryDragMeasureStyle(source, clone, view) {
+  var style = getComputedStyle(source);
+  clone.style.position = 'absolute';
+  clone.style.left = '-100000px';
+  clone.style.top = '0';
+  clone.style.visibility = 'hidden';
+  clone.style.pointerEvents = 'none';
+  clone.style.zIndex = '-1';
+  clone.style.boxSizing = style.boxSizing;
+  clone.style.display = style.display;
+  clone.style.alignItems = style.alignItems;
+  clone.style.justifyContent = style.justifyContent;
+  clone.style.gap = style.gap;
+  clone.style.columnGap = style.columnGap;
+  clone.style.rowGap = style.rowGap;
+  clone.style.padding = style.padding;
+  clone.style.margin = '0';
+  if (view === 'grid') {
+    clone.style.width = source.getBoundingClientRect().width + 'px';
+    clone.style.gridTemplateColumns = style.gridTemplateColumns;
+    clone.style.gridAutoRows = style.gridAutoRows;
+    clone.style.gridAutoFlow = style.gridAutoFlow;
+    clone.style.alignItems = style.alignItems;
+  } else {
+    clone.style.height = source.getBoundingClientRect().height + 'px';
+    clone.style.width = Math.max(source.scrollWidth, source.getBoundingClientRect().width) + 'px';
+  }
+}
+
+function measureGalleryDragFinalPositions(drag, root, items, finalItems) {
+  var currentPositions = new Map();
+  items.forEach(function (item) {
+    currentPositions.set(item.card, {
+      left: item.card.offsetLeft,
+      top: item.card.offsetTop
+    });
+  });
+
+  var cloneRoot = root.cloneNode(false);
+  cloneRoot.removeAttribute('id');
+  cloneRoot.classList.remove('gallery--preparing', 'gallery--entering');
+  cloneRoot.setAttribute('aria-hidden', 'true');
+  copyGalleryDragMeasureStyle(root, cloneRoot, drag.view);
+  finalItems.forEach(function (item) {
+    var cloneCard = item.card.cloneNode(true);
+    cloneCard.classList.remove(
+      'gallery-drop-before',
+      'gallery-drop-after',
+      'gallery-drag-source',
+      'gallery-reorder-shift'
+    );
+    cloneCard.style.removeProperty('--gallery-reorder-x');
+    cloneCard.style.removeProperty('--gallery-reorder-y');
+    cloneRoot.appendChild(cloneCard);
+  });
+  document.body.appendChild(cloneRoot);
+
+  var cloneCards = Array.prototype.slice.call(cloneRoot.children);
+  var finalPositions = new Map();
+  finalItems.forEach(function (item, index) {
+    var cloneCard = cloneCards[index];
+    if (!cloneCard) return;
+    finalPositions.set(item.card, {
+      left: cloneCard.offsetLeft,
+      top: cloneCard.offsetTop
+    });
+  });
+  cloneRoot.remove();
+
+  return {
+    current: currentPositions,
+    final: finalPositions
+  };
+}
+
+function applyGalleryDragReorderOffsets(drag, items, fromPosition, anchorPosition, after) {
+  if (fromPosition < 0 || anchorPosition < 0 || fromPosition >= items.length || anchorPosition >= items.length) return;
+  var root = drag.view === 'coverflow' ? galleryCoverflowTrack : gallery;
+  if (!root) return;
+  var signature = [
+    drag.view,
+    items.length,
+    Math.round(root.getBoundingClientRect().width),
+    fromPosition,
+    anchorPosition,
+    after ? 'after' : 'before'
+  ].join(':');
+  if (drag.reorderSignature === signature && drag.reorderOffsets) {
+    applyGalleryReorderOffsetList(drag.reorderOffsets);
+    return;
+  }
+  drag.reorderSignature = signature;
+  drag.reorderOffsets = [];
+
+  var finalItems = items.slice();
+  var moved = finalItems.splice(fromPosition, 1)[0];
+  var insertPosition = anchorPosition + (after ? 1 : 0);
+  if (insertPosition > fromPosition) insertPosition -= 1;
+  insertPosition = Math.max(0, Math.min(finalItems.length, insertPosition));
+  if (insertPosition === fromPosition) return;
+  finalItems.splice(insertPosition, 0, moved);
+
+  var positions = measureGalleryDragFinalPositions(drag, root, items, finalItems);
+  items.forEach(function (item) {
+    if (item === moved) return;
+    var current = positions.current.get(item.card);
+    var final = positions.final.get(item.card);
+    if (!current || !final) return;
+    var dx = Math.round((final.left - current.left) * 100) / 100;
+    var dy = Math.round((final.top - current.top) * 100) / 100;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+    drag.reorderOffsets.push({ card: item.card, dx: dx, dy: dy });
+  });
+  applyGalleryReorderOffsetList(drag.reorderOffsets);
+}
+
 function finishGalleryDrag(commit) {
   var drag = galleryDrag;
   if (!drag) return;
@@ -7643,6 +7816,7 @@ function finishGalleryDrag(commit) {
   if (drag.ghost) drag.ghost.remove();
   document.body.classList.remove('gallery-reordering');
   clearGalleryDropMarkers();
+  clearGalleryReorderOffsets();
   if (galleryCoverflowViewport) galleryCoverflowViewport.style.removeProperty('scroll-snap-type');
   if (document.body.hasPointerCapture(drag.pointerId)) document.body.releasePointerCapture(drag.pointerId);
   if (drag.started) gallerySuppressClickUntil = Date.now() + 400;
@@ -7668,26 +7842,43 @@ function updateGalleryDragTarget() {
   drag.ghost.style.left = Math.max(0, Math.min(innerWidth - 114, drag.x + 14)) + 'px';
   drag.ghost.style.top = ghostY + 'px';
   drag.ghost.style.opacity = drag.valid ? '0.85' : '0.35';
-  var container = drag.view === 'coverflow' ? galleryCoverflowTrack : gallery;
-  var candidates = container.querySelectorAll(drag.view === 'coverflow' ? '.cover-flow-card' : '.photo-card');
+  var candidates = getGalleryDragItems(drag);
   var best = null;
   var bestDistance = Infinity;
-  candidates.forEach(function (card) {
-    var photo = photosCache[Number(card.dataset.index)];
+  var fromPosition = -1;
+  var container = drag.view === 'coverflow' ? galleryCoverflowTrack : gallery;
+  var containerRect = container ? container.getBoundingClientRect() : null;
+  candidates.forEach(function (item, position) {
+    var card = item.card;
+    var photo = item.photo;
     if (!photo) return;
-    if (photo.id === drag.id) { card.classList.add('gallery-drag-source'); return; }
-    var r = card.getBoundingClientRect();
+    if (photo.id === drag.id) {
+      fromPosition = position;
+      card.classList.add('gallery-drag-source');
+      return;
+    }
+    if (!containerRect) return;
+    var r = getGalleryDragItemRect(containerRect, card);
     if (!drag.valid || r.bottom < rect.top || r.top > rect.bottom || r.right < rect.left || r.left > rect.right) return;
     var cx = r.left + r.width / 2;
     var cy = r.top + r.height / 2;
     var distance = Math.pow(drag.x - cx, 2) + (drag.view === 'grid' ? Math.pow(drag.y - cy, 2) : 0);
-    if (distance < bestDistance) { best = { card: card, photo: photo, rect: r, cx: cx, cy: cy }; bestDistance = distance; }
+    if (distance < bestDistance) {
+      best = { card: card, photo: photo, rect: r, cx: cx, cy: cy, position: position };
+      bestDistance = distance;
+    }
   });
-  if (!best) return;
+  if (!best) {
+    drag.reorderSignature = '';
+    drag.reorderOffsets = [];
+    clearGalleryReorderOffsets();
+    return;
+  }
   drag.anchor = best.photo.id;
   drag.after = drag.view === 'grid' && (drag.y < best.rect.top || drag.y > best.rect.bottom)
     ? drag.y > best.cy : drag.x > best.cx;
   best.card.classList.add(drag.after ? 'gallery-drop-after' : 'gallery-drop-before');
+  applyGalleryDragReorderOffsets(drag, candidates, fromPosition, best.position, drag.after);
 }
 
 function galleryDragFrame(time) {
