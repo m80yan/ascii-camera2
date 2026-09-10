@@ -162,6 +162,14 @@ AsciiCameraGalleryCloudSync.getSyncStatus()
 
 若返回 `enabled: true` 且 `provider: "supabase"`，说明前端已读到 URL 与 anon key。再上传或保存一张作品，等待约 1 秒后再次执行；若 `lastPushOk: true`（插入或删除成功）且 `lastPullOk: true`，说明与 Supabase 的请求成功。若 `lastPushError` / `lastPullError` 有内容，多为 RLS、表名或网络（含嵌入页拦截 `fetch`）问题。
 
+### Gallery 当前交互
+
+- Gallery 顶部保留 `GRID / SHOWCASE` 视图切换；`Upload Image` 下方的 `FILTER: ALL ▾` 用于筛选 `ALL`、`IMAGE`（静态作品）和 `LOOP`（`is_animated=true` 的动画作品）。
+- 筛选会同时作用于 Grid、Showcase 与 Showcase 下方的 List。Supabase 模式会按筛选条件分页查询，因此 `is_animated` 列必须存在；本文件前面的建表 SQL 已包含该列。
+- Showcase 中央图片可以单击或按 Enter 打开 Lightbox；左右键、左右按钮、Like、Download 与 Esc 关闭均使用共用 Lightbox 行为。
+- Showcase Lightbox 关闭后，大图会回到中央 2D 图片；切换 Grid / Showcase 时会先关闭 Lightbox。Grid 最新用户上传图片会占据 2×2 网格单元。
+- 下拉控件不需要新增环境变量或重新配置 Supabase；修改前端后仍需按本文件的构建与重新部署流程发布。
+
 ### Notion 嵌入里「配置了云端但仍不同步」
 
 1. 部署后的 **Gallery 页面顶部** 会有一行 **云端同步状态**（绿色为正常，红色为失败并带简短原因）。先看红字内容。

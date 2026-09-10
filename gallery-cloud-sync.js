@@ -76,8 +76,8 @@
     return full.slice(0, PREVIEW_ASCII_MAX_LENGTH);
   }
 
-  /** @type {boolean} 与 `gallery.html` 当前标签同步：Loop 为 true（轮询首屏用 `is_animated=eq.true`） */
-  var galleryFeedLoopOnly = false;
+  /** @type {'all' | 'image' | 'loop'} 与 `gallery.html` 当前内容筛选同步。 */
+  var galleryFeedFilter = 'all';
   /** @type {number} 下一批 range 请求的 offset（由画廊写入，供日志/未来扩展） */
   var galleryFeedNextOffset = 0;
   /** @type {boolean} 策展模式：列表含已软删行（`is_deleted=true`） */
@@ -602,13 +602,13 @@
 
   /**
    * 拉取 `ascii_photos` 一页（offset/limit）；不含 `frames` 列。
-   * Loop 时在查询串加 `is_animated=eq.true`（服务端过滤）。
+   * IMAGE / LOOP 时在查询串按 `is_animated` 服务端过滤。
    * @param {number} limit
    * @param {number} [offset]
-   * @param {boolean} [loopOnly]
+   * @param {'all' | 'image' | 'loop' | boolean} [feedFilter]
    * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }>>}
    */
-  function fetchAsciiPhotosPageFromSupabase(limit, offset, loopOnly, includeDeleted) {
+  function fetchAsciiPhotosPageFromSupabase(limit, offset, feedFilter, includeDeleted) {
     var c = getSupabaseConfig();
     var table = getSupabasePhotosTable();
     var lim = Math.max(
@@ -631,8 +631,13 @@
     if (includeDeleted !== true) {
       url += '&or=(is_deleted.is.null,is_deleted.eq.false)';
     }
-    if (loopOnly === true) {
+    var normalizedFilter = feedFilter === true || feedFilter === 'loop'
+      ? 'loop'
+      : feedFilter === 'image' ? 'image' : 'all';
+    if (normalizedFilter === 'loop') {
       url += '&is_animated=eq.true';
+    } else if (normalizedFilter === 'image') {
+      url += '&is_animated=eq.false';
     }
     var controller = typeof global.AbortController === 'function' ? new global.AbortController() : null;
     var timeoutId = controller
@@ -691,17 +696,17 @@
   }
 
   /**
-   * 供画廊分页：`offset`/`limit` 与当前标签的 Loop 过滤。
+   * 供画廊分页：`offset`/`limit` 与当前 ALL / IMAGE / LOOP 过滤。
    * @param {number} offset PostgREST `offset`
    * @param {number} limit PostgREST `limit`
-   * @param {boolean} loopOnly 仅 `is_animated=true`
+   * @param {'all' | 'image' | 'loop'} feedFilter
    * @returns {Promise<Array<{ id: string, ascii: string, color: string, time: number, mine: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }>>}
    */
-  function fetchGalleryPage(offset, limit, loopOnly) {
+  function fetchGalleryPage(offset, limit, feedFilter) {
     return fetchAsciiPhotosPageFromSupabase(
       limit,
       offset,
-      loopOnly === true,
+      feedFilter,
       galleryCuratorIncludeDeleted === true
     );
   }
@@ -781,12 +786,14 @@
 
   /**
    * 画廊同步轮询上下文（`pullOnceSupabase` 合并策略与查询过滤用）。
-   * @param {{ loopOnly?: boolean, nextOffset?: number }} ctx
+   * @param {{ filter?: string, loopOnly?: boolean, nextOffset?: number }} ctx
    * @returns {void}
    */
   function setGalleryFeedPollContext(ctx) {
     if (!ctx || typeof ctx !== 'object') return;
-    galleryFeedLoopOnly = ctx.loopOnly === true;
+    galleryFeedFilter = ctx.filter === 'image'
+      ? 'image'
+      : ctx.filter === 'loop' || ctx.loopOnly === true ? 'loop' : 'all';
     var n = ctx.nextOffset;
     galleryFeedNextOffset =
       typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
@@ -1359,7 +1366,7 @@
     return fetchAsciiPhotosPageFromSupabase(
       SUPABASE_ASCII_PHOTOS_FETCH_LIMIT,
       0,
-      galleryFeedLoopOnly,
+      galleryFeedFilter,
       galleryCuratorIncludeDeleted === true
     )
       .then(function (remotePhotos) {

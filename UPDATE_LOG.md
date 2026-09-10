@@ -4,6 +4,29 @@
 
 ---
 
+## 2026-09-09 — Gallery 筛选器与 Showcase / Lightbox 交互
+
+### Gallery 筛选
+
+- 顶部 `Upload Image` 下方新增文字下拉控件，默认显示 `FILTER: ALL ▾`；控件左边缘与上传按钮对齐，文字与 `GRID / SHOWCASE` 控件垂直对齐。
+- 下拉选项为 `ALL`、`IMAGE`、`LOOP`；箭头在展开与收起时以旋转动画切换方向。
+- 筛选状态同时作用于 Grid、Showcase 和 Showcase 下方的 List。
+- Supabase 模式按 `is_animated` 在服务端分页查询：`LOOP` 使用 `is_animated=true`，`IMAGE` 使用 `is_animated=false`；切换筛选时会废弃旧请求，避免旧结果覆盖新结果。
+
+### Showcase / Lightbox
+
+- Showcase 中央 2D 图片支持单击或 Enter 进入共用 Lightbox；Lightbox 继续支持左右按钮、键盘左右键、Like、Download 和 Esc 关闭。
+- Showcase Lightbox 关闭时，当前大图会通过共享元素动画回到中央 2D 图片；关闭后的键盘焦点回到 Showcase viewport，不显示多余的卡片焦点框。
+- Showcase 回收动画不会绘制额外的黑色飞行层、绿色边框或阴影；切换 Grid / Showcase 前仍会先清理 Lightbox 状态。
+- Grid 中最新上传的用户图片占据 2×2 网格单元，保持约 4 倍普通卡片显示面积。
+
+### 验证
+
+- 已通过内联脚本解析、`gallery-cloud-sync.js` 语法检查与 `git diff --check`。
+- 已在浏览器中验证筛选菜单布局、箭头旋转、三种筛选结果同步，以及 Showcase Enter / Lightbox / Esc 流程。
+
+---
+
 ## 2026-03-29 — 嵌入分区、云端双后端与相机页保留
 
 ### Notion / 存储分区与 `opener`

@@ -200,6 +200,23 @@ Avoid:
 - aggressive social mechanics
 - overly formal publishing systems
 
+## Gallery view and filter behavior
+
+Gallery has two independent concerns:
+
+- `GRID / SHOWCASE` changes the presentation view.
+- `FILTER: ALL / IMAGE / LOOP` changes the content set.
+
+Keep these controls visually distinct. The filter is a compact text dropdown below `Upload Image`; its selected value remains visible and its arrow rotates when the menu opens. The same filter must drive Grid, Showcase, the Showcase List, Supabase pagination, and polling.
+
+`IMAGE` means a static ASCII work (`is_animated=false`); `LOOP` means an animated ASCII work (`is_animated=true`). When a filter changes, invalidate older requests before applying the new result so stale cloud responses cannot replace the selected filter.
+
+## Showcase and Lightbox interaction
+
+The central Showcase 2D image opens the shared Lightbox by click or Enter. Preserve the shared Lightbox behavior: left/right buttons, keyboard navigation, Like, Download, and Esc close.
+
+When Showcase Lightbox closes, the selected large image returns to the central 2D image through the existing shared-element motion. Return focus to the Showcase viewport so no extra card focus frame appears, while keeping keyboard navigation available. Do not add a second persistent image/action layer behind the central image.
+
 ---
 
 ## Anonymous auth should remain invisible
