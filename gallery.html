@@ -3102,6 +3102,8 @@ const galleryLoopFrameCache = new Map();
 const galleryLoopFrameRequests = new Map();
 /** @type {IntersectionObserver | null} */
 let galleryLoopObserver = null;
+/** 当前鼠标悬停的 Loop 卡片；存在时其余 Loop 保持在各自当前帧。 */
+let galleryLoopHoverFocusCard = null;
 /** @type {ReturnType<typeof setInterval> | null} 灯箱内 ASCII 帧动画 */
 let lightboxAsciiAnimTimer = null;
 /** 打开灯箱递增，用于忽略过期的 fetch */
@@ -9019,7 +9021,28 @@ function stopGalleryLoopCard(card) {
 
 /** 停止当前页面中所有本地 Loop 播放；删除、拖拽和视图切换时调用。 */
 function clearGalleryThumbAnim() {
+  galleryLoopHoverFocusCard = null;
   document.querySelectorAll('.photo-card, .cover-flow-card').forEach(stopGalleryLoopCard);
+}
+
+/**
+ * 悬停一张 Loop 时，仅它继续推进帧索引；其它可视 Loop 的 DOM 保持不动，
+ * 因而离开后会从暂停的那一帧自然续播。
+ */
+function setGalleryLoopHoverFocus(card, entering) {
+  if (!card || card.getAttribute('data-ascii-animated') !== '1') return;
+  if (entering) {
+    galleryLoopHoverFocusCard = card;
+  } else if (galleryLoopHoverFocusCard === card) {
+    galleryLoopHoverFocusCard = null;
+  }
+}
+
+function galleryLoopIsPausedByHover(card) {
+  if (galleryLoopHoverFocusCard && !galleryLoopHoverFocusCard.isConnected) {
+    galleryLoopHoverFocusCard = null;
+  }
+  return !!galleryLoopHoverFocusCard && galleryLoopHoverFocusCard !== card;
 }
 
 /**
@@ -9069,6 +9092,7 @@ function playGalleryLoopCard(card, photo, textTarget) {
     var frameIndex = 0;
     card._galleryLoopTimer = setInterval(function () {
       if (!card.isConnected) return stopGalleryLoopCard(card);
+      if (galleryLoopIsPausedByHover(card)) return;
       frameIndex = (frameIndex + 1) % frames.length;
       textTarget.textContent = frames[frameIndex];
     }, delay);
@@ -9709,6 +9733,7 @@ function toggleGalleryCoverFlowLike(photo) {
 
 function stopGalleryCoverFlowAnimation() {
   galleryCoverFlowAnimGen += 1;
+  galleryLoopHoverFocusCard = null;
   if (!galleryCoverflowTrack) return;
   galleryCoverflowTrack.querySelectorAll('.cover-flow-card').forEach(stopGalleryLoopCard);
 }
@@ -10207,7 +10232,8 @@ function renderGalleryCoverFlow() {
     // Iron Bar 只负责黑色背板；保留原始圆形/椭圆遮罩，避免组合滤镜退化成矩形。
     var shape = getGalleryCoverFlowShape(photo, ascii);
     var characterMask = shape === 'character' ? buildGalleryCoverFlowCharacterMask(ascii) : '';
-    return '<article class="cover-flow-card' + (isDeleted ? ' cover-flow-card--deleted' : '') + '" data-index="' + index + '" tabindex="0" aria-selected="false">' +
+    return '<article class="cover-flow-card' + (isDeleted ? ' cover-flow-card--deleted' : '') + '" data-index="' + index + '" tabindex="0" aria-selected="false"' +
+      (isLightboxPhotoAnimatedForDownload(photo) ? ' data-ascii-animated="1"' : '') + '>' +
       '<div class="cover-flow-card-visual">' +
       '<div class="cover-flow-card-surface" style="--cover-flow-color:' + color + '">' +
       '<span class="cover-flow-card-reflection-backdrop cover-flow-card-reflection-backdrop--' + shape + '" aria-hidden="true">' + characterMask + '</span>' +
@@ -10217,6 +10243,12 @@ function renderGalleryCoverFlow() {
       '</article>';
   }).join('');
   galleryCoverflowTrack.querySelectorAll('.cover-flow-card').forEach(function (card) {
+    card.addEventListener('mouseenter', function () {
+      setGalleryLoopHoverFocus(card, true);
+    });
+    card.addEventListener('mouseleave', function () {
+      setGalleryLoopHoverFocus(card, false);
+    });
     card.addEventListener('click', function (event) {
       var index = parseInt(card.getAttribute('data-index') || '-1', 10);
       if (index < 0 || index >= photosCache.length) return;
@@ -10679,6 +10711,12 @@ function renderGallery(photos, userCountOverride) {
     requestAnimationFrame(layoutGalleryThumbs);
   });
   gallery.querySelectorAll('.photo-card').forEach(card => {
+    card.addEventListener('mouseenter', function () {
+      setGalleryLoopHoverFocus(card, true);
+    });
+    card.addEventListener('mouseleave', function () {
+      setGalleryLoopHoverFocus(card, false);
+    });
     card.addEventListener('click', (e) => {
       var raw = e.target;
       var el = raw instanceof Element ? raw : raw && /** @type {Node} */ (raw).parentElement;
