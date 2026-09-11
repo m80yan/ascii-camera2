@@ -175,8 +175,98 @@
     width: 100%;
   }
   /** 与 `#header` 的 margin 无关，仅标题行内对齐 ASCII 状态标记 */
-  h1 { font-size: 14px; letter-spacing: 4px; text-transform: uppercase; opacity: 0.6; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  #gallery-cloud-dot-wrap { display: inline-flex; align-items: center; flex-shrink: 0; position: relative; z-index: 1; }
+  h1 { font-size: 14px; letter-spacing: 4px; text-transform: uppercase; opacity: 0.6; display: inline-flex; align-items: center; flex-wrap: wrap; }
+  .gallery-title-word {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .gallery-title-letter {
+    display: inline-block;
+    flex: 0 0 auto;
+    letter-spacing: 0;
+  }
+  .gallery-title-depth-slot {
+    position: relative;
+    width: 1ch;
+    height: 1em;
+    color: #00ff41;
+  }
+  .gallery-title-l-variant {
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transform-origin: center;
+    opacity: 0;
+    animation-duration: 20000ms;
+    animation-timing-function: steps(1, end);
+    animation-iteration-count: infinite;
+  }
+  .gallery-title-l-variant--normal { animation-name: gallery-title-l-normal-cycle; }
+  .gallery-title-l-variant--flip-x {
+    transform: scaleX(-1);
+    animation-name: gallery-title-l-flip-x-cycle;
+  }
+  .gallery-title-l-variant--flip-y {
+    transform: scaleY(-1);
+    animation-name: gallery-title-l-flip-y-cycle;
+  }
+  .gallery-title-l-variant--flip-x-repeat {
+    transform: scaleX(-1);
+    animation-name: gallery-title-l-flip-x-repeat-cycle;
+  }
+  .gallery-title-l-variant--flip-xy {
+    transform: scale(-1, -1);
+    animation-name: gallery-title-l-flip-xy-cycle;
+  }
+  #gallery-cloud-dot-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    opacity: 0;
+    animation: gallery-title-depth-toggle 20000ms steps(1, end) infinite;
+  }
+  @keyframes gallery-title-l-normal-cycle {
+    0%, 9.999% { opacity: 1; }
+    10%, 100% { opacity: 0; }
+  }
+  @keyframes gallery-title-l-flip-x-cycle {
+    0%, 19.999% { opacity: 0; }
+    20%, 29.999% { opacity: 1; }
+    30%, 100% { opacity: 0; }
+  }
+  @keyframes gallery-title-l-flip-y-cycle {
+    0%, 39.999% { opacity: 0; }
+    40%, 49.999% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+  }
+  @keyframes gallery-title-l-flip-x-repeat-cycle {
+    0%, 59.999% { opacity: 0; }
+    60%, 69.999% { opacity: 1; }
+    70%, 100% { opacity: 0; }
+  }
+  @keyframes gallery-title-l-flip-xy-cycle {
+    0%, 79.999% { opacity: 0; }
+    80%, 89.999% { opacity: 1; }
+    90%, 100% { opacity: 0; }
+  }
+  @keyframes gallery-title-depth-toggle {
+    0%, 9.999% { opacity: 0; }
+    10%, 19.999% { opacity: 1; }
+    20%, 29.999% { opacity: 0; }
+    30%, 39.999% { opacity: 1; }
+    40%, 49.999% { opacity: 0; }
+    50%, 59.999% { opacity: 1; }
+    60%, 69.999% { opacity: 0; }
+    70%, 79.999% { opacity: 1; }
+    80%, 89.999% { opacity: 0; }
+    90%, 100% { opacity: 1; }
+  }
   /** 云端状态：用绿色 ASCII 字符轮播，不使用圆形状态点 */
   .gallery-cloud-dot {
     display: inline-block;
@@ -186,6 +276,7 @@
     font-family: monospace, ui-monospace, "Courier New", monospace;
     font-size: 12px;
     font-weight: bold;
+    letter-spacing: 0;
     line-height: 1;
     text-align: center;
     text-shadow: 0 0 6px rgba(0, 255, 65, 0.75);
@@ -2527,7 +2618,24 @@
 <pre id="gallery-cell-probe" class="gallery-cell-probe" aria-hidden="true">&#x2588;</pre>
 <div id="header">
   <div class="header-row">
-    <h1><span>Gallery</span><span id="gallery-cloud-dot-wrap" aria-hidden="true"><span class="gallery-cloud-dot">·</span></span></h1>
+    <h1 aria-label="Gallery">
+      <span class="gallery-title-word" aria-hidden="true">
+        <span class="gallery-title-letter">G</span>
+        <span class="gallery-title-letter">A</span>
+        <span class="gallery-title-letter">L</span>
+        <span class="gallery-title-letter gallery-title-depth-slot">
+          <span class="gallery-title-l-variant gallery-title-l-variant--normal">L</span>
+          <span class="gallery-title-l-variant gallery-title-l-variant--flip-x">L</span>
+          <span class="gallery-title-l-variant gallery-title-l-variant--flip-y">L</span>
+          <span class="gallery-title-l-variant gallery-title-l-variant--flip-x-repeat">L</span>
+          <span class="gallery-title-l-variant gallery-title-l-variant--flip-xy">L</span>
+          <span id="gallery-cloud-dot-wrap"><span class="gallery-cloud-dot">·</span></span>
+        </span>
+        <span class="gallery-title-letter">E</span>
+        <span class="gallery-title-letter">R</span>
+        <span class="gallery-title-letter">Y</span>
+      </span>
+    </h1>
     <div id="header-actions">
       <div class="header-upload-stack">
         <button class="hdr-btn" id="upload-btn" type="button">Upload Image</button>
@@ -10780,7 +10888,6 @@ window.addEventListener('message', function (ev) {
   if (banner) {
     if (!window.AsciiCameraGalleryCloudSync || !AsciiCameraGalleryCloudSync.isEnabled()) {
       banner.style.display = 'block';
-      if (dotWrap) dotWrap.style.display = 'none';
       var su = (window.ASCII_CAMERA_SUPABASE_URL && String(window.ASCII_CAMERA_SUPABASE_URL).trim()) || '';
       var sk = (window.ASCII_CAMERA_SUPABASE_ANON_KEY && String(window.ASCII_CAMERA_SUPABASE_ANON_KEY).trim()) || '';
       var isFile = false;
