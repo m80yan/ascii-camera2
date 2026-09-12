@@ -1094,7 +1094,7 @@
   <button id="startBtn" type="button">Start Camera</button>
   <button id="snapBtn" type="button" disabled>
     <img class="snap-btn-icon" src="public/icons/camera.svg" alt="" aria-hidden="true">
-    <span>Take Photo</span>
+    <span>Capture</span>
   </button>
 </div>
 <div class="cam-status-below-actions" aria-hidden="true"></div>
@@ -1122,7 +1122,7 @@
           <div class="ascii-overlay-tabs">
             <div class="cam-mode-tabs-wrap" id="camModeTabsWrap">
               <div class="cam-mode-tabs" role="tablist" aria-label="Capture mode">
-                <button type="button" class="cam-mode-tab active" role="tab" id="camTabPhoto" aria-selected="true">Photo</button>
+                <button type="button" class="cam-mode-tab active" role="tab" id="camTabPhoto" aria-selected="true">Moment</button>
                 <button type="button" class="cam-mode-tab" role="tab" id="camTabVideo" aria-selected="false">Loop</button>
               </div>
             </div>
@@ -1297,10 +1297,10 @@ const MAX_RES_COLS = 120;
 let asciiCellMetricsCache = null;
 /** 使用块符与点阵，减轻笔画字符宽高差带来的形变 */
 const CHAR_SETS = {
-  detailed: '\u2588\u2593\u2592\u2591\u00B7 ',
-  simple:   '\u2588\u2592\u00B7 ',
-  blocks:   '\u2588\u2593\u2592\u2591 ',
-  binary:   '\u2588\u2591 '
+  detailed: '\u2588\u2593\u2592\u2591\u00B7  ',
+  simple:   '\u2588\u2592\u00B7  ',
+  blocks:   '\u2588\u2593\u2592\u2591  ',
+  binary:   '\u2588\u2591  '
 };
 /** Style 下拉取值：畸变镜（非 `CHAR_SETS` 键；字集映射见 `getChars`） */
 const STYLE_DISTORTING_MIRROR = 'distortingMirror';
@@ -1370,9 +1370,9 @@ function readSoundPreference() {
 let soundEnabled = readSoundPreference();
 
 /** 拍照按钮就绪文案（与 HTML 初始一致） */
-const SNAP_LABEL_READY = 'Take Photo';
+const SNAP_LABEL_READY = 'Capture';
 /** Video 模式就绪文案 */
-const SNAP_LABEL_VIDEO = 'Make Loop';
+const SNAP_LABEL_VIDEO = 'Capture';
 /** 写入存储过程中按钮文案 */
 const SNAP_LABEL_SAVING = 'Saving...';
 /** 预览态主按钮：重拍 */

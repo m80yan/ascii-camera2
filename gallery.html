@@ -3138,10 +3138,10 @@ function splitAsciiLinesForExport(ascii) {
 }
 
 const CHAR_SETS = {
-  detailed: '\u2588\u2593\u2592\u2591\u00B7 ',
-  simple:   '\u2588\u2592\u00B7 ',
-  blocks:   '\u2588\u2593\u2592\u2591 ',
-  binary:   '\u2588\u2591 '
+  detailed: '\u2588\u2593\u2592\u2591\u00B7  ',
+  simple:   '\u2588\u2592\u00B7  ',
+  blocks:   '\u2588\u2593\u2592\u2591  ',
+  binary:   '\u2588\u2591  '
 };
 /** Style 下拉：畸变镜（非 `CHAR_SETS` 键；字集见 {@link getUploadCharSet}），与 camera `STYLE_DISTORTING_MIRROR` 一致 */
 const STYLE_DISTORTING_MIRROR = 'distortingMirror';
@@ -9386,8 +9386,37 @@ function galleryPhotoTimeLabel(photo) {
     ', ' + pad(date.getHours()) + ':' + pad(date.getMinutes());
 }
 
-function shouldUseGridAsciiOutline(photo) {
-  return galleryPhotoTimeLabel(photo) === 'Sep 11, 2026, 08:42';
+function shouldUseGridAsciiOutline(photo, ascii, shape) {
+  if (shape === 'character') return true;
+  if (shape !== 'circle' && shape !== 'oval') return false;
+  var normalized = String(ascii || '').replace(/\r\n/g, '\n');
+  var lines = normalized.split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  if (!lines.length) return false;
+  var rows = lines.length;
+  var cols = Math.max(1, lines.reduce(function (max, line) {
+    return Math.max(max, line.length);
+  }, 0));
+  if (rows < 8 || cols < 8) return false;
+  var centerX = (cols - 1) / 2;
+  var centerY = (rows - 1) / 2;
+  var radiusX = Math.max(1, cols / 2 - 0.5);
+  var radiusY = Math.max(1, rows / 2 - 0.5);
+  var boundaryCells = 0;
+  var occupiedBoundaryCells = 0;
+  for (var y = 0; y < rows; y++) {
+    var line = lines[y] || '';
+    for (var x = 0; x < cols; x++) {
+      var dx = (x - centerX) / radiusX;
+      var dy = (y - centerY) / radiusY;
+      var distance = dx * dx + dy * dy;
+      if (distance < 0.82 || distance > 1.08) continue;
+      boundaryCells++;
+      if (x < line.length && /\S/.test(line.charAt(x))) occupiedBoundaryCells++;
+    }
+  }
+  if (!boundaryCells) return false;
+  return occupiedBoundaryCells / boundaryCells < 0.58;
 }
 
 function galleryListValue(photo, key) {
@@ -10872,10 +10901,11 @@ function renderGallery(photos, userCountOverride) {
 	    const isAnimUser = isUser && isLightboxPhotoAnimatedForDownload(p);
 	    const enterDelay = Math.min(i, 10) * 45;
 	    const gridShape = getGalleryCoverFlowShape(p, p.ascii || '');
-	    const gridOutlineShape = shouldUseGridAsciiOutline(p)
-	      ? 'character'
-	      : isGalleryCoverFlowIronBarsPhoto(p, p.ascii || '')
+	    const gridHasIronBars = isGalleryCoverFlowIronBarsPhoto(p, p.ascii || '');
+	    const gridOutlineShape = gridHasIronBars
 	      ? (gridShape === 'circle' ? 'circle' : 'square')
+	      : shouldUseGridAsciiOutline(p, p.ascii || '', gridShape)
+	      ? 'character'
 	      : gridShape;
 	    const gridShapeClass =
 	      gridShape === 'circle' || gridShape === 'oval' || gridShape === 'square' || gridShape === 'rectangle' || gridShape === 'character'
