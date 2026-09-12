@@ -578,6 +578,8 @@
   }
   .photo-card {
     position: relative;
+    box-sizing: border-box;
+    padding-bottom: 36px;
     background: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
@@ -605,16 +607,16 @@
   }
   .photo-card:hover,
   .photo-card:focus-within {
-    background: #000;
-    border-color: rgba(0,255,65,0.5);
+    background: transparent;
+    border-color: transparent;
   }
   .gallery-drag-handle {
     position: absolute;
     top: var(--gallery-drag-handle-top, 6px);
     left: var(--gallery-drag-handle-left, 6px);
     z-index: 4;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 29px;
     padding: 0;
     border: 1px solid rgba(0,255,65,0.3);
     background: #080808;
@@ -733,6 +735,9 @@
     height: 100%;
     flex: 0 0 100%;
   }
+  .gallery-drag-ghost--grid {
+    border-color: transparent;
+  }
   .gallery-drag-ghost--coverflow {
     overflow: visible;
     border-color: transparent;
@@ -777,6 +782,7 @@
   .photo-thumb {
     flex: 1 1 auto;
     min-height: 0;
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -785,8 +791,6 @@
     transition: background-color 0.15s ease;
     padding: 4px;
   }
-  .photo-card:hover .photo-thumb,
-  .photo-card:focus-within .photo-thumb,
   .gallery-drag-ghost--grid .photo-thumb {
     background: #000;
   }
@@ -796,10 +800,39 @@
     margin: 0;
     pointer-events: none;
     display: block;
+    position: relative;
     font-size: 1px;
     line-height: 1px;
     letter-spacing: 0;
     flex-shrink: 0;
+  }
+  .photo-thumb-outline {
+    position: absolute;
+    left: calc(var(--gallery-art-left-thumb, 0px) - var(--gallery-art-cell-width, 1px));
+    top: calc(var(--gallery-art-top-thumb, 0px) - var(--gallery-art-cell-height, 1px));
+    width: calc(var(--gallery-art-width, 1px) + var(--gallery-art-cell-width, 1px) + var(--gallery-art-cell-width, 1px));
+    height: calc(var(--gallery-art-height, 1px) + var(--gallery-art-cell-height, 1px) + var(--gallery-art-cell-height, 1px));
+    display: none;
+    pointer-events: none;
+  }
+  .photo-thumb-outline svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    overflow: visible;
+  }
+  .photo-card:hover .photo-thumb-outline,
+  .photo-card:focus-within .photo-thumb-outline {
+    display: block;
+  }
+  .photo-thumb pre,
+  .photo-thumb-outline {
+    transform-origin: center;
+    transition: transform 110ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .photo-card.is-pressing-art .photo-thumb pre,
+  .photo-card.is-pressing-art .photo-thumb-outline {
+    transform: scale(0.96);
   }
   .photo-card--delete-fading {
     pointer-events: none;
@@ -850,6 +883,10 @@
     visibility: hidden;
   }
   .photo-meta {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: var(--gallery-meta-top-card, auto);
     flex: 0 0 auto;
     padding: 8px 10px;
     border-top: 1px solid transparent;
@@ -858,7 +895,6 @@
     align-items: center;
     gap: 8px;
     min-height: 36px;
-    position: relative;
     z-index: 1;
     opacity: 0;
     pointer-events: none;
@@ -866,7 +902,7 @@
   }
   .photo-card:hover .photo-meta,
   .photo-card:focus-within .photo-meta {
-    border-top-color: rgba(0,255,65,0.1);
+    border-top-color: transparent;
     opacity: 1;
     pointer-events: auto;
   }
@@ -880,7 +916,11 @@
   }
   .photo-meta--3col .photo-meta-left {
     grid-column: 1;
-    justify-self: start;
+    position: absolute;
+    left: var(--gallery-art-left-meta, 0px);
+    top: 50%;
+    transform: translateY(-50%);
+    justify-self: auto;
     text-align: left;
     font-size: 10px;
     opacity: 0.4;
@@ -909,7 +949,11 @@
   }
   .photo-meta--3col .photo-meta-right {
     grid-column: 3;
-    justify-self: end;
+    position: absolute;
+    right: var(--gallery-art-right-meta, 0px);
+    top: 50%;
+    transform: translateY(-50%);
+    justify-self: auto;
     text-align: right;
     min-width: 0;
   }
@@ -918,31 +962,44 @@
    */
   .photo-card--deleted .photo-meta--3col {
     grid-template-columns: minmax(0, 1fr) auto minmax(min-content, 1fr);
-    position: static;
   }
   .photo-meta--3col .photo-meta-right .delete-btn {
     margin: 0;
   }
   /* 普通模式的时间居中；管理员模式保留原有左侧时间布局。 */
-  body:not(.gallery-curator-mode) .photo-meta--3col {
-    position: relative;
-  }
   body:not(.gallery-curator-mode) .photo-meta--3col .photo-meta-left {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    text-align: center;
-  }
-  body:not(.gallery-curator-mode) .photo-meta:not(.photo-meta--3col) {
-    position: relative;
+    text-align: left;
   }
   body:not(.gallery-curator-mode) .photo-meta:not(.photo-meta--3col) .photo-time {
     position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
+    left: var(--gallery-art-left-meta, 10px);
+    transform: none;
+  }
+  .photo-meta:not(.photo-meta--3col) .delete-btn--icon {
+    position: absolute;
+    right: var(--gallery-art-right-meta, 0px);
+    top: 50%;
+    transform: translateY(-50%);
   }
   .photo-time { font-size: 10px; opacity: 0.4; letter-spacing: 1px; white-space: nowrap; }
   .delete-btn { background: transparent; border: none; color: #ff4444; font-family: monospace, ui-monospace, "Courier New", monospace; font-size: 10px; cursor: pointer; opacity: 0.5; letter-spacing: 1px; padding: 0; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
+  .delete-btn--icon,
+  .purge-btn--icon {
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+    line-height: 0;
+  }
+  .delete-btn--icon img,
+  .purge-btn--icon img {
+    width: 16px;
+    height: 16px;
+    display: block;
+    pointer-events: none;
+  }
   .delete-btn:hover { opacity: 1; }
   /** 策展模式：管理按钮跟随卡片 hover 显示；默认保持极简。 */
   body.gallery-curator-mode .photo-card .delete-btn {
@@ -975,8 +1032,8 @@
   .restore-btn:hover { opacity: 1; }
   body.gallery-curator-mode .photo-card.photo-card--deleted .restore-btn {
     position: absolute;
-    top: 8px;
-    right: 8px;
+    top: var(--gallery-art-top-card, var(--gallery-drag-handle-top, 6px));
+    right: var(--gallery-art-right-card, 8px);
     z-index: 3;
     margin: 0;
     padding: 4px 8px;
@@ -2224,6 +2281,11 @@
     border: none;
     background: transparent;
     overflow: visible;
+    transform-origin: center;
+    transition: transform 110ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .cover-flow-card--centered:active .cover-flow-card-surface {
+    transform: scale(0.96);
   }
   .cover-flow-card-reflection-backdrop {
     position: absolute;
@@ -2342,6 +2404,19 @@
   .cover-flow-card-curator-action--purge {
     grid-column: 3;
     justify-self: end;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+  }
+  .cover-flow-card-curator-action--remove img,
+  .cover-flow-card-curator-action--purge img {
+    width: 16px;
+    height: 16px;
+    display: block;
+    pointer-events: none;
   }
   .cover-flow-card-curator-action:hover { opacity: 0.8; }
   .cover-flow-card-loop-marker {
@@ -2655,7 +2730,7 @@
           </button>
           <div class="gallery-filter-menu" id="gallery-filter-menu" role="menu" hidden>
             <button type="button" class="gallery-filter-option" role="menuitemradio" data-gallery-filter="all" aria-checked="true">ALL</button>
-            <button type="button" class="gallery-filter-option" role="menuitemradio" data-gallery-filter="image" aria-checked="false">IMAGE</button>
+            <button type="button" class="gallery-filter-option" role="menuitemradio" data-gallery-filter="image" aria-checked="false">MOMENT</button>
             <button type="button" class="gallery-filter-option" role="menuitemradio" data-gallery-filter="loop" aria-checked="false">LOOP</button>
           </div>
         </div>
@@ -7946,7 +8021,7 @@ function loadMoreGalleryFeedPage() {
 }
 
 /**
- * ALL / IMAGE / LOOP 下拉筛选器：切换时清空分页状态并拉取首屏。
+ * ALL / MOMENT / LOOP 下拉筛选器：切换时清空分页状态并拉取首屏。
  * @returns {void}
  */
 function setupGalleryFeedFilter() {
@@ -7983,7 +8058,9 @@ function setupGalleryFeedFilter() {
 
   /** @returns {void} */
   function applyFilterUi() {
-    if (galleryFilterLabel) galleryFilterLabel.textContent = galleryFeedFilter.toUpperCase();
+    if (galleryFilterLabel) {
+      galleryFilterLabel.textContent = galleryFeedFilter === 'image' ? 'MOMENT' : galleryFeedFilter.toUpperCase();
+    }
     optionButtons.forEach(function (button) {
       button.setAttribute(
         'aria-checked',
@@ -8613,8 +8690,8 @@ function createGalleryDragGhost(drag) {
 function updateGalleryDragGhost(drag) {
   if (!drag || !drag.ghost) return;
   var size = getGalleryDragThumbSize(drag);
-  var left = Math.max(0, Math.min(innerWidth - size.width, drag.x + 14));
-  var top = Math.max(0, Math.min(innerHeight - size.height, drag.y + 14));
+  var left = Math.max(0, Math.min(innerWidth - size.width, drag.x + 4));
+  var top = Math.max(0, Math.min(innerHeight - size.height, drag.y + 4));
   drag.ghost.style.left = left + 'px';
   drag.ghost.style.top = top + 'px';
   drag.ghost.style.setProperty('--gallery-drag-ghost-width', size.width + 'px');
@@ -8935,9 +9012,15 @@ if (shouldRestoreShowcase && galleryViewMode === 'coverflow') showGalleryShowcas
 
 function timeAgo(ts) {
   const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return s + 's ago';
-  if (s < 3600) return Math.floor(s/60) + 'm ago';
-  return Math.floor(s/3600) + 'h ago';
+  if (s < 60) return '<1m';
+  if (s < 3600) return Math.floor(s / 60) + 'm';
+  if (s < 86400) return Math.floor(s / 3600) + 'h';
+  if (s < 86400 * 61) return Math.floor(s / 86400) + 'd';
+  const date = new Date(ts);
+  const month = date.toLocaleString('en-US', { month: 'short' });
+  const day = date.getDate();
+  if (date.getFullYear() === new Date().getFullYear()) return month + ' ' + day;
+  return month + ' ' + day + ' ’' + String(date.getFullYear()).slice(-2);
 }
 
 /**
@@ -8967,9 +9050,27 @@ function layoutGalleryThumbs() {
     pre.style.fontSize = fontSize + 'px';
     pre.style.lineHeight = fontSize + 'px';
     const dragHandle = card.querySelector('.gallery-drag-handle');
+    const meta = card.querySelector('.photo-meta');
+    const thumbRect = thumb.getBoundingClientRect();
+    const preRect = pre.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    card.style.setProperty('--gallery-art-left-thumb', Math.round(preRect.left - thumbRect.left) + 'px');
+    card.style.setProperty('--gallery-art-top-thumb', Math.round(preRect.top - thumbRect.top) + 'px');
+    card.style.setProperty('--gallery-art-top-card', Math.round(preRect.top - cardRect.top) + 'px');
+    card.style.setProperty('--gallery-art-right-card', Math.round(cardRect.right - preRect.right) + 'px');
+    card.style.setProperty('--gallery-art-width', Math.round(preRect.width) + 'px');
+    card.style.setProperty('--gallery-art-height', Math.round(preRect.height) + 'px');
+    card.style.setProperty('--gallery-art-cell-width', (fontSize * gm.cellAspect) + 'px');
+    card.style.setProperty('--gallery-art-cell-height', fontSize + 'px');
+    if (meta) {
+      const metaRect = meta.getBoundingClientRect();
+      const preferredMetaTop = preRect.bottom - cardRect.top + fontSize;
+      const maxMetaTop = Math.max(0, cardRect.height - metaRect.height);
+      card.style.setProperty('--gallery-meta-top-card', Math.round(Math.min(preferredMetaTop, maxMetaTop)) + 'px');
+      card.style.setProperty('--gallery-art-left-meta', Math.round(preRect.left - metaRect.left) + 'px');
+      card.style.setProperty('--gallery-art-right-meta', Math.round(metaRect.right - preRect.right) + 'px');
+    }
     if (dragHandle) {
-      const cardRect = card.getBoundingClientRect();
-      const preRect = pre.getBoundingClientRect();
       card.style.setProperty('--gallery-drag-handle-left', Math.round(preRect.left - cardRect.left) + 'px');
       card.style.setProperty('--gallery-drag-handle-top', Math.round(preRect.top - cardRect.top) + 'px');
     }
@@ -9283,6 +9384,10 @@ function galleryPhotoTimeLabel(photo) {
   var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return months[date.getMonth()] + ' ' + date.getDate() + ', ' + date.getFullYear() +
     ', ' + pad(date.getHours()) + ':' + pad(date.getMinutes());
+}
+
+function shouldUseGridAsciiOutline(photo) {
+  return galleryPhotoTimeLabel(photo) === 'Sep 11, 2026, 08:42';
 }
 
 function galleryListValue(photo, key) {
@@ -9816,6 +9921,137 @@ function buildGalleryCoverFlowCharacterMask(ascii) {
 }
 
 /**
+ * Grid hover 专用：为 ASCII 图形生成像素化边界；与实际图形分离显示，避免几何 hover 框。
+ * @param {string} ascii
+ * @returns {string}
+ */
+function buildGalleryGridAsciiOutline(ascii) {
+  var normalized = String(ascii || '').replace(/\r\n/g, '\n');
+  var lines = normalized.split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  if (!lines.length) lines = [''];
+  var rows = lines.length;
+  var cols = Math.max(1, lines.reduce(function (max, line) {
+    return Math.max(max, line.length);
+  }, 0));
+  var total = rows * cols;
+  var occupiedMap = new Uint8Array(total);
+  var exteriorMap = new Uint8Array(total);
+  var queue = [];
+  var occupied = function (x, y) {
+    return y >= 0 && y < rows && x >= 0 && x < lines[y].length && /\S/.test(lines[y].charAt(x));
+  };
+  var enqueueExterior = function (x, y) {
+    if (x < 0 || y < 0 || x >= cols || y >= rows) return;
+    var index = y * cols + x;
+    if (occupiedMap[index] || exteriorMap[index]) return;
+    exteriorMap[index] = 1;
+    queue.push(index);
+  };
+  for (var y0 = 0; y0 < rows; y0++) {
+    for (var x0 = 0; x0 < cols; x0++) {
+      if (occupied(x0, y0)) occupiedMap[y0 * cols + x0] = 1;
+    }
+  }
+  for (var edgeX = 0; edgeX < cols; edgeX++) {
+    enqueueExterior(edgeX, 0);
+    enqueueExterior(edgeX, rows - 1);
+  }
+  for (var edgeY = 1; edgeY < rows - 1; edgeY++) {
+    enqueueExterior(0, edgeY);
+    enqueueExterior(cols - 1, edgeY);
+  }
+  for (var head = 0; head < queue.length; head++) {
+    var cell = queue[head];
+    var cx = cell % cols;
+    var cy = Math.floor(cell / cols);
+    enqueueExterior(cx - 1, cy);
+    enqueueExterior(cx + 1, cy);
+    enqueueExterior(cx, cy - 1);
+    enqueueExterior(cx, cy + 1);
+  }
+  var rects = [];
+  for (var y = 0; y < rows; y++) {
+    for (var x = 0; x < cols; x++) {
+      if (!occupied(x, y)) continue;
+      [
+        [-1, 0],
+        [1, 0],
+        [0, -1],
+        [0, 1]
+      ].forEach(function (delta) {
+        var nx = x + delta[0];
+        var ny = y + delta[1];
+        var outsideBounds = nx < 0 || ny < 0 || nx >= cols || ny >= rows;
+        var exteriorBlank = !outsideBounds && exteriorMap[ny * cols + nx] === 1;
+        if (outsideBounds || exteriorBlank) {
+          rects.push('<rect x="' + (nx + 1) + '" y="' + (ny + 1) + '" width="1" height="1" fill="#00ff41"></rect>');
+        }
+      });
+    }
+  }
+  return '<svg viewBox="0 0 ' + (cols + 2) + ' ' + (rows + 2) + '" preserveAspectRatio="none" aria-hidden="true">' + rects.join('') + '</svg>';
+}
+
+/**
+ * Grid hover 专用：规整形状使用稳定的像素几何描边，避免逐字符边界造成缺角或颜色黏连。
+ * @param {string} ascii
+ * @param {string} shape
+ * @returns {string}
+ */
+function buildGalleryGridShapeOutline(ascii, shape) {
+  var normalized = String(ascii || '').replace(/\r\n/g, '\n');
+  var lines = normalized.split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  if (!lines.length) lines = [''];
+  var rows = lines.length;
+  var cols = Math.max(1, lines.reduce(function (max, line) {
+    return Math.max(max, line.length);
+  }, 0));
+  var viewCols = cols + 2;
+  var viewRows = rows + 2;
+  var rects = [];
+  var addRect = function (x, y) {
+    rects.push('<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="#00ff41"></rect>');
+  };
+  if (shape === 'square' || shape === 'rectangle') {
+    for (var x = 0; x < viewCols; x++) {
+      addRect(x, 0);
+      addRect(x, viewRows - 1);
+    }
+    for (var y = 1; y < viewRows - 1; y++) {
+      addRect(0, y);
+      addRect(viewCols - 1, y);
+    }
+  } else if (shape === 'circle' || shape === 'oval') {
+    var centerX = (viewCols - 1) / 2;
+    var centerY = (viewRows - 1) / 2;
+    var radiusX = Math.max(1, viewCols / 2 - 0.5);
+    var radiusY = Math.max(1, viewRows / 2 - 0.5);
+    var edgeCells = {};
+    for (var ovalY = 0; ovalY < viewRows; ovalY++) {
+      for (var ovalX = 0; ovalX < viewCols; ovalX++) {
+        var dx = (ovalX - centerX) / radiusX;
+        var dy = (ovalY - centerY) / radiusY;
+        var currentDistance = dx * dx + dy * dy - 1;
+        var rightDx = (ovalX + 1 - centerX) / radiusX;
+        var downDy = (ovalY + 1 - centerY) / radiusY;
+        var crossesHorizontal = currentDistance * (rightDx * rightDx + dy * dy - 1) <= 0;
+        var crossesVertical = currentDistance * (dx * dx + downDy * downDy - 1) <= 0;
+        if (crossesHorizontal || crossesVertical) edgeCells[ovalX + ',' + ovalY] = true;
+      }
+    }
+    Object.keys(edgeCells).forEach(function (key) {
+      var parts = key.split(',');
+      addRect(parseInt(parts[0], 10), parseInt(parts[1], 10));
+    });
+  } else {
+    return buildGalleryGridAsciiOutline(ascii);
+  }
+  return '<svg viewBox="0 0 ' + viewCols + ' ' + viewRows + '" preserveAspectRatio="none" aria-hidden="true">' + rects.join('') + '</svg>';
+}
+
+/**
  * ASCII 数据没有独立 Alpha 通道；将与画布边缘相连的空白格视为透明区域。
  * @param {string} ascii
  * @returns {{ boundsCoverage: number, exteriorTransparency: number } | null}
@@ -10023,11 +10259,11 @@ function updateGalleryCoverFlowCuratorToolbar() {
   var signature = [toolbarMode, index, isDeleted ? 'deleted' : 'active', isLoop ? 'loop' : 'image'].join(':');
   if (galleryCoverflowCuratorToolbar.getAttribute('data-state') !== signature) {
     var actionHtml = canVisitorRemove
-      ? '<button type="button" class="cover-flow-card-curator-action cover-flow-card-curator-action--remove" data-coverflow-curator-action="remove" data-user-index="' + index + '">Remove</button>'
+      ? '<button type="button" class="cover-flow-card-curator-action cover-flow-card-curator-action--remove" data-coverflow-curator-action="remove" data-user-index="' + index + '" aria-label="Remove" title="Remove"><img src="public/icons/trash_remove.svg" alt=""></button>'
       : isDeleted
         ? '<button type="button" class="cover-flow-card-curator-action cover-flow-card-curator-action--restore" data-coverflow-curator-action="restore" data-user-index="' + index + '">Restore</button>' +
-          '<button type="button" class="cover-flow-card-curator-action cover-flow-card-curator-action--purge" data-coverflow-curator-action="purge" data-user-index="' + index + '">Delete</button>'
-        : '<button type="button" class="cover-flow-card-curator-action cover-flow-card-curator-action--remove" data-coverflow-curator-action="remove" data-user-index="' + index + '">Remove</button>';
+          '<button type="button" class="cover-flow-card-curator-action cover-flow-card-curator-action--purge" data-coverflow-curator-action="purge" data-user-index="' + index + '" aria-label="Delete" title="Delete"><img src="public/icons/trash_delete.svg" alt=""></button>'
+        : '<button type="button" class="cover-flow-card-curator-action cover-flow-card-curator-action--remove" data-coverflow-curator-action="remove" data-user-index="' + index + '" aria-label="Remove" title="Remove"><img src="public/icons/trash_remove.svg" alt=""></button>';
     galleryCoverflowCuratorToolbar.innerHTML = actionHtml + (canCuratorManage ? galleryDragHandle(index) : '');
     galleryCoverflowCuratorToolbar.setAttribute('data-state', signature);
     galleryCoverflowCuratorToolbar.querySelectorAll('[data-coverflow-curator-action]').forEach(function (button) {
@@ -10633,32 +10869,46 @@ function renderGallery(photos, userCountOverride) {
     const isUser = i < userCount;
     const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
     const isDeleted = p.isDeleted === true;
-    const isAnimUser = isUser && isLightboxPhotoAnimatedForDownload(p);
-    const enterDelay = Math.min(i, 10) * 45;
-    const canRemoveUser =
+	    const isAnimUser = isUser && isLightboxPhotoAnimatedForDownload(p);
+	    const enterDelay = Math.min(i, 10) * 45;
+	    const gridShape = getGalleryCoverFlowShape(p, p.ascii || '');
+	    const gridOutlineShape = shouldUseGridAsciiOutline(p)
+	      ? 'character'
+	      : isGalleryCoverFlowIronBarsPhoto(p, p.ascii || '')
+	      ? (gridShape === 'circle' ? 'circle' : 'square')
+	      : gridShape;
+	    const gridShapeClass =
+	      gridShape === 'circle' || gridShape === 'oval' || gridShape === 'square' || gridShape === 'rectangle' || gridShape === 'character'
+	        ? ' photo-thumb-ascii--' + gridShape
+	        : '';
+	    const gridAsciiOutline =
+	      '<span class="photo-thumb-outline">' + buildGalleryGridShapeOutline(p.ascii || '', gridOutlineShape) + '</span>';
+	    const canRemoveUser =
       !curatorPreviewActive && isUser && !isDeleted && (p.mine === true || curatorModeActive);
     const showCuratorRestore =
       isUser && isDeleted && curatorModeActive && !curatorPreviewActive;
     const canShowBuiltinRemove = curatorModeActive && !curatorPreviewActive && !isUser && p.isDefault;
     let metaHtml = '';
+    let restoreOverlayHtml = '';
     if (isUser) {
       const centerGif = '<span class="photo-meta-center" aria-hidden="true"></span>';
       let rightCell = '';
       if (showCuratorRestore) {
-        rightCell =
-          '<div class="photo-meta-right">' +
+        restoreOverlayHtml =
           '<button type="button" class="restore-btn" data-user-index="' +
           i +
-          '">Restore</button>' +
-          '<button type="button" class="purge-btn" data-user-index="' +
+          '">Restore</button>';
+        rightCell =
+          '<div class="photo-meta-right">' +
+          '<button type="button" class="purge-btn purge-btn--icon" data-user-index="' +
           i +
-          '">Delete</button></div>';
+          '" aria-label="Delete" title="Delete"><img src="public/icons/trash_delete.svg" alt=""></button></div>';
       } else if (canRemoveUser) {
         rightCell =
           '<div class="photo-meta-right">' +
-          '<button type="button" class="delete-btn" data-user-index="' +
+          '<button type="button" class="delete-btn delete-btn--icon" data-user-index="' +
           i +
-          '">Remove</button></div>';
+          '" aria-label="Remove" title="Remove"><img src="public/icons/trash_remove.svg" alt=""></button></div>';
       } else {
         rightCell = '<div class="photo-meta-right"><span class="photo-time" style="opacity:0.2">—</span></div>';
       }
@@ -10673,7 +10923,7 @@ function renderGallery(photos, userCountOverride) {
         '</div>';
     } else {
       const delHtml = canShowBuiltinRemove
-        ? '<button type="button" class="delete-btn" data-builtin="1" title="内置示例">Remove</button>'
+        ? '<button type="button" class="delete-btn delete-btn--icon" data-builtin="1" aria-label="Remove" title="内置示例"><img src="public/icons/trash_remove.svg" alt=""></button>'
         : '<span class="photo-time" style="opacity:0.25">—</span>';
       metaHtml =
         '<div class="photo-meta"><span class="photo-time">' +
@@ -10693,9 +10943,13 @@ function renderGallery(photos, userCountOverride) {
         'ms"' +
         (isAnimUser ? ' data-ascii-animated="1"' : '') +
         '>' +
-        (curatorModeActive && !curatorPreviewActive && isUser ? galleryDragHandle(i) : '') +
-        '<div class="photo-thumb">' +
-        '<pre style="color:' +
+	        (curatorModeActive && !curatorPreviewActive && isUser ? galleryDragHandle(i) : '') +
+	        restoreOverlayHtml +
+	        '<div class="photo-thumb">' +
+	        gridAsciiOutline +
+	        '<pre class="photo-thumb-ascii' +
+	        gridShapeClass +
+	        '" style="color:' +
         (p.color || '#00ff41') +
         '">' +
         escapeHtml(p.ascii) +
@@ -10716,6 +10970,18 @@ function renderGallery(photos, userCountOverride) {
     });
     card.addEventListener('mouseleave', function () {
       setGalleryLoopHoverFocus(card, false);
+      card.classList.remove('is-pressing-art');
+    });
+    card.addEventListener('pointerdown', function (event) {
+      var target = event.target instanceof Element ? event.target : null;
+      if (event.button !== 0 || !target || !target.closest('.photo-thumb')) return;
+      card.classList.add('is-pressing-art');
+    });
+    card.addEventListener('pointerup', function () {
+      card.classList.remove('is-pressing-art');
+    });
+    card.addEventListener('pointercancel', function () {
+      card.classList.remove('is-pressing-art');
     });
     card.addEventListener('click', (e) => {
       var raw = e.target;
