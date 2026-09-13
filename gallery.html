@@ -3225,6 +3225,8 @@ const uploadModal = document.getElementById('upload-modal');
 /** @type {HTMLElement | null} 打开上传弹层时的焦点来源，关闭时优先恢复 */
 let uploadModalOpenerEl = null;
 const uploadSrcImg = document.getElementById('upload-src-img');
+/** 新上传原图是否带实际透明像素；用于决定 hover 描边是否可按 alpha 异形处理。 */
+let uploadSourceHasAlpha = false;
 const uploadPreviewPre = document.getElementById('upload-preview-pre');
 const uploadPreviewScaleWrap = document.getElementById('upload-preview-scale-wrap');
 const uploadPreviewActiveFrame = document.getElementById('upload-preview-active-frame');
@@ -3249,6 +3251,8 @@ const uploadUploadFrameMaskCtx = uploadUploadFrameMaskCanvas
 /** 与 `imageToAscii` 最近一次采样格一致，供遮罩格网对齐 */
 let uploadPreviewGridCols = 0;
 let uploadPreviewGridRows = 0;
+/** @type {'oval' | 'round' | null} 最近一次保存时实际烘焙进 ASCII 的框线类型 */
+let uploadLastSaveFrameMaskKind = null;
 /** @type {number} Upload 预览 scale 调度 rAF */
 let uploadPreviewScaleRaf = 0;
 /** @type {number} */
@@ -3703,9 +3707,11 @@ if (uploadBtn) {
 uploadInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  uploadSourceHasAlpha = false;
   const reader = new FileReader();
   reader.onload = (ev) => {
     uploadSrcImg.onload = () => {
+      uploadSourceHasAlpha = detectUploadSourceHasAlpha(uploadSrcImg);
       uploadModal.classList.add('open');
       uploadModal.setAttribute('aria-hidden', 'false');
       lastUploadAspectForFrameMask = uploadAspect.value;
@@ -3837,8 +3843,12 @@ document.getElementById('upload-save-btn').addEventListener('click', async () =>
   renderUploadPreview();
   const ascii = getUploadAsciiForSave();
   if (!ascii) return;
+  const savedFrameMaskKind = getUploadSavedFrameMaskKind();
   await savePhoto(ascii, uploadColor.value, {
-    ironBars: uploadAspect.value === '1:1' && uploadFrameIronCheckbox && uploadFrameIronCheckbox.checked
+    ironBars: uploadAspect.value === '1:1' && uploadFrameIronCheckbox && uploadFrameIronCheckbox.checked,
+    hoverOutline: getUploadHoverOutlineForSavedFrameMask(savedFrameMaskKind),
+    frameMaskKind: savedFrameMaskKind,
+    previewAspect: uploadAspect.value
   });
   closeUploadModal();
 });
@@ -4368,6 +4378,117 @@ function getUploadPhotoFrameMaskKind() {
   if (v === '3:4') return 'oval';
   if (v === '1:1') return 'round';
   return null;
+}
+
+/**
+ * Upload 当前 aspect 下最终生效的外形滤镜；3:4 portrait + Oval 必须以 Oval 为 hover 外轮廓。
+ * @returns {'oval' | 'round' | null}
+ */
+function getUploadActiveFrameMaskKind() {
+  var kind = getUploadPhotoFrameMaskKind();
+  if (kind === 'oval') {
+    return uploadFrameMaskCheckedOval || !!(uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked)
+      ? 'oval'
+      : null;
+  }
+  if (kind === 'round') {
+    return uploadFrameMaskCheckedRound || !!(uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked)
+      ? 'round'
+      : null;
+  }
+  return null;
+}
+
+/**
+ * 抽样检测原图是否有「边缘连通」的实际透明区域；少量半透明抗锯齿不应触发异形描边。
+ * @param {HTMLImageElement} img
+ * @returns {boolean}
+ */
+function detectUploadSourceHasAlpha(img) {
+  if (!img || !img.naturalWidth || !img.naturalHeight) return false;
+  var maxSide = 256;
+  var scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+  var w = Math.max(1, Math.round(img.naturalWidth * scale));
+  var h = Math.max(1, Math.round(img.naturalHeight * scale));
+  var c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  var ctx = c.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return false;
+  try {
+    ctx.drawImage(img, 0, 0, w, h);
+    var data = ctx.getImageData(0, 0, w, h).data;
+    var transparent = new Uint8Array(w * h);
+    for (var i = 3, p = 0; i < data.length; i += 4, p++) {
+      if (data[i] < 16) transparent[p] = 1;
+    }
+    var queue = [];
+    var enqueue = function (x, y) {
+      if (x < 0 || y < 0 || x >= w || y >= h) return;
+      var idx = y * w + x;
+      if (transparent[idx] !== 1) return;
+      transparent[idx] = 2;
+      queue.push(idx);
+    };
+    for (var x = 0; x < w; x++) {
+      enqueue(x, 0);
+      enqueue(x, h - 1);
+    }
+    for (var y = 1; y < h - 1; y++) {
+      enqueue(0, y);
+      enqueue(w - 1, y);
+    }
+    var exteriorCount = 0;
+    for (var q = 0; q < queue.length; q++) {
+      var idx = queue[q];
+      exteriorCount++;
+      var cx = idx % w;
+      var cy = Math.floor(idx / w);
+      enqueue(cx - 1, cy);
+      enqueue(cx + 1, cy);
+      enqueue(cx, cy - 1);
+      enqueue(cx, cy + 1);
+    }
+    return exteriorCount / (w * h) >= 0.01;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * 新上传图的 hover 描边规则：alpha 外轮廓优先；无 alpha 时按 aspect，最后由外形滤镜覆盖。
+ * Iron Bars 只改变内部画面，不覆盖 Monocular / Oval 的外轮廓。
+ * @returns {'rectangle' | 'square' | 'circle' | 'oval' | 'character'}
+ */
+function getUploadHoverOutline() {
+  if (uploadSourceHasAlpha) return 'character';
+  var baseShape = uploadAspect && uploadAspect.value === '1:1' ? 'square' : 'rectangle';
+  var maskKind = getUploadActiveFrameMaskKind();
+  if (maskKind === 'round') return 'circle';
+  if (maskKind === 'oval') return 'oval';
+  return baseShape;
+}
+
+/**
+ * 保存时只使用 `getUploadAsciiForSave()` 实际烘焙进 ASCII 的框线类型，不从画面内容倒推。
+ * @returns {'oval' | 'round' | null}
+ */
+function getUploadSavedFrameMaskKind() {
+  if (uploadLastSaveFrameMaskKind === 'oval' || uploadLastSaveFrameMaskKind === 'round') {
+    return uploadLastSaveFrameMaskKind;
+  }
+  return null;
+}
+
+/**
+ * @param {'oval' | 'round' | null} frameMaskKind
+ * @returns {'rectangle' | 'square' | 'circle' | 'oval' | 'character'}
+ */
+function getUploadHoverOutlineForSavedFrameMask(frameMaskKind) {
+  if (uploadSourceHasAlpha) return 'character';
+  if (frameMaskKind === 'round') return 'circle';
+  if (frameMaskKind === 'oval') return 'oval';
+  return uploadAspect && uploadAspect.value === '1:1' ? 'square' : 'rectangle';
 }
 
 /**
@@ -5168,13 +5289,13 @@ function renderUploadPreview() {
  * @returns {string}
  */
 function getUploadAsciiForSave() {
+  uploadLastSaveFrameMaskKind = null;
   if (!uploadSrcImg.naturalWidth) return '';
   const cols = parseInt(uploadCols.value, 10) || 96;
   const ap = uploadAspect.value;
-  const maskKind = getUploadPhotoFrameMaskKind();
-  const monocularOn = !!(uploadFrameMaskCheckbox && uploadFrameMaskCheckbox.checked);
-  const ovalOrRound = maskKind && monocularOn ? maskKind : null;
+  const ovalOrRound = getUploadActiveFrameMaskKind();
   const ironOn = ap === '1:1' && uploadFrameIronCheckbox && uploadFrameIronCheckbox.checked;
+  uploadLastSaveFrameMaskKind = ovalOrRound;
   if (!ovalOrRound && !ironOn) {
     return imageToAscii(uploadSrcImg, cols, getUploadAspectNumber(), getUploadCharSet(), null, false);
   }
@@ -6995,6 +7116,15 @@ function mirrorUserPhotoToFirstPartyTab(photo) {
   var mirrorPhoto = { ascii: photo.ascii, color: photo.color, time: photo.time };
   if (typeof photo.id === 'string' && photo.id) mirrorPhoto.id = photo.id;
   if (photo.ironBars === true) mirrorPhoto.ironBars = true;
+  if (/^(rectangle|square|circle|oval|character)$/.test(String(photo.hoverOutline || ''))) {
+    mirrorPhoto.hoverOutline = photo.hoverOutline;
+  }
+  if (/^(oval|round)$/.test(String(photo.frameMaskKind || ''))) {
+    mirrorPhoto.frameMaskKind = photo.frameMaskKind;
+  }
+  if (typeof photo.previewAspect === 'string' && photo.previewAspect) {
+    mirrorPhoto.previewAspect = photo.previewAspect;
+  }
   var payload = {
     type: AsciiCameraGalleryStorage.GALLERY_MIRROR_TOP_MESSAGE_TYPE,
     photo: mirrorPhoto
@@ -7044,6 +7174,15 @@ async function savePhoto(ascii, color, options) {
       time: Date.now()
     };
     if (options && options.ironBars === true) photo.ironBars = true;
+    if (options && /^(rectangle|square|circle|oval|character)$/.test(String(options.hoverOutline || ''))) {
+      photo.hoverOutline = options.hoverOutline;
+    }
+    if (options && /^(oval|round)$/.test(String(options.frameMaskKind || ''))) {
+      photo.frameMaskKind = options.frameMaskKind;
+    }
+    if (options && typeof options.previewAspect === 'string' && options.previewAspect) {
+      photo.previewAspect = options.previewAspect;
+    }
     AsciiCameraGalleryStorage.prependUserPhoto(photo);
     const saved = AsciiCameraGalleryStorage.loadUserPhotos()[0];
     refreshGallery();
@@ -7168,6 +7307,48 @@ function animateGalleryPhotoDeleteFade(userIndex) {
       }, GALLERY_DELETE_FADE_SHADES.length * stepMs);
     });
   });
+}
+
+/**
+ * Curator 软删除后只更新目标卡片，不重建整个 Gallery；保留原位置供 Restore 使用。
+ * @param {number} userIndex
+ * @returns {void}
+ */
+function settleGalleryDeletedCardInPlace(userIndex) {
+  if (!gallery) return;
+  var card = gallery.querySelector('.photo-card[data-index="' + userIndex + '"]');
+  if (!card) return;
+  card.classList.add('photo-card--deleted');
+  var thumb = card.querySelector('.photo-thumb');
+  if (thumb && !card.querySelector('.restore-btn')) {
+    thumb.insertAdjacentHTML(
+      'beforebegin',
+      '<button type="button" class="restore-btn" data-user-index="' +
+        userIndex +
+        '">Restore</button>'
+    );
+    var restore = card.querySelector('.restore-btn');
+    if (restore) {
+      restore.addEventListener('click', function (event) {
+        event.stopPropagation();
+        void restoreGalleryPhoto(userIndex);
+      });
+    }
+  }
+  var right = card.querySelector('.photo-meta-right');
+  if (right && !right.querySelector('.purge-btn')) {
+    right.innerHTML =
+      '<button type="button" class="purge-btn purge-btn--icon" data-user-index="' +
+      userIndex +
+      '" aria-label="Delete" title="Delete"><img src="public/icons/trash_delete.svg" alt=""></button>';
+    var purge = right.querySelector('.purge-btn');
+    if (purge) {
+      purge.addEventListener('click', function (event) {
+        event.stopPropagation();
+        void purgeGalleryPhoto(userIndex);
+      });
+    }
+  }
 }
 
 /**
@@ -7352,7 +7533,20 @@ async function deletePhoto(userIndex) {
         return;
       }
       await animateGalleryPhotoDeleteFade(userIndex);
-      refreshGallery();
+      if (curatorModeActive) {
+        if (photosCache[userIndex]) photosCache[userIndex].isDeleted = true;
+        if (galleryViewMode === 'coverflow') {
+          var deletedCard = galleryCoverflowTrack && galleryCoverflowTrack.querySelector(
+            '.cover-flow-card[data-index="' + userIndex + '"]'
+          );
+          if (deletedCard) deletedCard.classList.add('cover-flow-card--deleted');
+          updateGalleryCoverFlowCuratorToolbar();
+        } else {
+          settleGalleryDeletedCardInPlace(userIndex);
+        }
+      } else {
+        removePurgedGalleryPhotoInPlace(userIndex, photoIdForLikes);
+      }
       return;
     }
 
@@ -7389,7 +7583,7 @@ async function deletePhoto(userIndex) {
       return;
     }
     await animateGalleryPhotoDeleteFade(userIndex);
-    refreshGallery();
+    removePurgedGalleryPhotoInPlace(userIndex, photoIdForLikes);
     if (photoIdForLikes && typeof AsciiCameraGalleryCloudSync.deleteAllLikesForPhotoId === 'function') {
       try {
         await AsciiCameraGalleryCloudSync.deleteAllLikesForPhotoId(photoIdForLikes);
@@ -9419,6 +9613,55 @@ function shouldUseGridAsciiOutline(photo, ascii, shape) {
   return occupiedBoundaryCells / boundaryCells < 0.58;
 }
 
+/**
+ * 新图优先使用保存时写入的 hoverOutline；旧图没有该字段时继续使用旧推断作为 fallback。
+ * @param {{ hoverOutline?: string } | null} photo
+ * @returns {'rectangle' | 'square' | 'circle' | 'oval' | 'character' | ''}
+ */
+function normalizeGalleryHoverOutline(photo) {
+  var outline = String(photo && photo.hoverOutline || '');
+  return /^(rectangle|square|circle|oval|character)$/.test(outline) ? outline : '';
+}
+
+/**
+ * @param {object | null} photo
+ * @param {string} ascii
+ * @param {string} gridShape
+ * @returns {'rectangle' | 'square' | 'circle' | 'oval' | 'character' | string}
+ */
+function resolveGalleryGridOutlineShape(photo, ascii, gridShape) {
+  var explicitOutline = normalizeGalleryHoverOutline(photo);
+  // 新作品的最终外轮廓在发布时已经确定；绝不能在画廊回读时再用 ASCII 内容覆盖它。
+  if (explicitOutline) return explicitOutline;
+  if (photo && (photo.evilQueen === true || photo.frameMaskKind === 'oval' || photo.shape === 'oval')) {
+    return 'oval';
+  }
+  if (photo && (photo.frameMaskKind === 'round' || photo.shape === 'circle')) {
+    return 'circle';
+  }
+  if (inferGalleryLegacyMonocularCircle(ascii)) return 'circle';
+  if (gridShape === 'oval' || gridShape === 'circle') return gridShape;
+  if (explicitOutline === 'rectangle' || explicitOutline === 'square') return explicitOutline;
+  var missingMetadataUploadedAfterHoverRule =
+    photo &&
+    photo.mine === true &&
+    typeof photo.time === 'number' &&
+    photo.time >= Date.parse('2026-09-12T11:25:00-07:00') &&
+    !isGalleryCoverFlowIronBarsPhoto(photo, ascii);
+  if (missingMetadataUploadedAfterHoverRule) {
+    var dims = getAsciiDims(ascii || '');
+    var metrics = getGalleryAsciiCellMetrics();
+    var visualAspect = (Math.max(1, dims.cols) * metrics.cellAspect) / Math.max(1, dims.rows);
+    return Math.abs(visualAspect - 1) < 0.12 ? 'square' : 'rectangle';
+  }
+  var gridHasIronBars = isGalleryCoverFlowIronBarsPhoto(photo, ascii);
+  return gridHasIronBars
+    ? (gridShape === 'circle' ? 'circle' : 'square')
+    : shouldUseGridAsciiOutline(photo, ascii, gridShape)
+    ? 'character'
+    : gridShape;
+}
+
 function galleryListValue(photo, key) {
   if (!photo) return null;
   if (key === 'color') return galleryColorName(photo.color);
@@ -9927,6 +10170,15 @@ function inferGalleryCoverFlowShape(ascii) {
 }
 
 /**
+ * 兼容缺少 metadata 的旧 1:1 Monocular：只补判圆形，不补判椭圆，避免普通竖图/横图再被误判为 oval。
+ * @param {string} ascii
+ * @returns {boolean}
+ */
+function inferGalleryLegacyMonocularCircle(ascii) {
+  return inferGalleryCoverFlowShape(ascii) === 'circle';
+}
+
+/**
  * Cover Flow 专用：按 ASCII 非空字符单元生成异形黑色底，不把透明区域补成矩形或椭圆。
  * @param {string} ascii
  * @returns {string}
@@ -10146,6 +10398,8 @@ function getGalleryCoverFlowTransparencyStats(ascii) {
 }
 
 function getGalleryCoverFlowShape(photo, ascii) {
+  var explicitOutline = normalizeGalleryHoverOutline(photo);
+  if (explicitOutline) return explicitOutline;
   if (photo && (photo.evilQueen === true || photo.frameMaskKind === 'oval' || photo.shape === 'oval')) {
     return 'oval';
   }
@@ -10155,8 +10409,7 @@ function getGalleryCoverFlowShape(photo, ascii) {
   var transparency = getGalleryCoverFlowTransparencyStats(ascii);
   // 明显留有透明外边距的异形图优先使用逐字符黑底，避免被误判为椭圆。
   if (transparency && transparency.boundsCoverage < 0.9) return 'character';
-  var inferredShape = inferGalleryCoverFlowShape(ascii);
-  if (inferredShape) return inferredShape;
+  if (inferGalleryLegacyMonocularCircle(ascii)) return 'circle';
   // 对占满宽高但边缘仍有大面积透明区域的异形图作通用兜底。
   if (transparency && transparency.exteriorTransparency >= 0.12) return 'character';
   var aspect = String(photo && (photo.previewAspect || photo.aspectRatio || photo.aspect) || '').trim();
@@ -10901,15 +11154,11 @@ function renderGallery(photos, userCountOverride) {
 	    const isAnimUser = isUser && isLightboxPhotoAnimatedForDownload(p);
 	    const enterDelay = Math.min(i, 10) * 45;
 	    const gridShape = getGalleryCoverFlowShape(p, p.ascii || '');
-	    const gridHasIronBars = isGalleryCoverFlowIronBarsPhoto(p, p.ascii || '');
-	    const gridOutlineShape = gridHasIronBars
-	      ? (gridShape === 'circle' ? 'circle' : 'square')
-	      : shouldUseGridAsciiOutline(p, p.ascii || '', gridShape)
-	      ? 'character'
-	      : gridShape;
+	    const gridOutlineShape = resolveGalleryGridOutlineShape(p, p.ascii || '', gridShape);
+	    const gridDisplayShape = gridOutlineShape || gridShape;
 	    const gridShapeClass =
-	      gridShape === 'circle' || gridShape === 'oval' || gridShape === 'square' || gridShape === 'rectangle' || gridShape === 'character'
-	        ? ' photo-thumb-ascii--' + gridShape
+	      gridDisplayShape === 'circle' || gridDisplayShape === 'oval' || gridDisplayShape === 'square' || gridDisplayShape === 'rectangle' || gridDisplayShape === 'character'
+	        ? ' photo-thumb-ascii--' + gridDisplayShape
 	        : '';
 	    const gridAsciiOutline =
 	      '<span class="photo-thumb-outline">' + buildGalleryGridShapeOutline(p.ascii || '', gridOutlineShape) + '</span>';
@@ -11143,6 +11392,15 @@ window.addEventListener('message', function (ev) {
     };
     if (typeof p.id === 'string' && p.id) incoming.id = p.id;
     if (p.ironBars === true) incoming.ironBars = true;
+    if (/^(rectangle|square|circle|oval|character)$/.test(String(p.hoverOutline || ''))) {
+      incoming.hoverOutline = p.hoverOutline;
+    }
+    if (/^(oval|round)$/.test(String(p.frameMaskKind || ''))) {
+      incoming.frameMaskKind = p.frameMaskKind;
+    }
+    if (typeof p.previewAspect === 'string' && p.previewAspect) {
+      incoming.previewAspect = p.previewAspect;
+    }
     if (p.isAnimated === true) {
       incoming.isAnimated = true;
       if (typeof p.frameCount === 'number' && Number.isFinite(p.frameCount)) {

@@ -395,7 +395,20 @@
     function add(p, fromRemote) {
       if (!p || typeof p.ascii !== 'string') return;
       var k = photoDedupeKey(p);
-      if (!k || map[k]) return;
+      if (!k) return;
+      if (map[k]) {
+        if (!fromRemote && /^(rectangle|square|circle|oval|character)$/.test(String(p.hoverOutline || ''))) {
+          map[k].hoverOutline = p.hoverOutline;
+        }
+        if (!fromRemote && /^(oval|round)$/.test(String(p.frameMaskKind || ''))) {
+          map[k].frameMaskKind = p.frameMaskKind;
+        }
+        if (!fromRemote && typeof p.previewAspect === 'string' && p.previewAspect) {
+          map[k].previewAspect = p.previewAspect;
+        }
+        if (!fromRemote && p.ironBars === true) map[k].ironBars = true;
+        return;
+      }
       var mine = fromRemote
         ? false
         : typeof p.mine === 'boolean'
@@ -414,6 +427,16 @@
         mine: mine,
         id: sid
       };
+      if (/^(rectangle|square|circle|oval|character)$/.test(String(p.hoverOutline || ''))) {
+        map[k].hoverOutline = p.hoverOutline;
+      }
+      if (/^(oval|round)$/.test(String(p.frameMaskKind || ''))) {
+        map[k].frameMaskKind = p.frameMaskKind;
+      }
+      if (typeof p.previewAspect === 'string' && p.previewAspect) {
+        map[k].previewAspect = p.previewAspect;
+      }
+      if (p.ironBars === true) map[k].ironBars = true;
     }
     (a || []).forEach(function (pr) {
       add(pr, false);
@@ -448,7 +471,20 @@
     function addOne(p, fromRemote) {
       if (!p || typeof p.ascii !== 'string') return;
       var k = photoDedupeKey(p);
-      if (!k || map[k]) return;
+      if (!k) return;
+      if (map[k]) {
+        if (!fromRemote && /^(rectangle|square|circle|oval|character)$/.test(String(p.hoverOutline || ''))) {
+          map[k].hoverOutline = p.hoverOutline;
+        }
+        if (!fromRemote && /^(oval|round)$/.test(String(p.frameMaskKind || ''))) {
+          map[k].frameMaskKind = p.frameMaskKind;
+        }
+        if (!fromRemote && typeof p.previewAspect === 'string' && p.previewAspect) {
+          map[k].previewAspect = p.previewAspect;
+        }
+        if (!fromRemote && p.ironBars === true) map[k].ironBars = true;
+        return;
+      }
       var mine = fromRemote
         ? false
         : typeof p.mine === 'boolean'
@@ -467,6 +503,16 @@
         mine: mine,
         id: sid
       };
+      if (/^(rectangle|square|circle|oval|character)$/.test(String(p.hoverOutline || ''))) {
+        map[k].hoverOutline = p.hoverOutline;
+      }
+      if (/^(oval|round)$/.test(String(p.frameMaskKind || ''))) {
+        map[k].frameMaskKind = p.frameMaskKind;
+      }
+      if (typeof p.previewAspect === 'string' && p.previewAspect) {
+        map[k].previewAspect = p.previewAspect;
+      }
+      if (p.ironBars === true) map[k].ironBars = true;
     }
     (remotePhotos || []).forEach(function (pr) {
       addOne(pr, true);
@@ -557,8 +603,8 @@
    * 将 `ascii_photos` 行转为画廊 UI 用条目：`time` 来自 `created_at`；列表拉取不含 `frames`（悬停时再取）。
    * 列表请求不 select `preview_ascii`，仅用完整 `ascii` 渲染，与灯箱一致。
    * `owner_id` 缺失或空时 `mine` 为 false（不猜测历史行归属）。
-   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown, is_animated?: unknown, frame_count?: unknown, fps?: unknown, duration_ms?: unknown, is_deleted?: unknown, likes_count?: unknown, downloads_count?: unknown, views_count?: unknown }} row
-   * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number } | null}
+   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown, hover_outline?: unknown, frame_mask_kind?: unknown, preview_aspect?: unknown, is_animated?: unknown, frame_count?: unknown, fps?: unknown, duration_ms?: unknown, is_deleted?: unknown, likes_count?: unknown, downloads_count?: unknown, views_count?: unknown }} row
+   * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean, hoverOutline?: string, frameMaskKind?: string, previewAspect?: string, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number } | null}
    */
   function mapAsciiPhotoRow(row) {
     if (!row || typeof row.ascii !== 'string') return null;
@@ -577,7 +623,7 @@
       var count = typeof value === 'number' ? value : Number(value);
       return Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0;
     };
-    /** @type {{ id: string, ascii: string, color: string, time: number, mine: boolean, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }} */
+    /** @type {{ id: string, ascii: string, color: string, time: number, mine: boolean, hoverOutline?: string, frameMaskKind?: string, previewAspect?: string, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }} */
     var out = {
       id: id,
       ascii: row.ascii,
@@ -589,6 +635,15 @@
       downloadsCount: toCount(row.downloads_count),
       viewsCount: toCount(row.views_count)
     };
+    if (/^(rectangle|square|circle|oval|character)$/.test(String(row.hover_outline || ''))) {
+      out.hoverOutline = String(row.hover_outline);
+    }
+    if (/^(oval|round)$/.test(String(row.frame_mask_kind || ''))) {
+      out.frameMaskKind = String(row.frame_mask_kind);
+    }
+    if (typeof row.preview_aspect === 'string' && row.preview_aspect) {
+      out.previewAspect = row.preview_aspect;
+    }
     if (isDel) {
       out.isDeleted = true;
     }
@@ -910,7 +965,7 @@
   /**
    * 向 `ascii_photos` 插入一行（不整包覆盖）；`id` 为 UUID 时与本地 `prependUserPhoto` 对齐。
    * 写入前从 `window.__ASCII_GALLERY_SUPABASE__` 取 session，设置 `Authorization: Bearer <access_token>` 与 body `user_id`；无会话则返回 false（静默）。
-   * @param {{ ascii: string, preview_ascii?: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} photo
+   * @param {{ ascii: string, preview_ascii?: string, color?: string, time?: number, id?: string, hoverOutline?: string, frameMaskKind?: string, previewAspect?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} photo
    * @returns {Promise<boolean>}
    */
   function insertPhotoRowSupabase(photo) {
@@ -935,7 +990,7 @@
             ? photo.preview_ascii
             : photo.ascii
         );
-        /** @type {{ ascii: string, preview_ascii: string, color: string, created_at: string, owner_id: string, user_id: string, id?: string, is_animated: boolean, frames: string[] | null, frame_count: number | null, fps: number | null, duration_ms: number | null }} */
+        /** @type {{ ascii: string, preview_ascii: string, color: string, created_at: string, owner_id: string, user_id: string, id?: string, hover_outline?: string, frame_mask_kind?: string, preview_aspect?: string, is_animated: boolean, frames: string[] | null, frame_count: number | null, fps: number | null, duration_ms: number | null }} */
         var body = {
           ascii: photo.ascii,
           preview_ascii: previewAscii,
@@ -949,6 +1004,15 @@
           fps: null,
           duration_ms: null
         };
+        if (/^(rectangle|square|circle|oval|character)$/.test(String(photo.hoverOutline || ''))) {
+          body.hover_outline = photo.hoverOutline;
+        }
+        if (/^(oval|round)$/.test(String(photo.frameMaskKind || ''))) {
+          body.frame_mask_kind = photo.frameMaskKind;
+        }
+        if (typeof photo.previewAspect === 'string' && photo.previewAspect) {
+          body.preview_aspect = photo.previewAspect;
+        }
         if (isAnim && Array.isArray(photo.frames) && photo.frames.length > 0) {
           body.frames = photo.frames;
           body.frame_count =

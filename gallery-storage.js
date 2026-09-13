@@ -112,11 +112,11 @@
   }
 
   /**
-   * @param {{ascii:string,color?:string,preview_ascii?:string,time?:number,mine?:boolean,id?:string,isAnimated?:boolean,ironBars?:boolean,frameCount?:number,fps?:number,durationMs?:number}} photo 单条用户作品；默认 `mine: true`；无 `id` 时生成新 id。动画帧仅存云端，本地仅存元数据。
+   * @param {{ascii:string,color?:string,preview_ascii?:string,time?:number,mine?:boolean,id?:string,isAnimated?:boolean,ironBars?:boolean,hoverOutline?:string,frameMaskKind?:string,previewAspect?:string,frameCount?:number,fps?:number,durationMs?:number}} photo 单条用户作品；默认 `mine: true`；无 `id` 时生成新 id。动画帧仅存云端，本地仅存元数据。
    */
   function prependUserPhoto(photo) {
     var list = loadUserPhotos();
-    /** @type {{ascii:string,color:string,time:number,mine:boolean,id:string,preview_ascii?:string,isAnimated?:boolean,frameCount?:number,fps?:number,durationMs?:number}} */
+    /** @type {{ascii:string,color:string,time:number,mine:boolean,id:string,preview_ascii?:string,isAnimated?:boolean,ironBars?:boolean,hoverOutline?:string,frameMaskKind?:string,previewAspect?:string,frameCount?:number,fps?:number,durationMs?:number}} */
     var row = {
       ascii: String(photo.ascii || ''),
       color: photo.color || '#00ff41',
@@ -125,6 +125,15 @@
       id: typeof photo.id === 'string' && photo.id ? photo.id : generatePhotoId()
     };
     if (photo.ironBars === true) row.ironBars = true;
+    if (/^(rectangle|square|circle|oval|character)$/.test(String(photo.hoverOutline || ''))) {
+      row.hoverOutline = photo.hoverOutline;
+    }
+    if (/^(oval|round)$/.test(String(photo.frameMaskKind || ''))) {
+      row.frameMaskKind = photo.frameMaskKind;
+    }
+    if (typeof photo.previewAspect === 'string' && photo.previewAspect) {
+      row.previewAspect = photo.previewAspect;
+    }
     if (typeof photo.preview_ascii === 'string' && photo.preview_ascii.length > 0) {
       row.preview_ascii = photo.preview_ascii;
     }

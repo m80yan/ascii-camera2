@@ -1250,14 +1250,6 @@
 </div>
 <div class="cam-submit-wrap">
   <div class="cam-submit-status-slot" id="camSubmitStatusSlot">
-    <div id="loop-cover-ui" class="loop-cover-ui" hidden aria-hidden="true">
-      <div class="loop-cover-inner">
-        <input type="range" id="loopCoverSlider" min="0" max="0" value="0" step="1" aria-label="Choose Loop cover frame" />
-        <div class="loop-cover-label-track">
-          <span id="loopCoverLabel">Set as cover</span>
-        </div>
-      </div>
-    </div>
     <div id="saved-msg" aria-live="polite"></div>
   </div>
   <button type="button" id="submitGalleryBtn" class="cam-submit-gallery-btn" disabled aria-label="Submit to gallery">Submit to Gallery</button>
@@ -2476,6 +2468,26 @@ function getPhotoFrameMaskKind() {
   if (v === '3:4') return 'oval';
   if (v === '1:1') return 'round';
   return null;
+}
+
+/**
+ * 新提交到 Gallery 的作品写入显式 hover 描边类型；无 alpha 的相机成片先按 aspect，再由外形滤镜覆盖。
+ * @param {object | string} payload
+ * @returns {'rectangle' | 'square' | 'circle' | 'oval'}
+ */
+function getGalleryHoverOutlineForSubmit(payload) {
+  if (payload && typeof payload === 'object' && payload.isPhotoPreview === true) {
+    var ap = typeof payload.previewAspect === 'string'
+      ? payload.previewAspect
+      : aspectPicker && typeof aspectPicker.value === 'string'
+        ? aspectPicker.value
+        : '';
+    var maskKind = typeof payload.frameMaskKind === 'string' ? payload.frameMaskKind : getPhotoFrameMaskKind();
+    if (maskKind === 'round') return 'circle';
+    if (maskKind === 'oval') return 'oval';
+    return ap === '1:1' ? 'square' : 'rectangle';
+  }
+  return 'square';
 }
 
 /**
@@ -5775,7 +5787,7 @@ async function persistPhotoToGallery(payload) {
     } else {
       asciiStr = String(payload || '');
     }
-    /** @type {{ ascii: string, color: string, time: number, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }} */
+    /** @type {{ ascii: string, color: string, time: number, ironBars?: boolean, hoverOutline?: string, frameMaskKind?: string, previewAspect?: string, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }} */
     var photoPayload = {
       ascii: asciiStr,
       color: colorPicker.value,
@@ -5785,8 +5797,17 @@ async function persistPhotoToGallery(payload) {
         typeof payload === 'object' &&
         payload.isPhotoPreview === true &&
         payload.ironBarsSpec
-      )
+      ),
+      hoverOutline: getGalleryHoverOutlineForSubmit(payload)
     };
+    if (payload && typeof payload === 'object' && payload.isPhotoPreview === true) {
+      if (/^(oval|round)$/.test(String(payload.frameMaskKind || ''))) {
+        photoPayload.frameMaskKind = payload.frameMaskKind;
+      }
+      if (typeof payload.previewAspect === 'string' && payload.previewAspect) {
+        photoPayload.previewAspect = payload.previewAspect;
+      }
+    }
     if (isAnim) {
       photoPayload.isAnimated = true;
       photoPayload.frameCount =
@@ -5807,6 +5828,9 @@ async function persistPhotoToGallery(payload) {
         };
         if (savedRow && typeof savedRow.id === 'string' && savedRow.id) msgPhoto.id = savedRow.id;
         if (photoPayload.ironBars === true) msgPhoto.ironBars = true;
+        if (photoPayload.hoverOutline) msgPhoto.hoverOutline = photoPayload.hoverOutline;
+        if (photoPayload.frameMaskKind) msgPhoto.frameMaskKind = photoPayload.frameMaskKind;
+        if (photoPayload.previewAspect) msgPhoto.previewAspect = photoPayload.previewAspect;
         if (isAnim) {
           msgPhoto.isAnimated = true;
           msgPhoto.frameCount = photoPayload.frameCount;
@@ -6102,6 +6126,8 @@ snapBtn.addEventListener('click', async () => {
         rows: photoPack.rows,
         bakedFrameMask: bakedFrameMask,
         ironBarsSpec: ironBarsSpecForPayload,
+        frameMaskKind: frameMaskCheckbox && frameMaskCheckbox.checked ? maskKind : null,
+        previewAspect: apShot,
         usedDistortingMirror:
           !!(densityPicker && densityPicker.value === STYLE_DISTORTING_MIRROR),
         distortMirrorLevel:

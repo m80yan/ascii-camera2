@@ -62,7 +62,9 @@ begin
   end if;
   select coalesce(jsonb_agg(to_jsonb(p) order by p.curator_rank, p.id), '[]'::jsonb)
   into v_photos from (
-    select id, ascii, color, created_at, owner_id, is_animated, frame_count, fps, duration_ms,
+    select id, ascii, color, created_at, owner_id,
+           hover_outline, frame_mask_kind, preview_aspect,
+           is_animated, frame_count, fps, duration_ms,
            is_deleted, likes_count, downloads_count, views_count, curator_rank
     from public.ascii_photos
     where (include_deleted or not coalesce(is_deleted, false))

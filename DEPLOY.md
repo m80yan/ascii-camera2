@@ -21,6 +21,9 @@ create table if not exists public.ascii_photos (
   color text not null default '#00ff41',
   created_at timestamptz not null default now(),
   owner_id text,
+  hover_outline text check (hover_outline is null or hover_outline in ('rectangle', 'square', 'circle', 'oval', 'character')),
+  frame_mask_kind text check (frame_mask_kind is null or frame_mask_kind in ('oval', 'round')),
+  preview_aspect text,
   is_animated boolean not null default false,
   frames jsonb,
   frame_count integer,
@@ -118,6 +121,17 @@ revoke execute on function public.sync_ascii_photo_event_count() from public, an
 **已有 `ascii_photos` 表、尚无 `owner_id` 时** 在 SQL Editor 执行：`alter table public.ascii_photos add column if not exists owner_id text;` 旧行 `owner_id` 为空时前端不视为本人作品，无法自助删除（策展模式仍可删）。
 
 **列表预览短文本 `preview_ascii`（可选列，建议与新版前端一起加）：** 在 SQL Editor 执行：`alter table public.ascii_photos add column if not exists preview_ascii text;` 可为空；新上传会由完整 `ascii` 截断写入，旧行无该列或为空时前端仍用完整 `ascii`。
+
+**Hover 外轮廓（新版必须执行）：** 在 SQL Editor 执行：
+
+```sql
+alter table public.ascii_photos
+  add column if not exists hover_outline text,
+  add column if not exists frame_mask_kind text,
+  add column if not exists preview_aspect text;
+```
+
+新作品在发布时将最终轮廓写入 `hover_outline`：透明原图为 `character`；无透明图按 aspect，Oval / Monocular 再覆盖为 `oval` / `circle`。Gallery 回读该字段后不再从 ASCII 内容猜测。旧作品的字段为空时才走兼容 fallback。
 
 **轻量动画（ASCII 多帧，非 GIF 文件存储）** 在 SQL Editor 执行：
 

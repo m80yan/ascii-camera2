@@ -8,6 +8,8 @@
 
   /** @type {null | Record<string, unknown>} */
   var core = null;
+  /** Gallery 中 Loop 默认播放，封面选择入口不再展示；底层 coverFrameIndex 保留为 0。 */
+  var LOOP_COVER_UI_ENABLED = false;
 
   /**
    * @returns {Record<string, unknown>}
@@ -122,6 +124,7 @@
    * @returns {boolean}
    */
   P.shouldShowLoopCoverUi = function () {
+    if (!LOOP_COVER_UI_ENABLED) return false;
     return (
       P.previewCaptureActive === true &&
       /** @type {boolean} */ (C().videoMode) === true &&
