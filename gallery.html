@@ -599,8 +599,34 @@
     aspect-ratio: auto;
     align-self: stretch;
   }
+  .gallery-upload-placeholder {
+    grid-column: span 2;
+    grid-row: span 2;
+    aspect-ratio: 1 / 1;
+    cursor: default;
+    background: #050505;
+    border-color: transparent;
+    overflow: hidden;
+  }
+  .gallery-upload-placeholder .photo-thumb { background: #050505; }
+  .gallery-upload-ascii-enter {
+    position: relative;
+    z-index: 1;
+    transform: scale(0.58);
+    transform-origin: center;
+    opacity: 0;
+    animation: gallery-upload-ascii-enter-grow 620ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  @keyframes gallery-upload-ascii-enter-grow {
+    from { transform: scale(0.58); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
   @media (max-width: 520px) {
     .photo-card--latest {
+      grid-column: span 1;
+      grid-row: span 1;
+    }
+    .gallery-upload-placeholder.photo-card--latest {
       grid-column: span 1;
       grid-row: span 1;
     }
@@ -3224,6 +3250,14 @@ const liveBtn = document.getElementById('live-btn');
 const uploadModal = document.getElementById('upload-modal');
 /** @type {HTMLElement | null} 打开上传弹层时的焦点来源，关闭时优先恢复 */
 let uploadModalOpenerEl = null;
+/** @type {boolean} 防止异步上传期间再次打开文件选择或重复提交 */
+let uploadInFlight = false;
+/** @type {HTMLElement | null} 当前上传占位卡片 */
+let uploadPlaceholderEl = null;
+/** @type {HTMLElement | null} 上传前被暂时取消 2×2 latest 尺寸的卡片 */
+let uploadPreviousLatestCard = null;
+/** @type {boolean} 上传前 Gallery 是否显示空状态 */
+let uploadPreviousEmptyVisible = false;
 const uploadSrcImg = document.getElementById('upload-src-img');
 /** 新上传原图是否带实际透明像素；用于决定 hover 描边是否可按 alpha 异形处理。 */
 let uploadSourceHasAlpha = false;
@@ -3308,6 +3342,10 @@ let pendingPurgeIndex = null;
 let galleryDeleteFadeInFlight = 0;
 /** Curator 物理删除进行中：保留现有 DOM，直到目标卡片完成局部消散与补位。 */
 let galleryPurgeInFlight = false;
+/** Visitor/Curator 删除动作进行中：禁止重复点击和异步回调重建 Gallery。 */
+let galleryDeleteActionInFlight = false;
+/** 物理删除完成后，给已在路上的轮询回调留出时间，避免它重建整个 Gallery。 */
+let galleryPurgeRefreshSuppressUntil = 0;
 let photosCache = [];
 /** 灯箱内当前条目在 `photosCache`（当前可见 feed）中的下标；-1 表示未关联列表 */
 let lightboxFeedIndex = -1;
@@ -3698,29 +3736,37 @@ if (document.fonts && document.fonts.ready) {
 
 if (uploadBtn) {
   uploadBtn.addEventListener('click', function () {
+    if (uploadInFlight) return;
     var ae = document.activeElement;
     uploadModalOpenerEl =
       ae instanceof HTMLElement && ae !== uploadInput ? ae : uploadBtn;
     uploadInput.click();
   });
 }
+
+function openUploadEditorFromLoadedSource() {
+  if (!uploadSrcImg.naturalWidth) return;
+  uploadSourceHasAlpha = detectUploadSourceHasAlpha(uploadSrcImg);
+  uploadModal.classList.add('open');
+  uploadModal.setAttribute('aria-hidden', 'false');
+  lastUploadAspectForFrameMask = uploadAspect.value;
+  updateUploadFrameMaskUi();
+  syncUploadDistortMirrorSliderVisibility();
+  renderUploadPreview();
+}
+
 uploadInput.addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
   uploadSourceHasAlpha = false;
   const reader = new FileReader();
   reader.onload = (ev) => {
-    uploadSrcImg.onload = () => {
-      uploadSourceHasAlpha = detectUploadSourceHasAlpha(uploadSrcImg);
-      uploadModal.classList.add('open');
-      uploadModal.setAttribute('aria-hidden', 'false');
-      lastUploadAspectForFrameMask = uploadAspect.value;
-      updateUploadFrameMaskUi();
-      syncUploadDistortMirrorSliderVisibility();
-      renderUploadPreview();
-    };
+    uploadSrcImg.onload = openUploadEditorFromLoadedSource;
+    uploadSrcImg.removeAttribute('src');
     uploadSrcImg.src = /** @type {string} */ (ev.target.result);
+    if (uploadSrcImg.complete) openUploadEditorFromLoadedSource();
   };
+  reader.onerror = () => window.alert('Could not read this image. Please try another file.');
   reader.readAsDataURL(file);
   uploadInput.value = '';
 });
@@ -3838,19 +3884,155 @@ if (uploadFrameIronCheckbox) {
   });
 }
 
+/** @param {string} outline */
+function createUploadPlaceholder(outline) {
+  if (!gallery) return null;
+  uploadPreviousLatestCard = gallery.querySelector('.photo-card--latest');
+  if (uploadPreviousLatestCard) uploadPreviousLatestCard.classList.remove('photo-card--latest');
+  uploadPreviousEmptyVisible = !!(empty && empty.style.display !== 'none');
+  if (empty) empty.style.display = 'none';
+  var placeholder = document.createElement('div');
+  placeholder.className = 'photo-card photo-card--latest gallery-upload-placeholder gallery-upload-placeholder--' + outline;
+  placeholder.setAttribute('data-upload-placeholder', 'true');
+  placeholder.innerHTML = '<div class="photo-thumb" aria-hidden="true"></div>';
+  gallery.insertBefore(placeholder, gallery.firstElementChild);
+  uploadPlaceholderEl = placeholder;
+  return placeholder;
+}
+
+function removeUploadPlaceholder(restorePreviousLatest) {
+  if (uploadPlaceholderEl) uploadPlaceholderEl.remove();
+  uploadPlaceholderEl = null;
+  if (restorePreviousLatest && uploadPreviousLatestCard && uploadPreviousLatestCard.isConnected) {
+    uploadPreviousLatestCard.classList.add('photo-card--latest');
+  }
+  if (uploadPreviousEmptyVisible && empty) empty.style.display = '';
+  uploadPreviousLatestCard = null;
+  uploadPreviousEmptyVisible = false;
+}
+
+/** 已插入新用户作品首卡后，仅将既有 Grid 卡片的索引后移一位。 */
+function reindexGalleryCardsAfterUpload() {
+  if (!gallery) return;
+  gallery.querySelectorAll('.photo-card:not([data-upload-placeholder])').forEach(function (card) {
+    var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+    if (index < 0) return;
+    var nextIndex = index + 1;
+    card.setAttribute('data-index', String(nextIndex));
+    card.querySelectorAll('[data-user-index]').forEach(function (control) {
+      control.setAttribute('data-user-index', String(nextIndex));
+    });
+    card.querySelectorAll('[data-gallery-drag]').forEach(function (handle) {
+      handle.setAttribute('data-gallery-drag', String(nextIndex));
+    });
+  });
+}
+
+/** @param {object} photo */
+function commitUploadPlaceholder(photo) {
+  var placeholder = uploadPlaceholderEl;
+  if (!placeholder) return;
+  var outline = resolveGalleryGridOutlineShape(photo, photo.ascii || '', getGalleryCoverFlowShape(photo, photo.ascii || ''));
+  var outlineSource = outline === 'character' && photo.alphaMask ? photo.alphaMask : photo.ascii || '';
+  var shapeClass = outline === 'circle' || outline === 'oval' || outline === 'square' || outline === 'rectangle' || outline === 'character'
+    ? ' photo-thumb-ascii--' + outline : '';
+  var dragHandleHtml = curatorModeActive && !curatorPreviewActive ? galleryDragHandle(0) : '';
+  placeholder.removeAttribute('data-upload-placeholder');
+  placeholder.setAttribute('data-index', '0');
+  placeholder.innerHTML =
+    dragHandleHtml + '<div class="photo-thumb"><span class="photo-thumb-outline">' +
+    buildGalleryGridShapeOutline(outlineSource, outline) +
+    '</span><pre class="photo-thumb-ascii gallery-upload-ascii-enter' + shapeClass + '" style="color:' +
+    escapeHtml(photo.color || '#00ff41') + '">' + escapeHtml(photo.ascii || '') +
+    '</pre></div><div class="photo-meta photo-meta--3col"><span class="photo-meta-left">' +
+    escapeHtml(timeAgo(photo.time)) +
+    '</span><span class="photo-meta-center" aria-hidden="true"></span><div class="photo-meta-right">' +
+    '<button type="button" class="delete-btn delete-btn--icon" data-user-index="0" aria-label="Remove" title="Remove"><img src="public/icons/trash_remove.svg" alt=""></button></div></div>';
+  placeholder.addEventListener('click', function (event) {
+    var target = event.target instanceof Element ? event.target : null;
+    if (target && target.closest('.delete-btn, .restore-btn, .purge-btn')) return;
+    openLightbox(photo, 0, placeholder);
+  });
+  return new Promise(function (resolve) {
+    window.requestAnimationFrame(function () {
+      layoutGalleryThumbs();
+      window.setTimeout(function () {
+        if (!placeholder.isConnected) {
+          resolve();
+          return;
+        }
+        placeholder.classList.remove('gallery-upload-placeholder');
+        // 放大动画结束后重新测量，避免描边沿用 scale(0.58) 初始状态的尺寸。
+        layoutGalleryThumbs();
+        placeholder.querySelectorAll('.delete-btn').forEach(function (button) {
+          button.addEventListener('click', function (event) {
+            event.stopPropagation();
+            promptDelete(0);
+          });
+        });
+        uploadPlaceholderEl = null;
+        uploadPreviousLatestCard = null;
+        resolve();
+      }, 700);
+    });
+  });
+}
+
 document.getElementById('upload-cancel-btn').addEventListener('click', closeUploadModal);
 document.getElementById('upload-save-btn').addEventListener('click', async () => {
-  renderUploadPreview();
-  const ascii = getUploadAsciiForSave();
-  if (!ascii) return;
-  const savedFrameMaskKind = getUploadSavedFrameMaskKind();
-  await savePhoto(ascii, uploadColor.value, {
-    ironBars: uploadAspect.value === '1:1' && uploadFrameIronCheckbox && uploadFrameIronCheckbox.checked,
-    hoverOutline: getUploadHoverOutlineForSavedFrameMask(savedFrameMaskKind),
-    frameMaskKind: savedFrameMaskKind,
-    previewAspect: uploadAspect.value
-  });
-  closeUploadModal();
+  if (uploadInFlight) return;
+  uploadInFlight = true;
+  uploadBtn.disabled = true;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  var color = uploadColor.value;
+  var aspect = uploadAspect.value;
+  var maskKind = getUploadActiveFrameMaskKind();
+  var outline = getUploadHoverOutlineForSavedFrameMask(maskKind);
+  createUploadPlaceholder(outline);
+  closeUploadModal({ preserveSource: true });
+  await new Promise(function (resolve) { window.requestAnimationFrame(resolve); });
+  try {
+    var ascii = getUploadAsciiForSave();
+    if (!ascii) throw new Error('Could not create ASCII preview.');
+    var alphaMask = buildUploadAlphaMask();
+    var savedFrameMaskKind = getUploadSavedFrameMaskKind();
+    var ok = await savePhoto(ascii, color, {
+      ironBars: aspect === '1:1' && uploadFrameIronCheckbox && uploadFrameIronCheckbox.checked,
+      hoverOutline: getUploadHoverOutlineForSavedFrameMask(savedFrameMaskKind),
+      frameMaskKind: savedFrameMaskKind,
+      alphaMask: alphaMask,
+      previewAspect: aspect,
+      deferGalleryRefresh: true
+    });
+    if (!ok) throw new Error('Could not save to the gallery.');
+    var saved = AsciiCameraGalleryStorage.loadUserPhotos()[0];
+    if (!saved) throw new Error('Saved photo is unavailable.');
+    photosCache.unshift(saved);
+    reindexGalleryCardsAfterUpload();
+    galleryFeedNextOffset += 1;
+    syncGalleryFeedPollContext();
+    var uploadSync = window.AsciiCameraGalleryCloudSync;
+    if (
+      uploadSync &&
+      uploadSync.isEnabled() &&
+      uploadSync.getProvider() === 'supabase' &&
+      typeof uploadSync.getPhotosForGalleryRender === 'function' &&
+      typeof uploadSync.replaceSupabaseGalleryUserCache === 'function'
+    ) {
+      var cachedPhotos = uploadSync.getPhotosForGalleryRender().photos || [];
+      uploadSync.replaceSupabaseGalleryUserCache([saved].concat(cachedPhotos));
+    }
+    await commitUploadPlaceholder(saved);
+  } catch (error) {
+    console.error(error);
+    removeUploadPlaceholder(true);
+    window.alert('Could not save this photo. Please try again.');
+  } finally {
+    uploadSrcImg.removeAttribute('src');
+    uploadPreviewPre.textContent = '';
+    uploadInFlight = false;
+    uploadBtn.disabled = false;
+  }
 });
 
 /**
@@ -3885,7 +4067,8 @@ function moveFocusOutOfUploadModalBeforeHide() {
   }
 }
 
-function closeUploadModal() {
+function closeUploadModal(options) {
+  options = options || {};
   moveFocusOutOfUploadModalBeforeHide();
   cancelUploadPhotoFrameMaskAnimation();
   uploadPhotoFrameMaskEase = 0;
@@ -3895,8 +4078,10 @@ function closeUploadModal() {
   hideUploadUploadFrameMaskCanvas();
   uploadModal.classList.remove('open');
   uploadModal.setAttribute('aria-hidden', 'true');
-  uploadSrcImg.removeAttribute('src');
-  uploadPreviewPre.textContent = '';
+  if (options.preserveSource !== true) {
+    uploadSrcImg.removeAttribute('src');
+    uploadPreviewPre.textContent = '';
+  }
   if (uploadPreviewScaleWrap) uploadPreviewScaleWrap.style.transform = '';
   if (uploadDistortMirrorSlider) uploadDistortMirrorSlider.value = '0';
   syncUploadDistortMirrorSliderVisibility();
@@ -5307,6 +5492,46 @@ function getUploadAsciiForSave() {
     ovalOrRound,
     ironOn
   );
+}
+
+/** Generate a low-resolution occupied mask from the source PNG alpha channel. */
+function buildUploadAlphaMask() {
+  if (!uploadSourceHasAlpha || !uploadSrcImg.naturalWidth) return '';
+  var cols = parseInt(uploadCols.value, 10) || 96;
+  var aspect = getUploadAspectNumber();
+  var cellAspect = getGalleryAsciiCellMetrics().cellAspect;
+  var rows = Math.max(1, Math.round((cols * cellAspect) / aspect));
+  var canvas = document.createElement('canvas');
+  canvas.width = cols;
+  canvas.height = rows;
+  var ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return '';
+  var iw = uploadSrcImg.naturalWidth;
+  var ih = uploadSrcImg.naturalHeight;
+  var nativeAspect = iw / ih;
+  var sx = 0;
+  var sy = 0;
+  var sw = iw;
+  var sh = ih;
+  if (nativeAspect > aspect) {
+    sw = Math.round(ih * aspect);
+    sx = Math.round((iw - sw) / 2);
+  } else {
+    sh = Math.round(iw / aspect);
+    sy = Math.round((ih - sh) / 2);
+  }
+  ctx.clearRect(0, 0, cols, rows);
+  ctx.drawImage(uploadSrcImg, sx, sy, sw, sh, 0, 0, cols, rows);
+  var data = ctx.getImageData(0, 0, cols, rows).data;
+  var lines = [];
+  for (var y = 0; y < rows; y++) {
+    var line = '';
+    for (var x = 0; x < cols; x++) {
+      line += data[(y * cols + x) * 4 + 3] >= 16 ? '#' : ' ';
+    }
+    lines.push(line);
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -7119,6 +7344,9 @@ function mirrorUserPhotoToFirstPartyTab(photo) {
   if (/^(rectangle|square|circle|oval|character)$/.test(String(photo.hoverOutline || ''))) {
     mirrorPhoto.hoverOutline = photo.hoverOutline;
   }
+  if (typeof photo.alphaMask === 'string' && photo.alphaMask.length > 0) {
+    mirrorPhoto.alphaMask = photo.alphaMask;
+  }
   if (/^(oval|round)$/.test(String(photo.frameMaskKind || ''))) {
     mirrorPhoto.frameMaskKind = photo.frameMaskKind;
   }
@@ -7180,34 +7408,40 @@ async function savePhoto(ascii, color, options) {
     if (options && /^(oval|round)$/.test(String(options.frameMaskKind || ''))) {
       photo.frameMaskKind = options.frameMaskKind;
     }
+    if (options && typeof options.alphaMask === 'string' && options.alphaMask.length > 0) {
+      photo.alphaMask = options.alphaMask;
+    }
     if (options && typeof options.previewAspect === 'string' && options.previewAspect) {
       photo.previewAspect = options.previewAspect;
     }
     AsciiCameraGalleryStorage.prependUserPhoto(photo);
     const saved = AsciiCameraGalleryStorage.loadUserPhotos()[0];
-    refreshGallery();
+    var deferGalleryRefresh = options && options.deferGalleryRefresh === true;
+    if (!deferGalleryRefresh) refreshGallery();
     if (window.AsciiCameraGalleryCloudSync && AsciiCameraGalleryCloudSync.isEnabled()) {
       var sync = AsciiCameraGalleryCloudSync;
       if (sync.getProvider() === 'supabase' && typeof sync.insertPhotoRow === 'function') {
         var insOk = await sync.insertPhotoRow(saved || photo);
         if (!insOk) {
           AsciiCameraGalleryStorage.deleteUserPhotoAt(0);
-          refreshGallery();
+          if (!deferGalleryRefresh) refreshGallery();
           window.alert(
             'Could not save to ascii_photos. Check console [gallery-sync] logs and Supabase RLS.'
           );
           return;
         }
-        refreshGallery();
+        if (!deferGalleryRefresh) refreshGallery();
       } else {
         sync.pushFromLocal().catch(function () {});
       }
     }
     var mirrorRef = AsciiCameraGalleryStorage.loadUserPhotos()[0] || saved || photo;
     mirrorUserPhotoToFirstPartyTab(mirrorRef);
+    return true;
   } catch (e) {
     console.error(e);
     alert('Could not save to browser storage (quota or private mode).');
+    return false;
   }
 }
 
@@ -7240,9 +7474,10 @@ function buildGalleryDeleteFadeLayer(ascii, shade, shadeIndex) {
  * Grid / Showcase 删除动效：保持作品占位，将 █、▓、▒、░、· 五层从深到浅依次淡出。
  * 动画结束前 {@link refreshGallery} 会暂缓渲染，避免轮询提前重排卡片。
  * @param {number} userIndex 当前 `photosCache` / Grid 下标
+ * @param {boolean} [preserveSource=false] 软删除保留原 ASCII；彻底删除才清空
  * @returns {Promise<boolean>} 是否找到目标卡片并执行动画
  */
-function animateGalleryPhotoDeleteFade(userIndex) {
+function animateGalleryPhotoDeleteFade(userIndex, preserveSource) {
   var card = null;
   var host = null;
   var sourcePre = null;
@@ -7297,7 +7532,9 @@ function animateGalleryPhotoDeleteFade(userIndex) {
         }, shadeIndex * stepMs);
       });
       window.setTimeout(function () {
-        (sourceText || sourcePre).textContent = sourceAscii.replace(/[^\r\n]/g, ' ');
+        if (preserveSource !== true) {
+          (sourceText || sourcePre).textContent = sourceAscii.replace(/[^\r\n]/g, ' ');
+        }
         sourcePre.classList.remove('photo-delete-fade-source');
         layers.forEach(function (layer) { layer.remove(); });
         card.classList.remove(fadingClass);
@@ -7331,7 +7568,8 @@ function settleGalleryDeletedCardInPlace(userIndex) {
     if (restore) {
       restore.addEventListener('click', function (event) {
         event.stopPropagation();
-        void restoreGalleryPhoto(userIndex);
+        var currentIndex = parseInt(restore.getAttribute('data-user-index') || '-1', 10);
+        if (currentIndex >= 0) void restoreGalleryPhoto(currentIndex);
       });
     }
   }
@@ -7345,7 +7583,8 @@ function settleGalleryDeletedCardInPlace(userIndex) {
     if (purge) {
       purge.addEventListener('click', function (event) {
         event.stopPropagation();
-        void purgeGalleryPhoto(userIndex);
+        var currentIndex = parseInt(purge.getAttribute('data-user-index') || '-1', 10);
+        if (currentIndex >= 0) void purgeGalleryPhoto(currentIndex);
       });
     }
   }
@@ -7450,6 +7689,7 @@ function removePurgedGalleryPhotoInPlace(userIndex, photoId) {
   if (sync && typeof sync.removePhotoFromGalleryCacheById === 'function') {
     sync.removePhotoFromGalleryCacheById(photoId);
   }
+  galleryPurgeRefreshSuppressUntil = Date.now() + 5000;
   galleryFeedNextOffset = Math.max(0, galleryFeedNextOffset - 1);
   syncGalleryFeedPollContext();
 
@@ -7501,6 +7741,8 @@ async function deletePhoto(userIndex) {
       syncRef.isUuidPhotoId(photoIdForLikes);
     /** 云端条目可能 mine:false（仅 owner_id 对齐）但 RLS 仍允许 auth.uid()=user_id 删除；此类仍走 Supabase DELETE */
     if (row.mine === false && !curatorModeActive && !allowSupabaseDeleteAttempt) return;
+    if (galleryDeleteActionInFlight) return;
+    galleryDeleteActionInFlight = true;
     var backup = JSON.parse(JSON.stringify(userList));
     var removed = row;
     var sync = window.AsciiCameraGalleryCloudSync;
@@ -7532,7 +7774,7 @@ async function deletePhoto(userIndex) {
         );
         return;
       }
-      await animateGalleryPhotoDeleteFade(userIndex);
+      await animateGalleryPhotoDeleteFade(userIndex, true);
       if (curatorModeActive) {
         if (photosCache[userIndex]) photosCache[userIndex].isDeleted = true;
         if (galleryViewMode === 'coverflow') {
@@ -7544,6 +7786,7 @@ async function deletePhoto(userIndex) {
         } else {
           settleGalleryDeletedCardInPlace(userIndex);
         }
+        galleryPurgeRefreshSuppressUntil = Date.now() + 5000;
       } else {
         removePurgedGalleryPhotoInPlace(userIndex, photoIdForLikes);
       }
@@ -7553,7 +7796,7 @@ async function deletePhoto(userIndex) {
     AsciiCameraGalleryStorage.deleteUserPhotoAt(userIndex);
     if (!sync || !sync.isEnabled()) {
       await animateGalleryPhotoDeleteFade(userIndex);
-      refreshGallery();
+      removePurgedGalleryPhotoInPlace(userIndex, photoIdForLikes);
       return;
     }
     var cloudOk = true;
@@ -7593,6 +7836,8 @@ async function deletePhoto(userIndex) {
     }
   } catch (e) {
     console.error(e);
+  } finally {
+    galleryDeleteActionInFlight = false;
   }
 }
 
@@ -8057,9 +8302,12 @@ function animateCuratorPreviewRestoredAscii(cards) {
 
 function refreshGallery(options) {
   options = options || {};
+  if (uploadInFlight && options.allowDuringUpload !== true) return;
   if (galleryDrag && options.allowDuringDrag !== true) return;
   if (galleryDeleteFadeInFlight > 0 && options.allowDuringDeleteFade !== true) return;
+  if (galleryDeleteActionInFlight && options.allowDuringDeleteAction !== true) return;
   if (galleryPurgeInFlight && options.allowDuringPurge !== true) return;
+  if (Date.now() < galleryPurgeRefreshSuppressUntil && options.allowAfterPurge !== true) return;
   if (curatorPreviewTransitionInFlight && options.allowDuringCuratorPreviewTransition !== true) return;
   var keepLoading = options.keepLoading === true;
   if (typeof console !== 'undefined' && console.info) {
@@ -8461,7 +8709,9 @@ function createGalleryCoverFlowDropPlaceholder(drag) {
   if (!drag || drag.view !== 'coverflow') return null;
   var shape = getGalleryCoverFlowShape(drag.photo, drag.photo && drag.photo.ascii || '');
   var characterMask = shape === 'character'
-    ? buildGalleryCoverFlowCharacterMask(drag.photo && drag.photo.ascii || '')
+    ? buildGalleryCoverFlowCharacterMask(
+      drag.photo && drag.photo.alphaMask ? drag.photo.alphaMask : drag.photo && drag.photo.ascii || ''
+    )
     : '';
   var placeholder = document.createElement('div');
   placeholder.className = 'gallery-coverflow-drop-placeholder';
@@ -8779,7 +9029,9 @@ function buildGalleryCoverFlowSurfaceHtml(photo) {
   var color = typeof photo.color === 'string' && /^#[0-9a-f]{3,8}$/i.test(photo.color) ? photo.color : '#00ff41';
   var ironBars = isGalleryCoverFlowIronBarsPhoto(photo, ascii);
   var shape = getGalleryCoverFlowShape(photo, ascii);
-  var characterMask = shape === 'character' ? buildGalleryCoverFlowCharacterMask(ascii) : '';
+  var characterMask = shape === 'character'
+    ? buildGalleryCoverFlowCharacterMask(photo.alphaMask || ascii)
+    : '';
   return '<div class="cover-flow-card-visual gallery-drag-ghost-visual">' +
     '<div class="cover-flow-card-surface" style="--cover-flow-color:' + color + '">' +
     '<span class="gallery-drag-ghost-frame gallery-drag-ghost-frame--' + shape + '" aria-hidden="true"></span>' +
@@ -9639,9 +9891,11 @@ function resolveGalleryGridOutlineShape(photo, ascii, gridShape) {
   if (photo && (photo.frameMaskKind === 'round' || photo.shape === 'circle')) {
     return 'circle';
   }
-  if (inferGalleryLegacyMonocularCircle(ascii)) return 'circle';
-  if (gridShape === 'oval' || gridShape === 'circle') return gridShape;
-  if (explicitOutline === 'rectangle' || explicitOutline === 'square') return explicitOutline;
+  if (photo && typeof photo.alphaMask === 'string' && photo.alphaMask.length > 0) {
+    return 'character';
+  }
+  // 新规则：无明确滤镜元数据的新上传作品先按 aspect；不要让旧 ASCII 外形
+  // fallback 把普通 16:9/4:3 图像误判成水平 Oval。
   var missingMetadataUploadedAfterHoverRule =
     photo &&
     photo.mine === true &&
@@ -9649,11 +9903,17 @@ function resolveGalleryGridOutlineShape(photo, ascii, gridShape) {
     photo.time >= Date.parse('2026-09-12T11:25:00-07:00') &&
     !isGalleryCoverFlowIronBarsPhoto(photo, ascii);
   if (missingMetadataUploadedAfterHoverRule) {
+    var explicitAspect = String(photo.previewAspect || photo.aspectRatio || photo.aspect || '').trim();
+    if (/^1\s*[:/]\s*1(?:\b|$)/.test(explicitAspect)) return 'square';
+    if (explicitAspect) return 'rectangle';
     var dims = getAsciiDims(ascii || '');
     var metrics = getGalleryAsciiCellMetrics();
     var visualAspect = (Math.max(1, dims.cols) * metrics.cellAspect) / Math.max(1, dims.rows);
     return Math.abs(visualAspect - 1) < 0.12 ? 'square' : 'rectangle';
   }
+  if (inferGalleryLegacyMonocularCircle(ascii)) return 'circle';
+  if (gridShape === 'oval' || gridShape === 'circle') return gridShape;
+  if (explicitOutline === 'rectangle' || explicitOutline === 'square') return explicitOutline;
   var gridHasIronBars = isGalleryCoverFlowIronBarsPhoto(photo, ascii);
   return gridHasIronBars
     ? (gridShape === 'circle' ? 'circle' : 'square')
@@ -10400,6 +10660,7 @@ function getGalleryCoverFlowTransparencyStats(ascii) {
 function getGalleryCoverFlowShape(photo, ascii) {
   var explicitOutline = normalizeGalleryHoverOutline(photo);
   if (explicitOutline) return explicitOutline;
+  if (photo && typeof photo.alphaMask === 'string' && photo.alphaMask.length > 0) return 'character';
   if (photo && (photo.evilQueen === true || photo.frameMaskKind === 'oval' || photo.shape === 'oval')) {
     return 'oval';
   }
@@ -10749,7 +11010,9 @@ function renderGalleryCoverFlow() {
     var ironBars = isGalleryCoverFlowIronBarsPhoto(photo, ascii);
     // Iron Bar 只负责黑色背板；保留原始圆形/椭圆遮罩，避免组合滤镜退化成矩形。
     var shape = getGalleryCoverFlowShape(photo, ascii);
-    var characterMask = shape === 'character' ? buildGalleryCoverFlowCharacterMask(ascii) : '';
+    var characterMask = shape === 'character'
+      ? buildGalleryCoverFlowCharacterMask(photo.alphaMask || ascii)
+      : '';
     return '<article class="cover-flow-card' + (isDeleted ? ' cover-flow-card--deleted' : '') + '" data-index="' + index + '" tabindex="0" aria-selected="false"' +
       (isLightboxPhotoAnimatedForDownload(photo) ? ' data-ascii-animated="1"' : '') + '>' +
       '<div class="cover-flow-card-visual">' +
@@ -11161,7 +11424,10 @@ function renderGallery(photos, userCountOverride) {
 	        ? ' photo-thumb-ascii--' + gridDisplayShape
 	        : '';
 	    const gridAsciiOutline =
-	      '<span class="photo-thumb-outline">' + buildGalleryGridShapeOutline(p.ascii || '', gridOutlineShape) + '</span>';
+	      '<span class="photo-thumb-outline">' + buildGalleryGridShapeOutline(
+	        gridOutlineShape === 'character' && p.alphaMask ? p.alphaMask : p.ascii || '',
+	        gridOutlineShape
+	      ) + '</span>';
 	    const canRemoveUser =
       !curatorPreviewActive && isUser && !isDeleted && (p.mine === true || curatorModeActive);
     const showCuratorRestore =
@@ -11394,6 +11660,9 @@ window.addEventListener('message', function (ev) {
     if (p.ironBars === true) incoming.ironBars = true;
     if (/^(rectangle|square|circle|oval|character)$/.test(String(p.hoverOutline || ''))) {
       incoming.hoverOutline = p.hoverOutline;
+    }
+    if (typeof p.alphaMask === 'string' && p.alphaMask.length > 0) {
+      incoming.alphaMask = p.alphaMask;
     }
     if (/^(oval|round)$/.test(String(p.frameMaskKind || ''))) {
       incoming.frameMaskKind = p.frameMaskKind;

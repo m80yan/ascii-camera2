@@ -604,7 +604,7 @@
    * 列表请求不 select `preview_ascii`，仅用完整 `ascii` 渲染，与灯箱一致。
    * `owner_id` 缺失或空时 `mine` 为 false（不猜测历史行归属）。
    * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown, hover_outline?: unknown, frame_mask_kind?: unknown, preview_aspect?: unknown, is_animated?: unknown, frame_count?: unknown, fps?: unknown, duration_ms?: unknown, is_deleted?: unknown, likes_count?: unknown, downloads_count?: unknown, views_count?: unknown }} row
-   * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean, hoverOutline?: string, frameMaskKind?: string, previewAspect?: string, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number } | null}
+   * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean, hoverOutline?: string, alphaMask?: string, frameMaskKind?: string, previewAspect?: string, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number } | null}
    */
   function mapAsciiPhotoRow(row) {
     if (!row || typeof row.ascii !== 'string') return null;
@@ -623,7 +623,7 @@
       var count = typeof value === 'number' ? value : Number(value);
       return Number.isFinite(count) && count >= 0 ? Math.floor(count) : 0;
     };
-    /** @type {{ id: string, ascii: string, color: string, time: number, mine: boolean, hoverOutline?: string, frameMaskKind?: string, previewAspect?: string, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }} */
+    /** @type {{ id: string, ascii: string, color: string, time: number, mine: boolean, hoverOutline?: string, alphaMask?: string, frameMaskKind?: string, previewAspect?: string, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number }} */
     var out = {
       id: id,
       ascii: row.ascii,
@@ -637,6 +637,26 @@
     };
     if (/^(rectangle|square|circle|oval|character)$/.test(String(row.hover_outline || ''))) {
       out.hoverOutline = String(row.hover_outline);
+    }
+    // alpha_mask 尚未进入当前 Supabase schema。Alpha PNG 的精确轮廓先从
+    // 同设备 localStorage 合并回来，避免云端轮询覆盖掉本地已保存的轮廓。
+    if (
+      global.AsciiCameraGalleryStorage &&
+      typeof global.AsciiCameraGalleryStorage.loadUserPhotos === 'function'
+    ) {
+      var localPhotos = global.AsciiCameraGalleryStorage.loadUserPhotos();
+      for (var localIndex = 0; localIndex < localPhotos.length; localIndex++) {
+        var localPhoto = localPhotos[localIndex];
+        if (
+          localPhoto &&
+          String(localPhoto.id) === id &&
+          typeof localPhoto.alphaMask === 'string' &&
+          localPhoto.alphaMask.length > 0
+        ) {
+          out.alphaMask = localPhoto.alphaMask;
+          break;
+        }
+      }
     }
     if (/^(oval|round)$/.test(String(row.frame_mask_kind || ''))) {
       out.frameMaskKind = String(row.frame_mask_kind);
