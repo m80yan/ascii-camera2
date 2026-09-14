@@ -603,7 +603,7 @@
    * 将 `ascii_photos` 行转为画廊 UI 用条目：`time` 来自 `created_at`；列表拉取不含 `frames`（悬停时再取）。
    * 列表请求不 select `preview_ascii`，仅用完整 `ascii` 渲染，与灯箱一致。
    * `owner_id` 缺失或空时 `mine` 为 false（不猜测历史行归属）。
-   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown, hover_outline?: unknown, frame_mask_kind?: unknown, preview_aspect?: unknown, is_animated?: unknown, frame_count?: unknown, fps?: unknown, duration_ms?: unknown, is_deleted?: unknown, likes_count?: unknown, downloads_count?: unknown, views_count?: unknown }} row
+   * @param {{ id?: unknown, ascii?: string, color?: string, created_at?: string, owner_id?: unknown, hover_outline?: unknown, alpha_mask?: unknown, frame_mask_kind?: unknown, preview_aspect?: unknown, is_animated?: unknown, frame_count?: unknown, fps?: unknown, duration_ms?: unknown, is_deleted?: unknown, likes_count?: unknown, downloads_count?: unknown, views_count?: unknown }} row
    * @returns {{ id: string, ascii: string, color: string, time: number, mine: boolean, hoverOutline?: string, alphaMask?: string, frameMaskKind?: string, previewAspect?: string, likesCount: number, downloadsCount: number, viewsCount: number, isDeleted?: boolean, isAnimated?: boolean, frameCount?: number, fps?: number, durationMs?: number } | null}
    */
   function mapAsciiPhotoRow(row) {
@@ -638,12 +638,13 @@
     if (/^(rectangle|square|circle|oval|character)$/.test(String(row.hover_outline || ''))) {
       out.hoverOutline = String(row.hover_outline);
     }
-    // alpha_mask 尚未进入当前 Supabase schema。Alpha PNG 的精确轮廓先从
-    // 同设备 localStorage 合并回来，避免云端轮询覆盖掉本地已保存的轮廓。
-    if (
+    if (typeof row.alpha_mask === 'string' && row.alpha_mask.length > 0) {
+      out.alphaMask = row.alpha_mask;
+    } else if (
       global.AsciiCameraGalleryStorage &&
       typeof global.AsciiCameraGalleryStorage.loadUserPhotos === 'function'
     ) {
+      // 兼容迁移前的旧行：同设备仍可从 localStorage 恢复精确轮廓。
       var localPhotos = global.AsciiCameraGalleryStorage.loadUserPhotos();
       for (var localIndex = 0; localIndex < localPhotos.length; localIndex++) {
         var localPhoto = localPhotos[localIndex];
@@ -985,7 +986,7 @@
   /**
    * 向 `ascii_photos` 插入一行（不整包覆盖）；`id` 为 UUID 时与本地 `prependUserPhoto` 对齐。
    * 写入前从 `window.__ASCII_GALLERY_SUPABASE__` 取 session，设置 `Authorization: Bearer <access_token>` 与 body `user_id`；无会话则返回 false（静默）。
-   * @param {{ ascii: string, preview_ascii?: string, color?: string, time?: number, id?: string, hoverOutline?: string, frameMaskKind?: string, previewAspect?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} photo
+   * @param {{ ascii: string, preview_ascii?: string, color?: string, time?: number, id?: string, hoverOutline?: string, alphaMask?: string, frameMaskKind?: string, previewAspect?: string, isAnimated?: boolean, frames?: string[], frameCount?: number, fps?: number, durationMs?: number }} photo
    * @returns {Promise<boolean>}
    */
   function insertPhotoRowSupabase(photo) {
@@ -1010,7 +1011,7 @@
             ? photo.preview_ascii
             : photo.ascii
         );
-        /** @type {{ ascii: string, preview_ascii: string, color: string, created_at: string, owner_id: string, user_id: string, id?: string, hover_outline?: string, frame_mask_kind?: string, preview_aspect?: string, is_animated: boolean, frames: string[] | null, frame_count: number | null, fps: number | null, duration_ms: number | null }} */
+        /** @type {{ ascii: string, preview_ascii: string, color: string, created_at: string, owner_id: string, user_id: string, id?: string, hover_outline?: string, alpha_mask?: string, frame_mask_kind?: string, preview_aspect?: string, is_animated: boolean, frames: string[] | null, frame_count: number | null, fps: number | null, duration_ms: number | null }} */
         var body = {
           ascii: photo.ascii,
           preview_ascii: previewAscii,
@@ -1026,6 +1027,9 @@
         };
         if (/^(rectangle|square|circle|oval|character)$/.test(String(photo.hoverOutline || ''))) {
           body.hover_outline = photo.hoverOutline;
+        }
+        if (typeof photo.alphaMask === 'string' && photo.alphaMask.length > 0) {
+          body.alpha_mask = photo.alphaMask;
         }
         if (/^(oval|round)$/.test(String(photo.frameMaskKind || ''))) {
           body.frame_mask_kind = photo.frameMaskKind;
