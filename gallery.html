@@ -1326,6 +1326,102 @@
   #lightbox.lightbox--open-chrome-reveal #lightbox-footer {
     animation: lightbox-open-chrome-in 0.24s ease-out forwards;
   }
+  /* 首次 Lightbox 操作教学：几何与 Figma 的 36px Key 组件保持一致。 */
+  #lightbox-tutorial {
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    display: none;
+    pointer-events: none;
+  }
+  #lightbox.lightbox--tutorial-playing #lightbox-tutorial {
+    display: block;
+    pointer-events: auto;
+  }
+  .lightbox-tutorial-key {
+    position: absolute;
+    width: 36px;
+    height: 36px;
+    opacity: 1;
+    transition: opacity 0.16s ease-out;
+  }
+  .lightbox-tutorial-key--disabled { opacity: 0.35; }
+  .lightbox-tutorial-key__face {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 36px;
+    height: 36px;
+    box-sizing: border-box;
+    border: 1px solid #2afd4f;
+    background: #2afd4f;
+    transition: top 0.12s ease-out, height 0.12s ease-out;
+  }
+  .lightbox-tutorial-key__base {
+    position: absolute;
+    left: 1px;
+    top: 27px;
+    width: 34px;
+    height: 8px;
+    background: #000;
+    transition: top 0.12s ease-out, height 0.12s ease-out;
+  }
+  .lightbox-tutorial-key__content {
+    position: absolute;
+    top: 5px;
+    left: 10px;
+    width: 16px;
+    height: 16px;
+    display: block;
+    color: #000;
+    font-family: monospace, ui-monospace, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 16px;
+    text-align: center;
+    transition: transform 0.12s ease-out;
+  }
+  .lightbox-tutorial-key--esc .lightbox-tutorial-key__content {
+    left: 7px;
+    width: 22px;
+    letter-spacing: 0;
+  }
+  .lightbox-tutorial-key__content img {
+    display: block;
+    width: 16px;
+    height: 16px;
+  }
+  .lightbox-tutorial-key--right .lightbox-tutorial-key__content img {
+    transform: scaleX(-1);
+  }
+  .lightbox-tutorial-key--pressed .lightbox-tutorial-key__face {
+    top: 8px;
+    height: 28px;
+  }
+  .lightbox-tutorial-key--pressed .lightbox-tutorial-key__base {
+    top: 33px;
+    height: 2px;
+  }
+  .lightbox-tutorial-key--pressed .lightbox-tutorial-key__content {
+    transform: translateY(8px);
+  }
+  .lightbox-tutorial-key--esc {
+    left: 36px;
+    top: 36px;
+  }
+  .lightbox-tutorial-cluster {
+    position: absolute;
+    right: 51px;
+    bottom: 46px;
+    width: 124px;
+    height: 80px;
+    opacity: 1;
+    transition: opacity 0.18s ease-out;
+  }
+  .lightbox-tutorial--keys-fading .lightbox-tutorial-cluster { opacity: 0; }
+  .lightbox-tutorial-key--like { left: 44px; top: 0; }
+  .lightbox-tutorial-key--left { left: 0; top: 44px; }
+  .lightbox-tutorial-key--dislike { left: 44px; top: 44px; }
+  .lightbox-tutorial-key--right { left: 88px; top: 44px; }
   /**
    * 固定在灯箱视口底部，与主图区域解耦，打开/缩放时不再随 inner 卡片 reflow。
    */
@@ -3006,6 +3102,30 @@
       <button type="button" id="lightbox-nav-next" class="lightbox-nav-btn" aria-label="Next photo">&gt;</button>
     </div>
   </div>
+  <div id="lightbox-tutorial" aria-hidden="true">
+    <div class="lightbox-tutorial-key lightbox-tutorial-key--esc" data-tutorial-key="esc">
+      <span class="lightbox-tutorial-key__face"><span class="lightbox-tutorial-key__content">Esc</span></span>
+      <span class="lightbox-tutorial-key__base"></span>
+    </div>
+    <div class="lightbox-tutorial-cluster">
+      <div class="lightbox-tutorial-key lightbox-tutorial-key--like" data-tutorial-key="like">
+        <span class="lightbox-tutorial-key__face"><span class="lightbox-tutorial-key__content"><img src="public/icons/tutorial-heart-like.svg" alt=""></span></span>
+        <span class="lightbox-tutorial-key__base"></span>
+      </div>
+      <div class="lightbox-tutorial-key lightbox-tutorial-key--left" data-tutorial-key="left">
+        <span class="lightbox-tutorial-key__face"><span class="lightbox-tutorial-key__content"><img src="public/icons/tutorial-arrow-left.svg" alt=""></span></span>
+        <span class="lightbox-tutorial-key__base"></span>
+      </div>
+      <div class="lightbox-tutorial-key lightbox-tutorial-key--dislike" data-tutorial-key="dislike">
+        <span class="lightbox-tutorial-key__face"><span class="lightbox-tutorial-key__content"><img src="public/icons/tutorial-heart-dislike.svg" alt=""></span></span>
+        <span class="lightbox-tutorial-key__base"></span>
+      </div>
+      <div class="lightbox-tutorial-key lightbox-tutorial-key--right" data-tutorial-key="right">
+        <span class="lightbox-tutorial-key__face"><span class="lightbox-tutorial-key__content"><img src="public/icons/tutorial-arrow-left.svg" alt=""></span></span>
+        <span class="lightbox-tutorial-key__base"></span>
+      </div>
+    </div>
+  </div>
 </div>
 <div id="confirm-modal">
   <div id="confirm-box">
@@ -3189,6 +3309,14 @@ const galleryListHeaderLeftRail = document.getElementById('gallery-list-header-l
 const lightbox = document.getElementById('lightbox');
 const lightboxPre = document.getElementById('lightbox-pre');
 const lightboxLikeBtn = document.getElementById('lightbox-like');
+const lightboxTutorial = document.getElementById('lightbox-tutorial');
+const LIGHTBOX_TUTORIAL_SEEN_KEY = 'ascii-camera-lightbox-tutorial-seen-v1';
+const LIGHTBOX_TUTORIAL_KEY_MS = 500;
+const LIGHTBOX_TUTORIAL_PRESS_MS = 120;
+const LIGHTBOX_TUTORIAL_GROUP_GAP_MS = 1000;
+let lightboxTutorialRunId = 0;
+let lightboxTutorialPlaying = false;
+let lightboxTutorialSeenInSession = false;
 /** @type {string} 当前灯箱作品 id，用于云端点赞 */
 let lightboxPhotoId = '';
 /** @type {{ ascii?: string, color?: string, time?: number, id?: string, isAnimated?: boolean, frames?: string[], fps?: number } | null} 灯箱当前条目（用于 GIF 导出） */
@@ -5673,6 +5801,178 @@ function stopLightboxAsciiAnim() {
 }
 
 /**
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
+function waitForLightboxTutorial(ms) {
+  return new Promise(function (resolve) {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+/** @returns {boolean} */
+function hasSeenLightboxTutorial() {
+  if (lightboxTutorialSeenInSession) return true;
+  try {
+    return window.localStorage.getItem(LIGHTBOX_TUTORIAL_SEEN_KEY) === '1';
+  } catch (err) {
+    return false;
+  }
+}
+
+/** @returns {void} */
+function markLightboxTutorialSeen() {
+  lightboxTutorialSeenInSession = true;
+  try {
+    window.localStorage.setItem(LIGHTBOX_TUTORIAL_SEEN_KEY, '1');
+  } catch (err) {
+    /* 私密浏览等场景仍在本次页面会话内只展示一次。 */
+  }
+}
+
+/** @returns {void} */
+function resetLightboxTutorialVisuals() {
+  if (!lightboxTutorial) return;
+  lightboxTutorial.classList.remove('lightbox-tutorial--keys-fading');
+  lightboxTutorial.removeAttribute('data-step');
+  var keys = lightboxTutorial.querySelectorAll('[data-tutorial-key]');
+  for (var i = 0; i < keys.length; i++) {
+    keys[i].classList.remove('lightbox-tutorial-key--pressed', 'lightbox-tutorial-key--disabled');
+  }
+}
+
+/** @returns {void} */
+function cancelLightboxTutorial() {
+  lightboxTutorialRunId++;
+  lightboxTutorialPlaying = false;
+  resetLightboxTutorialVisuals();
+  lightbox.classList.remove('lightbox--tutorial-playing');
+}
+
+/**
+ * @param {'like'|'nav'|'esc'} step
+ * @returns {void}
+ */
+function setLightboxTutorialStep(step) {
+  if (!lightboxTutorial) return;
+  lightboxTutorial.dataset.step = step;
+  var activeKeys = step === 'like'
+    ? { like: true, dislike: true }
+    : step === 'nav'
+      ? { left: true, right: true }
+      : { esc: true };
+  var keys = lightboxTutorial.querySelectorAll('[data-tutorial-key]');
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i].getAttribute('data-tutorial-key') || '';
+    keys[i].classList.toggle('lightbox-tutorial-key--disabled', !activeKeys[key]);
+    keys[i].classList.remove('lightbox-tutorial-key--pressed');
+  }
+}
+
+/**
+ * @param {number} runId
+ * @returns {boolean}
+ */
+function isLightboxTutorialCurrent(runId) {
+  return lightboxTutorialPlaying &&
+    runId === lightboxTutorialRunId &&
+    lightbox.classList.contains('open');
+}
+
+/**
+ * @param {number} runId
+ * @param {'like'|'dislike'|'left'|'right'|'esc'} key
+ * @param {() => (void|Promise<unknown>)} action
+ * @returns {Promise<boolean>}
+ */
+async function playLightboxTutorialKey(runId, key, action) {
+  if (!isLightboxTutorialCurrent(runId) || !lightboxTutorial) return false;
+  var keyEl = lightboxTutorial.querySelector('[data-tutorial-key="' + key + '"]');
+  if (!keyEl) return false;
+  keyEl.classList.add('lightbox-tutorial-key--pressed');
+  await waitForLightboxTutorial(LIGHTBOX_TUTORIAL_PRESS_MS);
+  if (!isLightboxTutorialCurrent(runId)) return false;
+  var result = action();
+  await waitForLightboxTutorial(LIGHTBOX_TUTORIAL_KEY_MS - LIGHTBOX_TUTORIAL_PRESS_MS);
+  keyEl.classList.remove('lightbox-tutorial-key--pressed');
+  if (result && typeof result.then === 'function') await result;
+  return isLightboxTutorialCurrent(runId);
+}
+
+/**
+ * @param {number} runId
+ * @returns {Promise<void>}
+ */
+async function runLightboxTutorial(runId) {
+  if (!isLightboxTutorialCurrent(runId)) return;
+  var initiallyLiked = lightboxLikeUiState.liked;
+  setLightboxTutorialStep('like');
+  if (initiallyLiked) {
+    if (!await playLightboxTutorialKey(runId, 'dislike', lightboxKeyboardLikeDown)) return;
+    if (!await playLightboxTutorialKey(runId, 'like', lightboxKeyboardLikeUp)) return;
+  } else {
+    if (!await playLightboxTutorialKey(runId, 'like', lightboxKeyboardLikeUp)) return;
+    if (!await playLightboxTutorialKey(runId, 'dislike', lightboxKeyboardLikeDown)) return;
+  }
+
+  await waitForLightboxTutorial(LIGHTBOX_TUTORIAL_GROUP_GAP_MS);
+  if (!isLightboxTutorialCurrent(runId)) return;
+
+  var prev = document.getElementById('lightbox-nav-prev');
+  var next = document.getElementById('lightbox-nav-next');
+  var navActions = !next || next.disabled
+    ? (!prev || prev.disabled ? [] : [['left', -1], ['right', 1]])
+    : [['right', 1], ['left', -1]];
+  if (navActions.length) {
+    setLightboxTutorialStep('nav');
+    for (var i = 0; i < navActions.length; i++) {
+      var nav = navActions[i];
+      if (!await playLightboxTutorialKey(runId, nav[0], function () {
+        navigateLightbox(nav[1], false);
+      })) return;
+    }
+    await waitForLightboxTutorial(LIGHTBOX_TUTORIAL_GROUP_GAP_MS);
+    if (!isLightboxTutorialCurrent(runId)) return;
+  }
+
+  if (lightboxTutorial) lightboxTutorial.classList.add('lightbox-tutorial--keys-fading');
+  await waitForLightboxTutorial(180);
+  if (!isLightboxTutorialCurrent(runId)) return;
+  setLightboxTutorialStep('esc');
+  if (!await playLightboxTutorialKey(runId, 'esc', function () {})) return;
+  markLightboxTutorialSeen();
+  lightboxTutorialPlaying = false;
+  lightbox.classList.remove('lightbox--tutorial-playing');
+  dismissLightbox(true);
+}
+
+/**
+ * @param {number} lightboxSession
+ * @param {Promise<unknown>} likeStateReady
+ * @returns {void}
+ */
+function scheduleLightboxTutorial(lightboxSession, likeStateReady) {
+  if (hasSeenLightboxTutorial()) return;
+  var runId = ++lightboxTutorialRunId;
+  Promise.all([
+    Promise.race([likeStateReady, waitForLightboxTutorial(1000)]),
+    waitForLightboxTutorial(180)
+  ]).then(function () {
+    if (runId !== lightboxTutorialRunId || lightboxSession !== lightboxLikeSessionGen || !lightbox.classList.contains('open')) return;
+    if (lightbox.classList.contains('lightbox--open-chrome-hidden')) {
+      window.setTimeout(function () {
+        scheduleLightboxTutorial(lightboxSession, Promise.resolve());
+      }, 60);
+      return;
+    }
+    lightboxTutorialPlaying = true;
+    resetLightboxTutorialVisuals();
+    lightbox.classList.add('lightbox--tutorial-playing');
+    runLightboxTutorial(runId);
+  });
+}
+
+/**
  * @returns {boolean}
  */
 function shouldLightboxSharedMotion() {
@@ -6072,6 +6372,7 @@ function closeLightbox() {
   var wasShowcase = lightboxOriginView === 'coverflow';
   if (wasShowcase && lightboxClosing) cancelGalleryCoverFlowScroll();
   lightboxClosing = false;
+  cancelLightboxTutorial();
   lightboxSharedTransitGen++;
   lightboxLikeSessionGen++;
   stopLightboxAsciiAnim();
@@ -6388,6 +6689,7 @@ function beginGallerySharedOpenFlyFirst(photo, flyCard) {
  */
 function openLightbox(photo, feedIndexOpt, flyFromCard) {
   if (!photo || lightboxClosing) return;
+  var isFreshLightboxOpen = !lightbox.classList.contains('open');
   if (!lightbox.classList.contains('open')) lightboxOriginView = galleryViewMode;
   if (lightboxOriginView === 'coverflow') stopGalleryCoverFlowAnimation();
   stopLightboxAsciiAnim();
@@ -6449,8 +6751,9 @@ function openLightbox(photo, feedIndexOpt, flyFromCard) {
   lightbox.focus({ preventScroll: true });
 
   const sync = window.AsciiCameraGalleryCloudSync;
+  var lightboxLikeStateReady = Promise.resolve();
   if (sync && typeof sync.likesApiEnabled === 'function' && sync.likesApiEnabled() && lightboxPhotoId) {
-    sync.fetchPhotoLikeState(lightboxPhotoId).then(function (st) {
+    lightboxLikeStateReady = sync.fetchPhotoLikeState(lightboxPhotoId).then(function (st) {
       if (session !== lightboxLikeSessionGen) return;
       if (lightboxDeferLikeUiForSharedOpen) {
         lightboxPendingLikeUiForSharedOpen = { liked: st.likedByMe, count: st.count };
@@ -6467,6 +6770,10 @@ function openLightbox(photo, feedIndexOpt, flyFromCard) {
       lightboxLikeUiState = { liked: false, count: 0 };
       applyLightboxLikeButton();
     });
+  }
+
+  if (isFreshLightboxOpen) {
+    scheduleLightboxTutorial(session, lightboxLikeStateReady);
   }
 
   if (!useSharedOpen) {
@@ -6516,6 +6823,14 @@ function openLightbox(photo, feedIndexOpt, flyFromCard) {
     });
   }
 }
+if (lightboxTutorial) {
+  lightboxTutorial.addEventListener('click', function (e) {
+    if (!lightboxTutorialPlaying) return;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+}
+
 lightbox.addEventListener('click', function (e) {
   if (e.target.closest('#lightbox-inner')) return;
   if (e.target.closest('#lightbox-footer')) return;
@@ -6646,15 +6961,15 @@ function triggerLightboxLikeShakeY() {
 
 /**
  * 键盘彩蛋 ArrowUp：未赞时复用与点击相同的点赞 API 与状态刷新。
- * @returns {void}
+ * @returns {Promise<boolean>}
  */
 function lightboxKeyboardLikeUp() {
   const sync = window.AsciiCameraGalleryCloudSync;
   const pid = lightboxPhotoId;
-  if (!pid || !sync || typeof sync.likesApiEnabled !== 'function' || !sync.likesApiEnabled()) return;
+  if (!pid || !sync || typeof sync.likesApiEnabled !== 'function' || !sync.likesApiEnabled()) return Promise.resolve(false);
 
   const prev = { liked: lightboxLikeUiState.liked, count: lightboxLikeUiState.count };
-  if (prev.liked) return;
+  if (prev.liked) return Promise.resolve(false);
 
   lightboxKeyboardLikedLabel = true;
   const session = lightboxLikeSessionGen;
@@ -6663,7 +6978,7 @@ function lightboxKeyboardLikeUp() {
   applyLightboxLikeButton();
   triggerLightboxLikeShakeY();
 
-  sync.addPhotoLike(pid).then(function () {
+  return sync.addPhotoLike(pid).then(function () {
     if (typeof sync.trackEvent === 'function') {
       sync.trackEvent('like_photo', { photoId: pid });
     }
@@ -6672,47 +6987,56 @@ function lightboxKeyboardLikeUp() {
     if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
     lightboxLikeUiState = { liked: st.likedByMe, count: st.count };
     applyLightboxLikeButton();
+    return true;
   }).catch(function () {
     if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
     lightboxKeyboardLikedLabel = false;
     lightboxLikeUiState = { liked: false, count: 0 };
     applyLightboxLikeButton();
+    return false;
   });
 }
 
 /**
  * 键盘彩蛋 ArrowDown：已赞时复用与点击相同的取消赞逻辑。
- * @returns {void}
+ * @returns {Promise<boolean>}
  */
 function lightboxKeyboardLikeDown() {
   const sync = window.AsciiCameraGalleryCloudSync;
   const pid = lightboxPhotoId;
-  if (!pid || !sync || typeof sync.likesApiEnabled !== 'function' || !sync.likesApiEnabled()) return;
+  if (!pid || !sync || typeof sync.likesApiEnabled !== 'function' || !sync.likesApiEnabled()) return Promise.resolve(false);
 
   const prev = { liked: lightboxLikeUiState.liked, count: lightboxLikeUiState.count };
-  if (!prev.liked) return;
+  if (!prev.liked) return Promise.resolve(false);
 
   lightboxKeyboardLikedLabel = false;
   const session = lightboxLikeSessionGen;
 
   lightboxLikeUiState = { liked: false, count: 0 };
   applyLightboxLikeButton();
-  sync.removePhotoLike(pid).then(function () {
+  return sync.removePhotoLike(pid).then(function () {
     return sync.fetchPhotoLikeState(pid);
   }).then(function (st) {
     if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
     lightboxLikeUiState = { liked: st.likedByMe, count: st.count };
     applyLightboxLikeButton();
+    return true;
   }).catch(function () {
     if (session !== lightboxLikeSessionGen || pid !== lightboxPhotoId) return;
     lightboxLikeUiState = prev;
     applyLightboxLikeButton();
+    return false;
   });
 }
 
 (function setupLightboxKeyboardEasterEgg() {
   window.addEventListener('keydown', function (e) {
     if (!lightbox.classList.contains('open')) return;
+    if (lightboxTutorialPlaying) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
     var k = e.key;
     if (k === 'Escape') {
       e.preventDefault();
