@@ -5981,6 +5981,7 @@ function scheduleLightboxTutorial(lightboxSession, likeStateReady) {
     }
     lightboxTutorialPlaying = true;
     resetLightboxTutorialVisuals();
+    setLightboxTutorialStep('like');
     lightboxTutorial.classList.add('lightbox-tutorial--intro-wait');
     lightbox.classList.add('lightbox--tutorial-playing');
     runLightboxTutorial(runId);
