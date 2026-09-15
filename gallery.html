@@ -6,6 +6,13 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0a0a0a; color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; min-height: 100vh; padding: 24px 16px; }
+  /* Grid 使用自定义滚动条时不保留浏览器原生滚动条槽位；保留 body 的 16px 内容边距。 */
+  html.gallery-grid-scroll-active { overflow: hidden; scrollbar-gutter: auto; }
+  body.gallery-grid-scroll-active { overflow: hidden; padding-top: 0; }
+  /* 页面不再预留系统滚动条槽位；Header 仍按原 Showcase 的右边界排版。 */
+  html #header {
+    margin-right: calc(-16px + var(--gallery-native-scrollbar-gutter, 0px));
+  }
   @font-face {
     font-family: "OCR A Extended";
     src: url("public/fonts/OCR%20A%20Extended.TTF") format("truetype");
@@ -127,10 +134,10 @@
    * 负 margin 抵消 `body` 内边距，使条带横向贴边；`padding` 保持与原内容对齐。
    */
   /**
-   * `scrollbar-gutter: stable`：避免 Loop/All 切换时因滚动条显隐导致整页宽度抖动。
+   * Grid 与 Showcase 都有独立滚动区，根节点不预留系统滚动条槽位。
    */
   html {
-    scrollbar-gutter: stable;
+    scrollbar-gutter: auto;
   }
   #header {
     --hdr-action-btn-w: 12.5rem;
@@ -1448,6 +1455,18 @@
     pointer-events: none;
     transition: opacity 0.18s ease-out;
   }
+  /* 白色 Tutorial callout 在大幅浅色作品上保持轮廓清晰；仅描边形状层，不影响文字。 */
+  .lightbox-tutorial-tip::before {
+    filter:
+      drop-shadow(2px 0 0 #000)
+      drop-shadow(-2px 0 0 #000)
+      drop-shadow(0 2px 0 #000)
+      drop-shadow(0 -2px 0 #000)
+      drop-shadow(2px 2px 0 #000)
+      drop-shadow(2px -2px 0 #000)
+      drop-shadow(-2px 2px 0 #000)
+      drop-shadow(-2px -2px 0 #000);
+  }
   .lightbox-tutorial-tip--keyboard {
     right: 34px;
     bottom: 142px;
@@ -1466,6 +1485,7 @@
   }
   .lightbox-tutorial-tip--keyboard > span {
     position: relative;
+    z-index: 1;
   }
   .lightbox-tutorial-tip--esc {
     left: 36px;
@@ -1474,7 +1494,17 @@
     justify-content: center;
     padding-top: 17px;
     box-sizing: border-box;
-    background-image: url("public/icons/tutorial-tip-esc.svg");
+    background-image: none;
+  }
+  .lightbox-tutorial-tip--esc::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: url("public/icons/tutorial-tip-esc.svg") center / 100% 100% no-repeat;
+  }
+  .lightbox-tutorial-tip--esc > span {
+    position: relative;
+    z-index: 1;
   }
   #lightbox.lightbox--tutorial-playing #lightbox-tutorial:not([data-step="esc"]) .lightbox-tutorial-tip--keyboard {
     display: flex;
@@ -2358,6 +2388,49 @@
     position: relative;
     min-height: min(36vh, 420px);
   }
+  /**
+   * Grid 在 Header 背后独立滚动，使现有 Header 的半透明与 backdrop blur
+   * 仍能作用于滚过的作品。原生滚动条隐藏，改由下方方形轨道单独呈现。
+   */
+  #gallery-feed-main.gallery-feed-main--grid-scroll {
+    min-height: 0;
+    margin-top: calc(-1 * var(--gallery-grid-scroll-inset, 0px));
+    padding-top: var(--gallery-grid-scroll-inset, 0px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+  #gallery-feed-main.gallery-feed-main--grid-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  /* 仅 Grid 首屏内容下移；Header 与 Showcase 布局保持不变。 */
+  #gallery-feed-main.gallery-feed-main--grid-scroll #gallery {
+    padding-top: 24px;
+  }
+  #gallery-grid-scrollbar {
+    position: fixed;
+    right: 0;
+    z-index: 9999;
+    width: 8px;
+    background: #111;
+    border-radius: 0;
+    cursor: pointer;
+    touch-action: none;
+  }
+  #gallery-grid-scrollbar[hidden] { display: none !important; }
+  #gallery-grid-scrollbar-thumb {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    min-height: 24px;
+    background: rgba(0, 255, 65, 0.55);
+    border-radius: 0;
+    cursor: grab;
+  }
+  #gallery-grid-scrollbar-thumb.is-dragging { cursor: grabbing; }
+  #gallery-grid-scrollbar-thumb:hover { background: #00ff41; }
   #gallery-coverflow-view[hidden] { display: none !important; }
   #gallery-coverflow-view {
     --cover-flow-height: 260px;
@@ -3060,6 +3133,7 @@
   </section>
 </div>
 </div>
+<div id="gallery-grid-scrollbar" hidden aria-hidden="true"><div id="gallery-grid-scrollbar-thumb"></div></div>
 <img id="upload-src-img" alt="">
 <div id="upload-modal" aria-hidden="true">
   <div id="upload-modal-inner">
@@ -3379,6 +3453,9 @@ const CHAR_SETS = {
 };
 /** Style 下拉：畸变镜（非 `CHAR_SETS` 键；字集见 {@link getUploadCharSet}），与 camera `STYLE_DISTORTING_MIRROR` 一致 */
 const STYLE_DISTORTING_MIRROR = 'distortingMirror';
+const galleryFeedMain = document.getElementById('gallery-feed-main');
+const galleryGridScrollbar = document.getElementById('gallery-grid-scrollbar');
+const galleryGridScrollbarThumb = document.getElementById('gallery-grid-scrollbar-thumb');
 const gallery = document.getElementById('gallery');
 const empty = document.getElementById('empty');
 const galleryViewGridBtn = document.getElementById('gallery-view-grid');
@@ -3964,6 +4041,7 @@ function enterCuratorMode() {
 
 window.addEventListener('resize', function () {
   invalidateGalleryCellMetrics();
+  syncGalleryGridViewport();
   if (photosCache && photosCache.length) renderGallery(photosCache);
   if (uploadModal && uploadModal.classList.contains('open')) {
     renderUploadPreview();
@@ -8687,13 +8765,129 @@ window.addEventListener('storage', function (ev) {
 
 function syncGalleryLoadingPosition() {
   var loading = document.getElementById('gallery-loading');
-  var main = document.getElementById('gallery-feed-main');
+  var main = galleryFeedMain;
   if (!loading || !main || loading.classList.contains('is-hidden')) return;
+  if (main.classList.contains('gallery-feed-main--grid-scroll')) {
+    loading.style.height = main.clientHeight + 'px';
+    return;
+  }
   var top = main.getBoundingClientRect().top;
   var bottomGap = 24;
   var available = Math.max(0, window.innerHeight - top - bottomGap);
   var defaultMinHeight = Math.min(window.innerHeight * 0.36, 420);
   loading.style.height = Math.max(available, defaultMinHeight) + 'px';
+}
+
+/** 返回当前平台经典滚动条的实际占位宽度；overlay 滚动条会得到 0。 */
+function getGalleryNativeScrollbarGutter() {
+  var probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;visibility:hidden;overflow:scroll;width:100px;height:100px;top:-9999px;left:-9999px;';
+  document.body.appendChild(probe);
+  var width = Math.max(0, probe.offsetWidth - probe.clientWidth);
+  probe.remove();
+  return width;
+}
+
+/**
+ * Grid 的滚动容器始终从 Header 之后的内容起始位置开始，到当前视口底部结束。
+ * Header 保留在页面滚动层，因而不会被内部滚动、滚动条或 overflow 影响。
+ */
+function syncGalleryGridViewport() {
+  if (!galleryFeedMain) return;
+  var gridActive = galleryViewMode !== 'coverflow' || !galleryIsCoverFlowAvailable();
+  document.documentElement.style.setProperty('--gallery-native-scrollbar-gutter', getGalleryNativeScrollbarGutter() + 'px');
+  document.documentElement.classList.toggle('gallery-grid-scroll-active', gridActive);
+  document.body.classList.toggle('gallery-grid-scroll-active', gridActive);
+  galleryFeedMain.classList.toggle('gallery-feed-main--grid-scroll', gridActive);
+  if (!gridActive) {
+    galleryFeedMain.style.removeProperty('height');
+    galleryFeedMain.style.removeProperty('--gallery-grid-scroll-inset');
+    if (galleryGridScrollbar) galleryGridScrollbar.hidden = true;
+    return;
+  }
+  var header = document.getElementById('header');
+  var headerRect = header ? header.getBoundingClientRect() : { top: 0, bottom: 0 };
+  // 同时计入 Header 原有的下外边距：把内部滚动层上移到页面顶端，
+  // 但以等量 padding 保持第一行仍从 Header 底边开始。
+  var headerStyle = header ? window.getComputedStyle(header) : null;
+  var headerBottomMargin = headerStyle ? (parseFloat(headerStyle.marginBottom) || 0) : 0;
+  var inset = Math.max(0, Math.round(headerRect.bottom - headerRect.top + headerBottomMargin));
+  var bottomGap = 24;
+  var available = Math.floor(window.innerHeight - Math.max(0, headerRect.top) - bottomGap);
+  galleryFeedMain.style.setProperty('--gallery-grid-scroll-inset', inset + 'px');
+  galleryFeedMain.style.height = Math.max(180, available) + 'px';
+  syncGalleryLoadingPosition();
+  syncGalleryGridScrollbar();
+}
+
+function getGalleryGridScrollViewport() {
+  if (!galleryFeedMain || !galleryFeedMain.classList.contains('gallery-feed-main--grid-scroll')) return null;
+  return galleryFeedMain;
+}
+
+function syncGalleryGridScrollbar() {
+  var viewport = getGalleryGridScrollViewport();
+  if (!galleryGridScrollbar || !galleryGridScrollbarThumb || !viewport) {
+    if (galleryGridScrollbar) galleryGridScrollbar.hidden = true;
+    return;
+  }
+  var header = document.getElementById('header');
+  var headerBottom = header ? header.getBoundingClientRect().bottom : 0;
+  var bottomGap = 24;
+  var trackHeight = Math.max(0, Math.floor(window.innerHeight - Math.max(0, headerBottom) - bottomGap));
+  var scrollable = viewport.scrollHeight > viewport.clientHeight + 1 && trackHeight > 0;
+  galleryGridScrollbar.hidden = !scrollable;
+  if (!scrollable) return;
+  galleryGridScrollbar.style.top = Math.round(headerBottom) + 'px';
+  galleryGridScrollbar.style.height = trackHeight + 'px';
+  var thumbHeight = Math.max(24, Math.round(trackHeight * viewport.clientHeight / viewport.scrollHeight));
+  thumbHeight = Math.min(trackHeight, thumbHeight);
+  var maxScroll = Math.max(1, viewport.scrollHeight - viewport.clientHeight);
+  var maxThumbTop = Math.max(0, trackHeight - thumbHeight);
+  var thumbTop = maxThumbTop * viewport.scrollTop / maxScroll;
+  galleryGridScrollbarThumb.style.height = thumbHeight + 'px';
+  galleryGridScrollbarThumb.style.transform = 'translateY(' + Math.round(thumbTop) + 'px)';
+}
+
+function setGalleryGridScrollFromScrollbarClientY(clientY, centerThumb) {
+  var viewport = getGalleryGridScrollViewport();
+  if (!viewport || !galleryGridScrollbar || !galleryGridScrollbarThumb) return;
+  var track = galleryGridScrollbar.getBoundingClientRect();
+  var thumbHeight = galleryGridScrollbarThumb.getBoundingClientRect().height;
+  var maxThumbTop = Math.max(1, track.height - thumbHeight);
+  var pointerTop = clientY - track.top - (centerThumb ? thumbHeight / 2 : 0);
+  var ratio = Math.max(0, Math.min(1, pointerTop / maxThumbTop));
+  viewport.scrollTop = ratio * Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+}
+
+function setupGalleryGridScrollbar() {
+  if (!galleryGridScrollbar || !galleryGridScrollbarThumb || galleryGridScrollbar.dataset.bound === '1') return;
+  galleryGridScrollbar.dataset.bound = '1';
+  var pointerId = null;
+  galleryGridScrollbar.addEventListener('pointerdown', function (event) {
+    if (event.target === galleryGridScrollbarThumb) return;
+    event.preventDefault();
+    setGalleryGridScrollFromScrollbarClientY(event.clientY, true);
+  });
+  galleryGridScrollbarThumb.addEventListener('pointerdown', function (event) {
+    event.preventDefault();
+    pointerId = event.pointerId;
+    galleryGridScrollbarThumb.classList.add('is-dragging');
+    galleryGridScrollbarThumb.setPointerCapture(pointerId);
+    setGalleryGridScrollFromScrollbarClientY(event.clientY, false);
+  });
+  galleryGridScrollbarThumb.addEventListener('pointermove', function (event) {
+    if (event.pointerId !== pointerId) return;
+    setGalleryGridScrollFromScrollbarClientY(event.clientY, false);
+  });
+  function endGridScrollbarDrag(event) {
+    if (event.pointerId !== pointerId) return;
+    if (galleryGridScrollbarThumb.hasPointerCapture(pointerId)) galleryGridScrollbarThumb.releasePointerCapture(pointerId);
+    pointerId = null;
+    galleryGridScrollbarThumb.classList.remove('is-dragging');
+  }
+  galleryGridScrollbarThumb.addEventListener('pointerup', endGridScrollbarDrag);
+  galleryGridScrollbarThumb.addEventListener('pointercancel', endGridScrollbarDrag);
 }
 
 function startGalleryEntrance() {
@@ -9273,26 +9467,29 @@ function setupGalleryFeedFilter() {
 }
 
 /**
- * 窗口滚动接近底部时加载下一批 20 条。
+ * Grid 内部滚动接近底部时加载下一批 20 条。
+ * Showcase 已经由列表滚动区单独触发分页，不在这里重复请求。
  * @returns {void}
  */
+function maybeLoadMoreGalleryGridFeed() {
+  if (galleryViewMode === 'coverflow') return;
+  if (!isSupabaseGalleryCloudEnabled()) return;
+  if (galleryFeedLoadingMore || !galleryFeedHasMore) return;
+  var viewport = getGalleryGridScrollViewport();
+  if (!viewport) return;
+  var scrollBottom = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+  if (scrollBottom < 480) loadMoreGalleryFeedPage();
+}
+
 function setupGalleryFeedInfiniteScroll() {
   if (window._galleryFeedScrollBound) return;
   window._galleryFeedScrollBound = true;
-  window.addEventListener(
-    'scroll',
-    function () {
-      if (!isSupabaseGalleryCloudEnabled()) return;
-      if (galleryFeedLoadingMore || !galleryFeedHasMore) return;
-      var doc = document.documentElement;
-      var st = window.scrollY != null ? window.scrollY : doc.scrollTop;
-      var scrollBottom = doc.scrollHeight - doc.clientHeight - st;
-      if (scrollBottom < 480) {
-        loadMoreGalleryFeedPage();
-      }
-    },
-    { passive: true }
-  );
+  if (galleryFeedMain) {
+    galleryFeedMain.addEventListener('scroll', function () {
+      syncGalleryGridScrollbar();
+      maybeLoadMoreGalleryGridFeed();
+    }, { passive: true });
+  }
 }
 
 function showGalleryOrderStatus(message) {
@@ -9966,8 +10163,10 @@ function updateGalleryDragTarget() {
   var drag = galleryDrag;
   if (!drag || !drag.started) return;
   clearGalleryDropMarkers();
+  var gridViewport = getGalleryGridScrollViewport();
   var rect = drag.view === 'coverflow' ? galleryCoverflowViewport.getBoundingClientRect()
-    : { left: 0, right: innerWidth, top: document.getElementById('header').getBoundingClientRect().bottom, bottom: innerHeight };
+    : gridViewport ? gridViewport.getBoundingClientRect()
+      : { left: 0, right: innerWidth, top: document.getElementById('header').getBoundingClientRect().bottom, bottom: innerHeight };
   drag.valid = drag.x >= rect.left && drag.x <= rect.right && drag.y >= rect.top && drag.y <= rect.bottom;
   drag.anchor = null;
   var candidates = getGalleryDragItems(drag);
@@ -10023,8 +10222,10 @@ function galleryDragFrame(time) {
   drag.lastTime = time;
   updateGalleryDragTarget();
   if (drag.valid) {
+    var gridViewport = getGalleryGridScrollViewport();
     var rect = drag.view === 'coverflow' ? galleryCoverflowViewport.getBoundingClientRect()
-      : { top: document.getElementById('header').getBoundingClientRect().bottom, bottom: innerHeight };
+      : gridViewport ? gridViewport.getBoundingClientRect()
+        : { top: document.getElementById('header').getBoundingClientRect().bottom, bottom: innerHeight };
     var low = drag.view === 'coverflow' ? rect.left : rect.top;
     var high = drag.view === 'coverflow' ? rect.right : rect.bottom;
     var position = drag.view === 'coverflow' ? drag.x : drag.y;
@@ -10032,10 +10233,13 @@ function galleryDragFrame(time) {
       : position > high - 64 ? Math.min(1, (position - high + 64) / 64) : 0;
     if (speed) {
       if (drag.view === 'coverflow') galleryCoverflowViewport.scrollLeft += speed * dt * 0.7;
+      else if (gridViewport) gridViewport.scrollTop += speed * dt * 0.7;
       else window.scrollBy(0, speed * dt * 0.7);
       var remaining = drag.view === 'coverflow'
         ? galleryCoverflowViewport.scrollWidth - galleryCoverflowViewport.clientWidth - galleryCoverflowViewport.scrollLeft
-        : document.documentElement.scrollHeight - innerHeight - scrollY;
+        : gridViewport
+          ? gridViewport.scrollHeight - gridViewport.clientHeight - gridViewport.scrollTop
+          : document.documentElement.scrollHeight - innerHeight - scrollY;
       if (speed > 0 && remaining < 260 && time > drag.nextLoad) {
         drag.nextLoad = time + 1000;
         loadMoreGalleryFeedPage();
@@ -10145,6 +10349,7 @@ setupGalleryFeedInfiniteScroll();
 setupGalleryFeedFilter();
 setupGalleryViewControls();
 setupGalleryDragSorting();
+setupGalleryGridScrollbar();
 // 刷新后先恢复已保存的视图状态；云端数据加载完成前也不要短暂回到 Grid。
 var shouldRestoreShowcase = galleryViewMode === 'coverflow' && galleryIsCoverFlowAvailable();
 if (shouldRestoreShowcase) {
@@ -11818,6 +12023,7 @@ function applyGalleryViewMode() {
   }
   if (gallery) gallery.style.display = cover ? 'none' : '';
   if (galleryCoverflowView) galleryCoverflowView.hidden = !cover;
+  syncGalleryGridViewport();
   if (!cover) {
     stopGalleryCoverFlowAnimation();
     if (galleryCoverflowCuratorToolbar) galleryCoverflowCuratorToolbar.hidden = true;
@@ -11901,7 +12107,16 @@ function scrollGridToGalleryIndex(index) {
   window.requestAnimationFrame(function () {
     window.requestAnimationFrame(function () {
       var card = gallery.querySelector('.photo-card[data-index="' + index + '"]');
-      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      var viewport = getGalleryGridScrollViewport();
+      if (card && viewport) {
+        var viewportRect = viewport.getBoundingClientRect();
+        var cardRect = card.getBoundingClientRect();
+        var targetTop = viewport.scrollTop + cardRect.top - viewportRect.top - (viewport.clientHeight - cardRect.height) / 2;
+        var maxTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+        viewport.scrollTo({ top: Math.max(0, Math.min(maxTop, targetTop)), behavior: 'smooth' });
+      } else if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      }
     });
   });
 }
