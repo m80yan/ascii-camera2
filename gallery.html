@@ -5911,9 +5911,17 @@ async function runLightboxTutorial(runId) {
   var initiallyLiked = lightboxLikeUiState.liked;
   var prev = document.getElementById('lightbox-nav-prev');
   var next = document.getElementById('lightbox-nav-next');
-  var navActions = !next || next.disabled
-    ? (!prev || prev.disabled ? [] : [['left', -1], ['left', -1], ['right', 1], ['right', 1]])
-    : [['right', 1], ['right', 1], ['left', -1], ['left', -1]];
+  var navActionRounds = !next || next.disabled
+    ? (!prev || prev.disabled
+      ? []
+      : [
+        [['left', -1], ['left', -1], ['right', 1]],
+        [['right', 1], ['right', 1], ['left', -1]]
+      ])
+    : [
+      [['right', 1], ['right', 1], ['left', -1]],
+      [['left', -1], ['left', -1], ['right', 1]]
+    ];
 
   async function waitForTutorialGroupGap() {
     await waitForLightboxTutorial(LIGHTBOX_TUTORIAL_GROUP_GAP_MS);
@@ -5931,7 +5939,7 @@ async function runLightboxTutorial(runId) {
     return true;
   }
 
-  async function playNavigationRound() {
+  async function playNavigationRound(navActions) {
     for (var i = 0; i < navActions.length; i++) {
       var nav = navActions[i];
       if (!await playLightboxTutorialKey(runId, nav[0], function () {
@@ -5946,9 +5954,9 @@ async function runLightboxTutorial(runId) {
     setLightboxTutorialStep('like');
     if (!await playLikeRound()) return;
     if (!await waitForTutorialGroupGap()) return;
-    if (navActions.length) {
+    if (navActionRounds.length) {
       setLightboxTutorialStep('nav');
-      if (!await playNavigationRound()) return;
+      if (!await playNavigationRound(navActionRounds[round])) return;
     }
     if (!await waitForTutorialGroupGap()) return;
   }
