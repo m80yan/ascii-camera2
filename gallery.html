@@ -3311,6 +3311,8 @@ const lightboxPre = document.getElementById('lightbox-pre');
 const lightboxLikeBtn = document.getElementById('lightbox-like');
 const lightboxTutorial = document.getElementById('lightbox-tutorial');
 const LIGHTBOX_TUTORIAL_SEEN_KEY = 'ascii-camera-lightbox-tutorial-seen-v1';
+/** 临时 QA：每次打开 Lightbox 都播放教程；稳定后改回 `false`。 */
+const LIGHTBOX_TUTORIAL_ALWAYS_REPLAY = true;
 const LIGHTBOX_TUTORIAL_KEY_MS = 500;
 const LIGHTBOX_TUTORIAL_PRESS_MS = 120;
 const LIGHTBOX_TUTORIAL_GROUP_GAP_MS = 1000;
@@ -5812,6 +5814,7 @@ function waitForLightboxTutorial(ms) {
 
 /** @returns {boolean} */
 function hasSeenLightboxTutorial() {
+  if (LIGHTBOX_TUTORIAL_ALWAYS_REPLAY) return false;
   if (lightboxTutorialSeenInSession) return true;
   try {
     return window.localStorage.getItem(LIGHTBOX_TUTORIAL_SEEN_KEY) === '1';
