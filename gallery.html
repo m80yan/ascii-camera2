@@ -1338,9 +1338,6 @@
     display: block;
     pointer-events: auto;
   }
-  .lightbox-tutorial--intro-wait {
-    opacity: 0;
-  }
   .lightbox-tutorial-key {
     position: absolute;
     width: 36px;
@@ -5837,6 +5834,7 @@ function markLightboxTutorialSeen() {
 function resetLightboxTutorialVisuals() {
   if (!lightboxTutorial) return;
   lightboxTutorial.classList.remove('lightbox-tutorial--keys-fading');
+  lightboxTutorial.classList.remove('lightbox-tutorial--intro-wait');
   lightboxTutorial.removeAttribute('data-step');
   var keys = lightboxTutorial.querySelectorAll('[data-tutorial-key]');
   for (var i = 0; i < keys.length; i++) {
@@ -5910,7 +5908,6 @@ async function runLightboxTutorial(runId) {
   if (!isLightboxTutorialCurrent(runId)) return;
   await waitForLightboxTutorial(1000);
   if (!isLightboxTutorialCurrent(runId)) return;
-  if (lightboxTutorial) lightboxTutorial.classList.remove('lightbox-tutorial--intro-wait');
   var initiallyLiked = lightboxLikeUiState.liked;
   setLightboxTutorialStep('like');
   if (initiallyLiked) {
@@ -5981,8 +5978,6 @@ function scheduleLightboxTutorial(lightboxSession, likeStateReady) {
     }
     lightboxTutorialPlaying = true;
     resetLightboxTutorialVisuals();
-    setLightboxTutorialStep('like');
-    lightboxTutorial.classList.add('lightbox-tutorial--intro-wait');
     lightbox.classList.add('lightbox--tutorial-playing');
     runLightboxTutorial(runId);
   });
