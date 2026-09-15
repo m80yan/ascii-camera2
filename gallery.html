@@ -3661,6 +3661,8 @@ let galleryFeedNextOffset = 0;
 let galleryFeedHasMore = true;
 /** 首屏或加载更多进行中 */
 let galleryFeedLoadingMore = false;
+/** Grid 首屏填充的下一帧任务；同一帧内只检查一次，避免 resize / render 重复请求。 */
+let galleryGridViewportFillRaf = 0;
 /** 筛选切换时废弃旧分页响应，避免旧结果覆盖新筛选。 */
 let galleryFeedRequestGeneration = 0;
 /** 最近一次已记录为 Cover Flow 中央展示的作品，避免刷新重复计数。 */
@@ -6870,6 +6872,26 @@ function navigateLightbox(direction, playBoundarySound) {
   if (lightboxClosing || lightboxPageSlideActive) return;
   var index = getAdjacentLightboxIndex(direction);
   if (index < 0 || index === lightboxFeedIndex) {
+    // Grid 的缓存尾部不等于真实尾部：先取下一页，成功后沿用这一次导航动作。
+    if (
+      direction > 0 &&
+      lightboxOriginView !== 'coverflow' &&
+      isSupabaseGalleryCloudEnabled() &&
+      galleryFeedHasMore
+    ) {
+      if (galleryFeedLoadingMore) return;
+      var nextOffsetBeforeLoad = galleryFeedNextOffset;
+      loadMoreGalleryFeedPage().then(function () {
+        if (!lightbox.classList.contains('open') || lightboxClosing) return;
+        if (galleryFeedNextOffset > nextOffsetBeforeLoad) {
+          navigateLightbox(direction, playBoundarySound);
+        } else {
+          updateLightboxNavButtons();
+        }
+      });
+      updateLightboxNavButtons();
+      return;
+    }
     if (playBoundarySound) playLightboxDisabledSound();
     return;
   }
@@ -6887,8 +6909,13 @@ function updateLightboxNavButtons() {
   var n = photosCache.length;
   var i = lightboxFeedIndex;
   var ok = i >= 0 && i < n;
+  var canLoadGridNext =
+    lightboxOriginView !== 'coverflow' &&
+    isSupabaseGalleryCloudEnabled() &&
+    galleryFeedHasMore &&
+    !galleryFeedLoadingMore;
   prev.disabled = !ok || getAdjacentLightboxIndex(-1) === i;
-  next.disabled = !ok || getAdjacentLightboxIndex(1) === i;
+  next.disabled = !ok || (getAdjacentLightboxIndex(1) === i && !canLoadGridNext);
 }
 
 /**
@@ -8818,6 +8845,7 @@ function syncGalleryGridViewport() {
   galleryFeedMain.style.height = Math.max(180, available) + 'px';
   syncGalleryLoadingPosition();
   syncGalleryGridScrollbar();
+  scheduleGalleryGridViewportFill();
 }
 
 function getGalleryGridScrollViewport() {
@@ -9295,6 +9323,7 @@ function loadFirstGalleryFeedPage() {
       if (requestGeneration === galleryFeedRequestGeneration) {
         galleryFeedLoadingMore = false;
         if (firstPageLoaded) continueGalleryShowcaseRestore();
+        scheduleGalleryGridViewportFill();
       }
     });
 }
@@ -9348,6 +9377,8 @@ function loadMoreGalleryFeedPage() {
       if (requestGeneration === galleryFeedRequestGeneration) {
         galleryFeedLoadingMore = false;
         if (restorePageLoaded) continueGalleryShowcaseRestore();
+        if (lightbox.classList.contains('open')) updateLightboxNavButtons();
+        scheduleGalleryGridViewportFill();
       }
     });
 }
@@ -9479,6 +9510,20 @@ function maybeLoadMoreGalleryGridFeed() {
   if (!viewport) return;
   var scrollBottom = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
   if (scrollBottom < 480) loadMoreGalleryFeedPage();
+}
+
+/**
+ * Grid 首屏根据实际可视高度补页。内容不足以产生滚动条时，用户不会触发 scroll，
+ * 因此必须在首屏渲染、视窗变化和每页完成后主动检查一次。
+ * @returns {void}
+ */
+function scheduleGalleryGridViewportFill() {
+  if (galleryGridViewportFillRaf) return;
+  if (galleryViewMode === 'coverflow' || galleryFeedLoadingMore || !galleryFeedHasMore) return;
+  galleryGridViewportFillRaf = window.requestAnimationFrame(function () {
+    galleryGridViewportFillRaf = 0;
+    maybeLoadMoreGalleryGridFeed();
+  });
 }
 
 function setupGalleryFeedInfiniteScroll() {
