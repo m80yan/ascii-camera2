@@ -5909,41 +5909,48 @@ async function runLightboxTutorial(runId) {
   await waitForLightboxTutorial(1000);
   if (!isLightboxTutorialCurrent(runId)) return;
   var initiallyLiked = lightboxLikeUiState.liked;
-  setLightboxTutorialStep('like');
-  if (initiallyLiked) {
-    if (!await playLightboxTutorialKey(runId, 'dislike', lightboxKeyboardLikeDown)) return;
-    await waitForLightboxTutorial(LIGHTBOX_TUTORIAL_GROUP_GAP_MS);
-    if (!isLightboxTutorialCurrent(runId)) return;
-    if (!await playLightboxTutorialKey(runId, 'like', lightboxKeyboardLikeUp)) return;
-  } else {
-    if (!await playLightboxTutorialKey(runId, 'like', lightboxKeyboardLikeUp)) return;
-    await waitForLightboxTutorial(LIGHTBOX_TUTORIAL_GROUP_GAP_MS);
-    if (!isLightboxTutorialCurrent(runId)) return;
-    if (!await playLightboxTutorialKey(runId, 'dislike', lightboxKeyboardLikeDown)) return;
-  }
-
-  await waitForLightboxTutorial(LIGHTBOX_TUTORIAL_GROUP_GAP_MS);
-  if (!isLightboxTutorialCurrent(runId)) return;
-
   var prev = document.getElementById('lightbox-nav-prev');
   var next = document.getElementById('lightbox-nav-next');
   var navActions = !next || next.disabled
-    ? (!prev || prev.disabled ? [] : [['left', -1], ['right', 1]])
-    : [['right', 1], ['right', 1], ['left', -1]];
-  if (navActions.length) {
-    setLightboxTutorialStep('nav');
+    ? (!prev || prev.disabled ? [] : [['left', -1], ['left', -1], ['right', 1], ['right', 1]])
+    : [['right', 1], ['right', 1], ['left', -1], ['left', -1]];
+
+  async function waitForTutorialGroupGap() {
+    await waitForLightboxTutorial(LIGHTBOX_TUTORIAL_GROUP_GAP_MS);
+    return isLightboxTutorialCurrent(runId);
+  }
+
+  async function playLikeRound() {
+    var likeActions = initiallyLiked
+      ? [['dislike', lightboxKeyboardLikeDown], ['like', lightboxKeyboardLikeUp]]
+      : [['like', lightboxKeyboardLikeUp], ['dislike', lightboxKeyboardLikeDown]];
+    for (var i = 0; i < likeActions.length; i++) {
+      if (!await playLightboxTutorialKey(runId, likeActions[i][0], likeActions[i][1])) return false;
+      if (i < likeActions.length - 1 && !await waitForTutorialGroupGap()) return false;
+    }
+    return true;
+  }
+
+  async function playNavigationRound() {
     for (var i = 0; i < navActions.length; i++) {
       var nav = navActions[i];
       if (!await playLightboxTutorialKey(runId, nav[0], function () {
         navigateLightbox(nav[1], false);
-      })) return;
-      if (i < navActions.length - 1) {
-        await waitForLightboxTutorial(LIGHTBOX_TUTORIAL_GROUP_GAP_MS);
-        if (!isLightboxTutorialCurrent(runId)) return;
-      }
+      })) return false;
+      if (i < navActions.length - 1 && !await waitForTutorialGroupGap()) return false;
     }
-    await waitForLightboxTutorial(LIGHTBOX_TUTORIAL_GROUP_GAP_MS);
-    if (!isLightboxTutorialCurrent(runId)) return;
+    return true;
+  }
+
+  for (var round = 0; round < 2; round++) {
+    setLightboxTutorialStep('like');
+    if (!await playLikeRound()) return;
+    if (!await waitForTutorialGroupGap()) return;
+    if (navActions.length) {
+      setLightboxTutorialStep('nav');
+      if (!await playNavigationRound()) return;
+    }
+    if (!await waitForTutorialGroupGap()) return;
   }
 
   if (lightboxTutorial) lightboxTutorial.classList.add('lightbox-tutorial--keys-fading');
