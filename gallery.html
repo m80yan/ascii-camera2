@@ -5909,19 +5909,23 @@ async function runLightboxTutorial(runId) {
   await waitForLightboxTutorial(1000);
   if (!isLightboxTutorialCurrent(runId)) return;
   var initiallyLiked = lightboxLikeUiState.liked;
-  var prev = document.getElementById('lightbox-nav-prev');
-  var next = document.getElementById('lightbox-nav-next');
-  var navActionRounds = !next || next.disabled
-    ? (!prev || prev.disabled
-      ? []
-      : [
-        [['left', -1], ['left', -1], ['right', 1]],
-        [['right', 1], ['right', 1], ['left', -1]]
-      ])
-    : [
-      [['right', 1], ['right', 1], ['left', -1]],
-      [['left', -1], ['left', -1], ['right', 1]]
-    ];
+  var originalLightboxIndex = lightboxFeedIndex;
+  var photoCount = photosCache.length;
+  var navActionRounds = [];
+  if (photoCount > 1) {
+    var canPlayFullForward = originalLightboxIndex >= 1 && originalLightboxIndex + 2 < photoCount;
+    var canPlayFullBackward = originalLightboxIndex >= 2 && originalLightboxIndex + 1 < photoCount;
+    if (canPlayFullForward && canPlayFullBackward) {
+      navActionRounds = [
+        [['right', 1], ['right', 1], ['left', -1]],
+        [['left', -1], ['left', -1], ['right', 1]]
+      ];
+    } else if (originalLightboxIndex >= photoCount - 1) {
+      navActionRounds = [[['left', -1]], [['right', 1]]];
+    } else {
+      navActionRounds = [[['right', 1]], [['left', -1]]];
+    }
+  }
 
   async function waitForTutorialGroupGap() {
     await waitForLightboxTutorial(LIGHTBOX_TUTORIAL_GROUP_GAP_MS);
