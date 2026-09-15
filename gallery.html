@@ -10592,10 +10592,9 @@ function resolveGalleryGridOutlineShape(photo, ascii, gridShape) {
     return 'character';
   }
   // 新规则：无明确滤镜元数据的新上传作品先按 aspect；不要让旧 ASCII 外形
-  // fallback 把普通 16:9/4:3 图像误判成水平 Oval。
+  // fallback 把普通矩形图像误判成异形。云端作品的 mine 受设备 ID 影响，不作为形状判定条件。
   var missingMetadataUploadedAfterHoverRule =
     photo &&
-    photo.mine === true &&
     typeof photo.time === 'number' &&
     photo.time >= Date.parse('2026-09-12T11:25:00-07:00') &&
     !isGalleryCoverFlowIronBarsPhoto(photo, ascii);
