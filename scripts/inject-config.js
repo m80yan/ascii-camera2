@@ -8,6 +8,27 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
+const localEnvPath = path.join(root, '.env.production.local');
+
+if (fs.existsSync(localEnvPath)) {
+  const envText = fs.readFileSync(localEnvPath, 'utf8');
+  envText.split(/\r?\n/).forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) return;
+    const key = trimmed.slice(0, eq).trim();
+    if (process.env[key] != null) return;
+    let value = trimmed.slice(eq + 1);
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  });
+}
 
 const binId = process.env.ASCII_CAMERA_BIN_ID || '';
 const apiKey = process.env.ASCII_CAMERA_API_KEY || '';

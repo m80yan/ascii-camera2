@@ -6,6 +6,8 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0a0a0a; color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; min-height: 100vh; padding: 24px 16px; }
+  body.gallery-lens-active { overflow: hidden; padding-bottom: 0; }
+  body.gallery-curator-mode #gallery-view-lens { display: none !important; }
   /* Grid 使用自定义滚动条时不保留浏览器原生滚动条槽位；保留 body 的 16px 内容边距。 */
   html.gallery-grid-scroll-active { overflow: hidden; scrollbar-gutter: auto; }
   body.gallery-grid-scroll-active { overflow: hidden; padding-top: 0; }
@@ -43,11 +45,28 @@
     visibility: hidden;
     pointer-events: none;
   }
-  #gallery-loading.is-showcase-loading {
-    left: -16px;
-    right: -16px;
-    top: 0;
+  /* Grid and Lens stay fixed to the viewport, even when Grid content is scrolled. */
+  #gallery-loading.is-grid-loading,
+  #gallery-loading.is-view-loading {
+    position: fixed;
+    top: -24px;
+    left: 16px;
+    right: 16px;
     z-index: 5000;
+    height: calc(100vh - 24px);
+    min-height: 0;
+    display: flex;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: none;
+    background: #050505;
+  }
+  /* Showcase covers only the Cover Flow and its upper projection; the List stays visible. */
+  #gallery-loading.is-showcase-loading {
+    position: fixed;
+    z-index: 5000;
+    min-height: 0;
     display: flex;
     opacity: 1;
     visibility: visible;
@@ -2432,6 +2451,45 @@
   #gallery-grid-scrollbar-thumb.is-dragging { cursor: grabbing; }
   #gallery-grid-scrollbar-thumb:hover { background: #00ff41; }
   #gallery-coverflow-view[hidden] { display: none !important; }
+  #gallery-lens-view[hidden] { display: none !important; }
+  #gallery-lens-view {
+    position: relative;
+    width: calc(100% + 32px);
+    height: calc(100vh - 140px);
+    min-height: 420px;
+    margin: -20px -16px 0 -16px;
+    overflow: hidden;
+    background: #050505;
+    touch-action: none;
+    cursor: grab;
+    z-index: 1;
+  }
+  /* Lens extends beneath the sticky Header so its existing translucent blur
+     continues to reveal the moving artwork rather than a flat page background. */
+  body.gallery-lens-active #gallery-lens-view {
+    margin-top: calc(-1 * var(--gallery-lens-header-overlap, 20px));
+  }
+  /* Lens has no native Grid scrollbar, so do not leave Grid's scrollbar
+     gutter uncovered at the Header's right edge. */
+  body.gallery-lens-active #header {
+    margin-right: -16px;
+  }
+  body.gallery-lens-active #header-actions {
+    transform: translateX(-15px);
+  }
+  #gallery-lens-view.is-dragging {
+    cursor: grabbing;
+  }
+  #gallery-lens-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    transform-origin: center;
+    transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #gallery-lens-view.is-pressing #gallery-lens-canvas {
+    transform: scale(0.985);
+  }
   #gallery-coverflow-view {
     --cover-flow-height: 260px;
     position: relative;
@@ -2469,6 +2527,7 @@
     z-index: 3;
   }
   #gallery-coverflow-panel {
+    --gallery-coverflow-projection: 24px;
     position: relative;
     isolation: isolate;
     width: calc(100% + 32px);
@@ -2478,7 +2537,7 @@
     overflow: hidden;
     border-bottom: 1px solid rgba(0, 255, 65, 0.1);
     background: #050505;
-    box-shadow: 0 -24px 0 #050505;
+    box-shadow: 0 calc(-1 * var(--gallery-coverflow-projection)) 0 #050505;
   }
   #gallery-coverflow-viewport {
     width: 100%;
@@ -3038,6 +3097,7 @@
       <div class="gallery-view-tabs" role="tablist" aria-label="Gallery view">
         <button type="button" class="gallery-view-toggle-btn" id="gallery-view-grid" role="tab" aria-selected="true" aria-pressed="true">Grid</button>
         <button type="button" class="gallery-view-toggle-btn" id="gallery-view-cover-flow" role="tab" aria-selected="false" aria-pressed="false">SHOWCASE</button>
+        <button type="button" class="gallery-view-toggle-btn" id="gallery-view-lens" role="tab" aria-selected="false" aria-pressed="false" hidden>Lens</button>
       </div>
     </div>
     <div class="curator-mode-links" aria-label="Curator controls">
@@ -3068,7 +3128,7 @@
 <p id="cloud-status-banner" role="status"></p>
 <p id="cloud-sync-status" role="status" aria-live="polite"></p>
 <div id="gallery-feed-main">
-<div id="gallery-loading" role="status" aria-live="polite" aria-label="Loading Gallery">
+<div id="gallery-loading" class="is-grid-loading" role="status" aria-live="polite" aria-label="Loading Gallery">
   <div class="gallery-loading-inner">
     <div class="t-matrix" aria-hidden="true">
       <i style="--d:450"></i>
@@ -3093,6 +3153,9 @@
 </div>
 <div id="empty" style="display:none">No photos yet.<br>Use Upload or Open Camera — your shots are saved in this browser only.</div>
 <div id="gallery"></div>
+<div id="gallery-lens-view" hidden aria-label="Lens gallery">
+  <canvas id="gallery-lens-canvas" aria-label="Lens gallery thumbnails"></canvas>
+</div>
 <div id="gallery-coverflow-view" hidden>
   <section id="gallery-coverflow-panel" aria-label="Showcase gallery">
     <div id="gallery-coverflow-viewport" tabindex="0" aria-label="Showcase. Use left and right arrow keys to browse.">
@@ -3321,6 +3384,7 @@ window.__ASCII_CONFIG_SCRIPT_ERROR__ = false;
     typeof location !== 'undefined' && location.protocol === 'file:'
       ? 'config.local.js'
       : '/config.local.js';
+  src += (src.indexOf('?') === -1 ? '?' : '&') + 'v=' + Date.now();
   document.write('<script src="' + src + '" onerror="window.__ASCII_CONFIG_SCRIPT_ERROR__=true"><\/script>');
 })();
 </script>
@@ -3460,6 +3524,9 @@ const gallery = document.getElementById('gallery');
 const empty = document.getElementById('empty');
 const galleryViewGridBtn = document.getElementById('gallery-view-grid');
 const galleryViewCoverFlowBtn = document.getElementById('gallery-view-cover-flow');
+const galleryViewLensBtn = document.getElementById('gallery-view-lens');
+const galleryLensView = document.getElementById('gallery-lens-view');
+const galleryLensCanvas = document.getElementById('gallery-lens-canvas');
 const galleryCoverflowView = document.getElementById('gallery-coverflow-view');
 const galleryCoverflowPanel = document.getElementById('gallery-coverflow-panel');
 const galleryCoverflowViewport = document.getElementById('gallery-coverflow-viewport');
@@ -3543,6 +3610,7 @@ let lightboxPendingLikeUiForSharedOpen = null;
 let lightboxDeferAsciiAnimForSharedOpen = false;
 /** @type {{ frames: string[], session: number } | null} */
 let lightboxPendingAsciiAnim = null;
+let galleryLensLightboxReturnRect = null;
 const confirmModal = document.getElementById('confirm-modal');
 const uploadInput = document.getElementById('upload-input');
 const uploadBtn = document.getElementById('upload-btn');
@@ -3669,11 +3737,13 @@ let galleryFeedRequestGeneration = 0;
 let galleryCoverFlowLastTrackedViewId = '';
 /** 当前视图；Grid 默认，Cover Flow 仅桌面端显示。 */
 const GALLERY_VIEW_MODE_LS_KEY = 'ascii_gallery_view_mode';
+const GALLERY_LENS_OFFSET_LS_KEY = 'ascii_gallery_lens_offset_v1';
 const GALLERY_SHOWCASE_CURRENT_PHOTO_LS_KEY = 'ascii_gallery_showcase_current_photo_v1';
 const GALLERY_SHOWCASE_CURRENT_INDEX_LS_KEY = 'ascii_gallery_showcase_current_index_v1';
 let galleryViewMode = (function () {
   try {
-    return window.localStorage.getItem(GALLERY_VIEW_MODE_LS_KEY) === 'coverflow' ? 'coverflow' : 'grid';
+    var saved = window.localStorage.getItem(GALLERY_VIEW_MODE_LS_KEY);
+    return saved === 'coverflow' || saved === 'lens' ? saved : 'grid';
   } catch (e) {
     return 'grid';
   }
@@ -3832,6 +3902,7 @@ let curatorPreviewCuratorSnapshot = [];
  * @returns {void}
  */
 function syncCuratorChrome() {
+  var lensWasActive = galleryViewMode === 'lens';
   var gsync = window.AsciiCameraGalleryCloudSync;
   if (gsync && typeof gsync.setGalleryCuratorIncludeDeleted === 'function') {
     gsync.setGalleryCuratorIncludeDeleted(curatorModeActive && !curatorPreviewActive);
@@ -3870,6 +3941,12 @@ function syncCuratorChrome() {
   }
   document.body.classList.toggle('gallery-curator-mode', curatorModeActive);
   document.body.classList.toggle('gallery-curator-preview', curatorModeActive && curatorPreviewActive);
+  if (typeof updateGalleryLensAvailability === 'function') updateGalleryLensAvailability();
+  if (curatorModeActive && lensWasActive) {
+    galleryViewMode = 'grid';
+    saveGalleryViewMode();
+    applyGalleryViewMode();
+  }
 }
 
 syncCuratorChrome();
@@ -4019,7 +4096,8 @@ function enterCuratorMode() {
     btn.disabled = true;
     var viewButtons = [
       document.getElementById('gallery-view-grid'),
-      document.getElementById('gallery-view-cover-flow')
+      document.getElementById('gallery-view-cover-flow'),
+      document.getElementById('gallery-view-lens')
     ].filter(Boolean);
     viewButtons.forEach(function (viewButton) { viewButton.disabled = true; });
     var nextPreview = !curatorPreviewActive;
@@ -6674,6 +6752,7 @@ function closeLightbox() {
   cleanupLightboxSharedFlyVisual();
   lightbox.classList.remove('open');
   lightbox.classList.remove('lightbox--showcase-closing');
+  galleryLensLightboxReturnRect = null;
   if (galleryRenderAfterLightbox) {
     galleryRenderAfterLightbox = false;
     var returnPhotoId = resolveLightboxPhotoId(photosCache[galleryCoverFlowIndex] || {});
@@ -6739,12 +6818,45 @@ function runLightboxShowcaseClose() {
   });
 }
 
+function runLightboxLensClose() {
+  var dest = galleryLensLightboxReturnRect;
+  if (!dest || !shouldLightboxSharedMotion()) {
+    closeLightbox();
+    return;
+  }
+  lightboxClosing = true;
+  lightboxSharedTransitGen++;
+  lightboxLikeSessionGen++;
+  var gen = lightboxSharedTransitGen;
+  stopLightboxAsciiAnim();
+  abortLightboxSharedOpenDeferrals();
+  cleanupLightboxSharedFlyVisual();
+  clearLightboxOpenChromePhaseClasses();
+  var src = lightboxPre.getBoundingClientRect();
+  if (src.width < 2 || src.height < 2 || dest.width < 2 || dest.height < 2) {
+    closeLightbox();
+    return;
+  }
+  var innerEl = getLightboxInnerEl();
+  if (innerEl) innerEl.classList.add('lightbox-inner--fly-handoff');
+  runLightboxSharedTransformFlight(src, dest, gen, function (flyPre) {
+    flyPre.textContent = lightboxPre.textContent;
+    applySharedFlyPreStylesFrom(flyPre, lightboxPre);
+  }, function () {
+    closeLightbox();
+  }, false, undefined, undefined, true);
+}
+
 /** Grid 保留原来的边缘关闭 / Esc 缩回；Showcase 两种退出均返回中央图。 */
 function dismissLightbox(animateGrid) {
   if (lightboxClosing) return;
   cancelLightboxPageSlide();
   if (lightboxOriginView === 'coverflow' && galleryViewMode === 'coverflow') {
     runLightboxShowcaseClose();
+    return;
+  }
+  if (animateGrid && lightboxOriginView === 'lens' && galleryViewMode === 'lens') {
+    runLightboxLensClose();
     return;
   }
   var card = gallery && gallery.querySelector('.photo-card[data-index="' + lightboxFeedIndex + '"]');
@@ -7196,7 +7308,7 @@ function openLightbox(photo, feedIndexOpt, flyFromCard) {
     });
   }
 
-  if (isFreshLightboxOpen) {
+  if (isFreshLightboxOpen && lightboxOriginView !== 'lens') {
     scheduleLightboxTutorial(session, lightboxLikeStateReady);
   }
 
@@ -8794,6 +8906,16 @@ function syncGalleryLoadingPosition() {
   var loading = document.getElementById('gallery-loading');
   var main = galleryFeedMain;
   if (!loading || !main || loading.classList.contains('is-hidden')) return;
+  if (loading.classList.contains('is-showcase-loading')) {
+    syncGalleryShowcaseLoadingPosition();
+    return;
+  }
+  if (loading.classList.contains('is-grid-loading') || loading.classList.contains('is-view-loading')) {
+    loading.style.removeProperty('top');
+    loading.style.removeProperty('height');
+    loading.style.removeProperty('min-height');
+    return;
+  }
   if (main.classList.contains('gallery-feed-main--grid-scroll')) {
     loading.style.height = main.clientHeight + 'px';
     return;
@@ -8803,6 +8925,18 @@ function syncGalleryLoadingPosition() {
   var available = Math.max(0, window.innerHeight - top - bottomGap);
   var defaultMinHeight = Math.min(window.innerHeight * 0.36, 420);
   loading.style.height = Math.max(available, defaultMinHeight) + 'px';
+}
+
+function syncGalleryShowcaseLoadingPosition() {
+  var loading = document.getElementById('gallery-loading');
+  var panel = galleryCoverflowPanel;
+  if (!loading || !panel || loading.classList.contains('is-hidden')) return;
+  var panelRect = panel.getBoundingClientRect();
+  var projection = parseFloat(window.getComputedStyle(panel).getPropertyValue('--gallery-coverflow-projection')) || 0;
+  loading.style.top = Math.floor(panelRect.top - projection) + 'px';
+  loading.style.left = Math.floor(panelRect.left) + 'px';
+  loading.style.right = Math.floor(window.innerWidth - panelRect.right) + 'px';
+  loading.style.height = Math.ceil(panelRect.height + projection) + 'px';
 }
 
 /** 返回当前平台经典滚动条的实际占位宽度；overlay 滚动条会得到 0。 */
@@ -8821,7 +8955,7 @@ function getGalleryNativeScrollbarGutter() {
  */
 function syncGalleryGridViewport() {
   if (!galleryFeedMain) return;
-  var gridActive = galleryViewMode !== 'coverflow' || !galleryIsCoverFlowAvailable();
+  var gridActive = galleryViewMode === 'grid' || (galleryViewMode === 'coverflow' && !galleryIsCoverFlowAvailable());
   document.documentElement.style.setProperty('--gallery-native-scrollbar-gutter', getGalleryNativeScrollbarGutter() + 'px');
   document.documentElement.classList.toggle('gallery-grid-scroll-active', gridActive);
   document.body.classList.toggle('gallery-grid-scroll-active', gridActive);
@@ -8939,7 +9073,7 @@ function hideGalleryLoading() {
   var loading = document.getElementById('gallery-loading');
   if (loading) {
     loading.classList.add('is-hidden');
-    loading.classList.remove('is-showcase-loading');
+    loading.classList.remove('is-grid-loading', 'is-view-loading', 'is-showcase-loading');
     loading.style.removeProperty('top');
     loading.style.removeProperty('height');
     loading.style.removeProperty('min-height');
@@ -10401,7 +10535,7 @@ if (shouldRestoreShowcase) {
   setGalleryLoadingLabel('Preparing Showcase…');
 }
 applyGalleryViewMode();
-if (shouldRestoreShowcase && galleryViewMode === 'coverflow') showGalleryShowcaseLoading(true);
+if (shouldRestoreShowcase && galleryViewMode === 'coverflow') showGalleryShowcaseLoading();
 
 function timeAgo(ts) {
   const s = Math.floor((Date.now() - ts) / 1000);
@@ -11118,29 +11252,38 @@ function setGalleryLoadingLabel(label) {
   text.setAttribute('data-text', label);
 }
 
-function showGalleryShowcaseLoading(panelOnly) {
+function showGalleryViewLoading(label) {
+  var loading = document.getElementById('gallery-loading');
+  if (!loading) return;
+  if (label) setGalleryLoadingLabel(label);
+  loading.classList.remove('is-hidden');
+  loading.classList.remove('is-grid-loading', 'is-showcase-loading');
+  loading.classList.add('is-view-loading');
+  loading.style.removeProperty('top');
+  loading.style.removeProperty('height');
+  loading.style.removeProperty('min-height');
+}
+
+function showGalleryShowcaseLoading() {
   var loading = document.getElementById('gallery-loading');
   if (!loading) return;
   setGalleryLoadingLabel('Preparing Showcase…');
   loading.classList.remove('is-hidden');
+  loading.classList.remove('is-grid-loading', 'is-view-loading');
   loading.classList.add('is-showcase-loading');
-  if (panelOnly && galleryCoverflowPanel) {
-    loading.style.minHeight = '0';
-    loading.style.top = '0';
-    // 留出 Showcase 底部边框，让拖拽柄上方的绿线在刷新时仍可见。
-    loading.style.height = Math.max(0, galleryCoverflowPanel.offsetHeight - 1) + 'px';
-  } else {
-    loading.style.removeProperty('top');
-    loading.style.removeProperty('min-height');
-    syncGalleryLoadingPosition();
-  }
+  loading.style.removeProperty('top');
+  loading.style.removeProperty('left');
+  loading.style.removeProperty('right');
+  loading.style.removeProperty('height');
+  loading.style.removeProperty('min-height');
+  syncGalleryShowcaseLoadingPosition();
 }
 
 function hideGalleryShowcaseLoading() {
   var loading = document.getElementById('gallery-loading');
   if (!loading) return;
   loading.classList.add('is-hidden');
-  loading.classList.remove('is-showcase-loading');
+  loading.classList.remove('is-grid-loading', 'is-view-loading', 'is-showcase-loading');
   loading.style.removeProperty('top');
   loading.style.removeProperty('height');
   loading.style.removeProperty('min-height');
@@ -11149,10 +11292,14 @@ function hideGalleryShowcaseLoading() {
 
 function applyGalleryShowcaseViewWithLoading(resetPageScroll) {
   var generation = ++galleryShowcaseViewGeneration;
+  // Lens occupies the normal document flow. Hide it before measuring the
+  // Showcase so its height is based on Showcase's real viewport position.
+  if (galleryLensView) galleryLensView.hidden = true;
+  document.body.classList.remove('gallery-lens-active');
   if (gallery) gallery.style.display = 'none';
   if (galleryCoverflowView) galleryCoverflowView.hidden = false;
   applyGalleryCoverFlowHeight();
-  showGalleryShowcaseLoading(true);
+  showGalleryShowcaseLoading();
   if (resetPageScroll) {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }
@@ -11172,7 +11319,7 @@ function applyGalleryShowcaseViewWithLoading(resetPageScroll) {
 
 function applyGalleryShowcaseSort() {
   var generation = ++galleryShowcaseSortGeneration;
-  showGalleryShowcaseLoading(true);
+  showGalleryShowcaseLoading();
   window.requestAnimationFrame(function () {
     window.requestAnimationFrame(function () {
       if (generation !== galleryShowcaseSortGeneration) return;
@@ -12021,6 +12168,500 @@ function renderGalleryCoverFlow() {
   updateGalleryCoverFlowGeometry();
 }
 
+var galleryLensSupported = null;
+var galleryLensRenderer = null;
+var galleryLensRenderKey = '';
+var galleryLensLoading = false;
+
+function galleryCanUseLens() {
+  if (!galleryLensCanvas) return false;
+  if (typeof galleryLensSupported === 'boolean') return galleryLensSupported;
+  try {
+    var probe = document.createElement('canvas');
+    var gl = probe.getContext('webgl', { antialias: false }) || probe.getContext('experimental-webgl');
+    galleryLensSupported = !!gl;
+    var lose = gl && gl.getExtension && gl.getExtension('WEBGL_lose_context');
+    if (lose) lose.loseContext();
+  } catch (e) {
+    galleryLensSupported = false;
+  }
+  return galleryLensSupported;
+}
+
+function updateGalleryLensAvailability() {
+  var available = !curatorModeActive && !curatorPreviewActive && galleryCanUseLens();
+  if (galleryViewLensBtn) {
+    galleryViewLensBtn.hidden = !available;
+    galleryViewLensBtn.style.display = available ? '' : 'none';
+    galleryViewLensBtn.disabled = !available;
+    galleryViewLensBtn.tabIndex = available ? 0 : -1;
+    galleryViewLensBtn.setAttribute('aria-hidden', available ? 'false' : 'true');
+  }
+  if (!available && galleryViewMode === 'lens') {
+    galleryViewMode = 'grid';
+    saveGalleryViewMode();
+  }
+  return available;
+}
+
+function setGalleryLensLoading(loading) {
+  galleryLensLoading = loading;
+  var loadingEl = document.getElementById('gallery-loading');
+  if (!loadingEl) return;
+  if (loading) showGalleryViewLoading();
+  else {
+    loadingEl.classList.remove('is-view-loading');
+    loadingEl.classList.add('is-hidden');
+  }
+}
+
+function disposeGalleryLensRenderer() {
+  if (!galleryLensRenderer) return;
+  galleryLensRenderer.dispose();
+  galleryLensRenderer = null;
+  galleryLensRenderKey = '';
+  if (galleryLensView) galleryLensView.classList.remove('is-dragging', 'is-pressing');
+}
+
+function applyGalleryLensHeight() {
+  if (!galleryLensView || galleryLensView.hidden) return;
+  var header = document.getElementById('header');
+  if (header) {
+    var headerStyle = window.getComputedStyle(header);
+    var headerBottomMargin = parseFloat(headerStyle.marginBottom) || 0;
+    galleryLensView.style.setProperty(
+      '--gallery-lens-header-overlap',
+      Math.ceil(header.getBoundingClientRect().height + headerBottomMargin) + 'px'
+    );
+  }
+  var rect = galleryLensView.getBoundingClientRect();
+  var available = Math.floor(window.innerHeight - Math.max(0, rect.top) - 1);
+  galleryLensView.style.height = Math.max(420, available) + 'px';
+}
+
+function loadGalleryLensOffset() {
+  try {
+    var saved = JSON.parse(window.localStorage.getItem(GALLERY_LENS_OFFSET_LS_KEY) || 'null');
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+      return { x: saved.x, y: saved.y };
+    }
+  } catch (e) {
+    /* ignore unavailable or invalid local storage */
+  }
+  return { x: 0, y: 0 };
+}
+
+function saveGalleryLensOffset(x, y) {
+  try {
+    window.localStorage.setItem(GALLERY_LENS_OFFSET_LS_KEY, JSON.stringify({ x: x, y: y }));
+  } catch (e) {
+    /* ignore storage restrictions */
+  }
+}
+
+function getGalleryLensDeclaredAspect(photo) {
+  var value = String(photo && (photo.previewAspect || photo.aspectRatio || photo.aspect) || '').trim();
+  var match = value.match(/^(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  var width = parseFloat(match[1]);
+  var height = parseFloat(match[2]);
+  return width > 0 && height > 0 ? width / height : 0;
+}
+
+function createGalleryLensThumbnail(photo, size) {
+  var canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  var ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  ctx.clearRect(0, 0, size, size);
+  var ascii = String(photo && photo.ascii || '');
+  var color = typeof photo.color === 'string' ? photo.color : '#00ff41';
+  var shape = resolveGalleryGridOutlineShape(photo, ascii, getGalleryCoverFlowShape(photo, ascii));
+  var lines = ascii.replace(/\r\n/g, '\n').split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  if (!lines.length) lines = [''];
+  var rows = Math.max(1, lines.length);
+  var cols = Math.max(1, lines.reduce(function (max, line) {
+    return Math.max(max, line.length);
+  }, 0));
+  var baseFontSize = 10;
+  ctx.font = baseFontSize + 'px "OCR A Extended", monospace';
+  var baseCellWidth = Math.max(0.1, ctx.measureText('M'.repeat(32)).width / 32);
+  var rawWidth = cols * baseCellWidth;
+  var rawHeight = rows * baseFontSize * 1.05;
+  var declaredAspect = getGalleryLensDeclaredAspect(photo);
+  var frameAspect = declaredAspect || rawWidth / Math.max(1, rawHeight);
+  if (shape === 'circle' || shape === 'square') frameAspect = 1;
+  var available = size - 34;
+  var frameWidth = frameAspect >= 1 ? available : available * frameAspect;
+  var frameHeight = frameAspect >= 1 ? available / frameAspect : available;
+  var fit = Math.min(frameWidth / Math.max(1, rawWidth), frameHeight / Math.max(1, rawHeight));
+  var fontSize = Math.max(1, Math.min(13, Math.floor(baseFontSize * fit * 100) / 100));
+  ctx.font = fontSize + 'px "OCR A Extended", monospace';
+  ctx.textBaseline = 'top';
+  ctx.imageSmoothingEnabled = false;
+  var lineHeight = fontSize * 1.05;
+  var cellWidth = Math.max(0.1, ctx.measureText('M'.repeat(32)).width / 32);
+  var textWidth = cols * cellWidth;
+  var textHeight = rows * lineHeight;
+  var frameX = (size - frameWidth) / 2;
+  var frameY = (size - frameHeight) / 2;
+  var x = frameX + (frameWidth - textWidth) / 2;
+  var y = frameY + (frameHeight - textHeight) / 2;
+  var bgX = Math.max(0, frameX);
+  var bgY = Math.max(0, frameY);
+  var bgW = Math.min(size - bgX, frameWidth);
+  var bgH = Math.min(size - bgY, frameHeight);
+  if (shape === 'circle' || shape === 'oval') {
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(bgX + bgW / 2, bgY + bgH / 2, bgW / 2, bgH / 2, 0, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(bgX, bgY, bgW, bgH);
+    ctx.restore();
+  } else if (shape === 'rectangle' || shape === 'square') {
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(bgX, bgY, bgW, bgH);
+  }
+  ctx.fillStyle = color;
+  lines.forEach(function (line, i) {
+    ctx.fillText(line, x, y + i * lineHeight);
+  });
+  return canvas;
+}
+
+function createGalleryLensRenderer(canvas, photos, onFallback) {
+  var gl = canvas.getContext('webgl', { antialias: true, alpha: false }) || canvas.getContext('experimental-webgl');
+  if (!gl) return null;
+  var vertexSource = 'attribute vec2 aPosition;varying vec2 vUv;void main(){vUv=aPosition*.5+.5;gl_Position=vec4(aPosition,0.,1.);}';
+  var fragmentSource =
+    'precision mediump float;uniform vec2 uResolution;uniform vec2 uOffset;uniform vec2 uMouse;uniform float uZoom;uniform float uCount;uniform float uAtlasSide;uniform sampler2D uAtlas;varying vec2 vUv;' +
+    'void main(){vec2 screen=(vUv-.5)*2.08;float radius=length(screen);float distortion=1.-.08*radius*radius;vec2 world=screen*distortion*vec2(uResolution.x/uResolution.y,1.)*uZoom+uOffset;' +
+    'float cellSize=.62;vec2 cellPos=world/cellSize;vec2 cellId=floor(cellPos);vec2 cellUv=fract(cellPos);' +
+    'vec2 mouseUv=(uMouse/uResolution)*2.-1.;mouseUv.y=-mouseUv.y;vec2 mouseWorld=mouseUv*(1.-.08*dot(mouseUv,mouseUv))*vec2(uResolution.x/uResolution.y,1.)*uZoom+uOffset;vec2 mouseId=floor(mouseWorld/cellSize);' +
+    'float hover=1.-smoothstep(.35,.75,length(cellId+.5-(mouseId+.5)));bool hovered=hover>0.&&uMouse.x>=0.;vec3 bg=mix(vec3(.02),vec3(.025,.055,.028),hover*.65);' +
+    'float gridX=smoothstep(0.,.006,cellUv.x)*smoothstep(0.,.006,1.-cellUv.x);float gridY=smoothstep(0.,.006,cellUv.y)*smoothstep(0.,.006,1.-cellUv.y);float grid=gridX*gridY;' +
+    'float imageSize=.72;float pad=(1.-imageSize)*.5;vec2 imageUv=(cellUv-pad)/imageSize;vec2 mask=smoothstep(-.012,.012,imageUv)*smoothstep(-.012,.012,1.-imageUv);float alpha=mask.x*mask.y;' +
+    'float idx=mod(cellId.x+cellId.y*uAtlasSide,uCount);vec2 atlasPos=vec2(mod(idx,uAtlasSide),floor(idx/uAtlasSide));vec2 tileUv=vec2(imageUv.x,1.-imageUv.y);vec2 atlasUv=(atlasPos+tileUv)/uAtlasSide;' +
+    'vec3 color=bg;if(imageUv.x>=0.&&imageUv.x<=1.&&imageUv.y>=0.&&imageUv.y<=1.){vec4 tex=texture2D(uAtlas,atlasUv);color=mix(color,tex.rgb,tex.a*alpha);}' +
+    'color=mix(color,vec3(.12,.9,.25),(1.-grid)*.18);float fade=1.-smoothstep(1.15,1.85,radius);gl_FragColor=vec4(color*fade,1.);}';
+  function shader(type, source) {
+    var s = gl.createShader(type);
+    gl.shaderSource(s, source);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || 'Shader compile failed');
+    return s;
+  }
+  var program = gl.createProgram();
+  gl.attachShader(program, shader(gl.VERTEX_SHADER, vertexSource));
+  gl.attachShader(program, shader(gl.FRAGMENT_SHADER, fragmentSource));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
+  gl.useProgram(program);
+  var buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  var aPosition = gl.getAttribLocation(program, 'aPosition');
+  gl.enableVertexAttribArray(aPosition);
+  gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
+  var lensPhotos = photos.filter(function (photo) {
+    return photo && typeof photo.ascii === 'string' && photo.ascii.replace(/\s/g, '').length > 0;
+  }).slice(0, 64);
+  if (!lensPhotos.length) return null;
+  var count = lensPhotos.length;
+  var side = Math.ceil(Math.sqrt(count));
+  var tile = 256;
+  var atlas = document.createElement('canvas');
+  atlas.width = atlas.height = side * tile;
+  var atlasCtx = atlas.getContext('2d');
+  atlasCtx.clearRect(0, 0, atlas.width, atlas.height);
+  for (var i = 0; i < count; i++) {
+    atlasCtx.drawImage(createGalleryLensThumbnail(lensPhotos[i], tile), (i % side) * tile, Math.floor(i / side) * tile, tile, tile);
+  }
+  var texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
+  var uniforms = {
+    resolution: gl.getUniformLocation(program, 'uResolution'),
+    offset: gl.getUniformLocation(program, 'uOffset'),
+    mouse: gl.getUniformLocation(program, 'uMouse'),
+    zoom: gl.getUniformLocation(program, 'uZoom'),
+    count: gl.getUniformLocation(program, 'uCount'),
+    atlasSide: gl.getUniformLocation(program, 'uAtlasSide')
+  };
+  var savedOffset = loadGalleryLensOffset();
+  var state = {
+    offsetX: savedOffset.x,
+    offsetY: savedOffset.y,
+    targetX: savedOffset.x,
+    targetY: savedOffset.y,
+    mouseX: -1,
+    mouseY: -1,
+    dragging: false,
+    pressing: false,
+    moved: false,
+    px: 0,
+    py: 0,
+    raf: 0,
+    clickedAt: 0,
+    autoPanArmed: false,
+    lastOffsetSaveAt: 0,
+    disposed: false
+  };
+  function persistOffset(force) {
+    var now = Date.now();
+    if (!force && now - state.lastOffsetSaveAt < 250) return;
+    state.lastOffsetSaveAt = now;
+    saveGalleryLensOffset(state.targetX, state.targetY);
+  }
+  function resize() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+    var h = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    gl.viewport(0, 0, w, h);
+  }
+  function render() {
+    if (state.disposed) return;
+    state.raf = requestAnimationFrame(render);
+    resize();
+    if (!state.dragging && state.autoPanArmed && state.mouseX >= 0) {
+      var cx = canvas.clientWidth / 2;
+      var cy = canvas.clientHeight / 2;
+      var dx = (state.mouseX - cx) / Math.max(1, cx);
+      var dy = (state.mouseY - cy) / Math.max(1, cy);
+      var dead = 0.14;
+      if (Math.abs(dx) > dead) state.targetX += dx * 0.0028;
+      if (Math.abs(dy) > dead) state.targetY -= dy * 0.0028;
+      if (Math.abs(dx) > dead || Math.abs(dy) > dead) persistOffset(false);
+    }
+    state.offsetX += (state.targetX - state.offsetX) * 0.085;
+    state.offsetY += (state.targetY - state.offsetY) * 0.085;
+    gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
+    gl.uniform2f(uniforms.offset, state.offsetX, state.offsetY);
+    gl.uniform2f(uniforms.mouse, state.mouseX < 0 ? -1 : state.mouseX * (canvas.width / Math.max(1, canvas.clientWidth)), state.mouseY < 0 ? -1 : state.mouseY * (canvas.height / Math.max(1, canvas.clientHeight)));
+    gl.uniform1f(uniforms.zoom, state.dragging ? 1.18 : 1.0);
+    gl.uniform1f(uniforms.count, count);
+    gl.uniform1f(uniforms.atlasSide, side);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+  function pointerToPhotoIndex(x, y, zoom) {
+    var rect = canvas.getBoundingClientRect();
+    var u = (x - rect.left) / Math.max(1, rect.width);
+    var v = (y - rect.top) / Math.max(1, rect.height);
+    var sx = (u - 0.5) * 2.08;
+    var sy = (0.5 - v) * 2.08;
+    var radius = Math.sqrt(sx * sx + sy * sy);
+    var distortion = 1 - 0.08 * radius * radius;
+    var aspect = rect.width / Math.max(1, rect.height);
+    var pointerZoom = typeof zoom === 'number' ? zoom : 1;
+    var worldX = sx * distortion * aspect * pointerZoom + state.offsetX;
+    var worldY = sy * distortion * pointerZoom + state.offsetY;
+    var cellX = Math.floor(worldX / 0.62);
+    var cellY = Math.floor(worldY / 0.62);
+    var idx = ((cellX + cellY * side) % count + count) % count;
+    return idx;
+  }
+  function findLensPhotoFeedIndex(photo, fallbackIndex) {
+    var id = resolveLightboxPhotoId(photo);
+    if (id) {
+      var feedIndex = findGalleryIndexByPhotoId(id);
+      if (feedIndex >= 0) return feedIndex;
+    }
+    return Math.max(0, Math.min(photosCache.length - 1, fallbackIndex));
+  }
+  function createLensLightboxFlySource(photo, x, y) {
+    if (!photo || !shouldLightboxSharedMotion()) return null;
+    var ascii = typeof photo.ascii === 'string' ? photo.ascii : '';
+    if (!ascii) return null;
+    var dims = getAsciiDims(ascii);
+    var cols = Math.max(1, dims.cols);
+    var rows = Math.max(1, dims.rows);
+    var gm = getGalleryAsciiCellMetrics();
+    var cellAspect = gm && gm.cellAspect > 0 ? gm.cellAspect : CELL_ASPECT_FALLBACK;
+    var canvasRect = canvas.getBoundingClientRect();
+    var targetSize = Math.max(86, Math.min(190, Math.min(canvasRect.width, canvasRect.height) * 0.22));
+    var fs = Math.max(2, Math.min(8, Math.min(targetSize / rows, targetSize / Math.max(1, cols * cellAspect))));
+    var preW = cols * cellAspect * fs;
+    var preH = rows * fs;
+    var card = document.createElement('div');
+    var thumb = document.createElement('div');
+    var pre = document.createElement('pre');
+    card.className = 'photo-card gallery-lens-lightbox-fly-source';
+    thumb.className = 'photo-thumb';
+    pre.textContent = ascii;
+    pre.style.fontFamily = 'monospace, ui-monospace, "Courier New", monospace';
+    pre.style.fontSize = fs + 'px';
+    pre.style.lineHeight = '1';
+    pre.style.letterSpacing = '0';
+    pre.style.whiteSpace = 'pre';
+    pre.style.margin = '0';
+    pre.style.color = photo.color || '#00ff41';
+    thumb.appendChild(pre);
+    card.appendChild(thumb);
+    card.style.position = 'fixed';
+    card.style.left = Math.round(x - preW / 2) + 'px';
+    card.style.top = Math.round(y - preH / 2) + 'px';
+    card.style.width = Math.ceil(preW) + 'px';
+    card.style.height = Math.ceil(preH) + 'px';
+    card.style.opacity = '0';
+    card.style.pointerEvents = 'none';
+    card.style.zIndex = '-1';
+    card.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(card);
+    galleryLensLightboxReturnRect = {
+      left: x - preW / 2,
+      top: y - preH / 2,
+      width: preW,
+      height: preH
+    };
+    window.setTimeout(function () {
+      if (card.parentNode) card.parentNode.removeChild(card);
+    }, LIGHTBOX_SHARED_MS + LIGHTBOX_SHARED_FINISH_FALLBACK_MS + 600);
+    return card;
+  }
+  function openLensPhotoAtIndex(ix, x, y) {
+    var photo = lensPhotos[ix];
+    if (!photo) return;
+    state.clickedAt = Date.now();
+    openLightbox(photo, findLensPhotoFeedIndex(photo, ix), createLensLightboxFlySource(photo, x, y));
+  }
+  function onPointerDown(event) {
+    if (event.button !== 0) return;
+    state.dragging = true;
+    state.pressing = true;
+    state.moved = false;
+    state.px = event.clientX;
+    state.py = event.clientY;
+    if (galleryLensView) {
+      galleryLensView.classList.add('is-dragging');
+      galleryLensView.classList.add('is-pressing');
+    }
+    canvas.setPointerCapture(event.pointerId);
+  }
+  function onPointerMove(event) {
+    var rect = canvas.getBoundingClientRect();
+    state.mouseX = event.clientX - rect.left;
+    state.mouseY = event.clientY - rect.top;
+    state.autoPanArmed = true;
+    if (!state.dragging) return;
+    var dx = event.clientX - state.px;
+    var dy = event.clientY - state.py;
+    if (Math.abs(dx) + Math.abs(dy) > 6) state.moved = true;
+    state.targetX -= dx * 0.003;
+    state.targetY += dy * 0.003;
+    state.px = event.clientX;
+    state.py = event.clientY;
+  }
+  function onPointerUp(event) {
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    var wasDrag = state.moved;
+    var ix = !wasDrag && lensPhotos.length ? pointerToPhotoIndex(event.clientX, event.clientY, 1.18) : -1;
+    state.dragging = false;
+    state.pressing = false;
+    if (galleryLensView) {
+      galleryLensView.classList.remove('is-dragging');
+      galleryLensView.classList.remove('is-pressing');
+    }
+    persistOffset(true);
+    if (ix >= 0 && ix < lensPhotos.length) openLensPhotoAtIndex(ix, event.clientX, event.clientY);
+  }
+  function onClick(event) {
+    if (state.dragging || state.moved || Date.now() - state.clickedAt < 250 || !lensPhotos.length) return;
+    var ix = pointerToPhotoIndex(event.clientX, event.clientY);
+    if (ix >= 0 && ix < lensPhotos.length) openLensPhotoAtIndex(ix, event.clientX, event.clientY);
+  }
+  function onPointerLeave() {
+    state.mouseX = -1;
+    state.mouseY = -1;
+    state.dragging = false;
+    state.pressing = false;
+    persistOffset(true);
+    if (galleryLensView) {
+      galleryLensView.classList.remove('is-dragging');
+      galleryLensView.classList.remove('is-pressing');
+    }
+  }
+  function onContextLost(event) {
+    event.preventDefault();
+    galleryLensSupported = false;
+    if (typeof onFallback === 'function') onFallback();
+  }
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerUp);
+  canvas.addEventListener('pointerleave', onPointerLeave);
+  canvas.addEventListener('click', onClick);
+  canvas.addEventListener('webglcontextlost', onContextLost, false);
+  render();
+  return {
+    dispose: function () {
+      state.disposed = true;
+      persistOffset(true);
+      cancelAnimationFrame(state.raf);
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointercancel', onPointerUp);
+      canvas.removeEventListener('pointerleave', onPointerLeave);
+      canvas.removeEventListener('click', onClick);
+      canvas.removeEventListener('webglcontextlost', onContextLost, false);
+      gl.deleteTexture(texture);
+      gl.deleteBuffer(buffer);
+      gl.deleteProgram(program);
+    }
+  };
+}
+
+function renderGalleryLens() {
+  if (!galleryLensCanvas || !galleryLensView || galleryViewMode !== 'lens') return;
+  if (!updateGalleryLensAvailability()) {
+    applyGalleryViewMode();
+    return;
+  }
+  applyGalleryLensHeight();
+  if (!photosCache.length) {
+    disposeGalleryLensRenderer();
+    return;
+  }
+  var key = photosCache.slice(0, 64).map(function (photo) {
+    return resolveLightboxPhotoId(photo) || photo.time || photo.ascii;
+  }).join('|');
+  if (galleryLensRenderer && galleryLensRenderKey === key) return;
+  disposeGalleryLensRenderer();
+  galleryLensRenderKey = key;
+  requestAnimationFrame(function () {
+    if (galleryViewMode !== 'lens' || !galleryLensView || galleryLensView.hidden) return;
+    if (galleryViewMode === 'lens') setGalleryLensLoading(true);
+    try {
+      galleryLensRenderer = createGalleryLensRenderer(galleryLensCanvas, photosCache, function () {
+        galleryViewMode = 'grid';
+        saveGalleryViewMode();
+        applyGalleryViewMode();
+      });
+    } catch (e) {
+      galleryLensRenderer = null;
+      galleryLensSupported = false;
+    }
+    setGalleryLensLoading(false);
+    if (!galleryLensRenderer) {
+      galleryViewMode = 'grid';
+      saveGalleryViewMode();
+      applyGalleryViewMode();
+    }
+  });
+}
+
 function getGalleryCoverFlowMaxHeight() {
   if (!galleryCoverflowView) return 320;
   if (galleryCoverFlowUserResized && !isEmbeddedInThirdPartyFrame()) {
@@ -12057,18 +12698,30 @@ function syncGalleryListViewportHeight() {
 }
 
 function applyGalleryViewMode() {
+  updateGalleryLensAvailability();
   var cover = galleryViewMode === 'coverflow' && galleryIsCoverFlowAvailable();
+  var lens = galleryViewMode === 'lens' && updateGalleryLensAvailability();
   if (galleryViewGridBtn) {
-    galleryViewGridBtn.setAttribute('aria-pressed', cover ? 'false' : 'true');
-    galleryViewGridBtn.setAttribute('aria-selected', cover ? 'false' : 'true');
+    galleryViewGridBtn.setAttribute('aria-pressed', cover || lens ? 'false' : 'true');
+    galleryViewGridBtn.setAttribute('aria-selected', cover || lens ? 'false' : 'true');
   }
   if (galleryViewCoverFlowBtn) {
     galleryViewCoverFlowBtn.setAttribute('aria-pressed', cover ? 'true' : 'false');
     galleryViewCoverFlowBtn.setAttribute('aria-selected', cover ? 'true' : 'false');
   }
-  if (gallery) gallery.style.display = cover ? 'none' : '';
+  if (galleryViewLensBtn) {
+    galleryViewLensBtn.setAttribute('aria-pressed', lens ? 'true' : 'false');
+    galleryViewLensBtn.setAttribute('aria-selected', lens ? 'true' : 'false');
+  }
+  if (gallery) gallery.style.display = cover || lens ? 'none' : '';
+  if (galleryLensView) galleryLensView.hidden = !lens;
   if (galleryCoverflowView) galleryCoverflowView.hidden = !cover;
+  document.body.classList.toggle('gallery-lens-active', lens);
   syncGalleryGridViewport();
+  if (!lens) {
+    disposeGalleryLensRenderer();
+    if (galleryLensLoading) setGalleryLensLoading(false);
+  }
   if (!cover) {
     stopGalleryCoverFlowAnimation();
     if (galleryCoverflowCuratorToolbar) galleryCoverflowCuratorToolbar.hidden = true;
@@ -12077,6 +12730,10 @@ function applyGalleryViewMode() {
     applyGalleryCoverFlowHeight();
     renderGalleryList();
     renderGalleryCoverFlow();
+  } else if (lens) {
+    stopGalleryCoverFlowAnimation();
+    applyGalleryLensHeight();
+    renderGalleryLens();
   }
 }
 
@@ -12213,6 +12870,19 @@ function setupGalleryViewControls() {
     saveGalleryViewMode();
     applyGalleryShowcaseViewWithLoading(enteringShowcase);
     continueGalleryShowcaseRestore();
+  });
+  if (galleryViewLensBtn) galleryViewLensBtn.addEventListener('click', function () {
+    finishGalleryDrag(false);
+    if (!updateGalleryLensAvailability()) return;
+    if (lightbox && (lightbox.classList.contains('open') || document.getElementById('lightbox-shared-fly'))) {
+      closeLightbox();
+    }
+    cancelGalleryCoverFlowScroll();
+    galleryShowcaseViewGeneration += 1;
+    stopGalleryCoverFlowAnimation();
+    galleryViewMode = 'lens';
+    saveGalleryViewMode();
+    applyGalleryViewMode();
   });
   if (galleryListBody) {
     galleryListBody.addEventListener('mouseover', function (event) {
@@ -12370,10 +13040,14 @@ function setupGalleryViewControls() {
     });
   }
   window.addEventListener('resize', function () {
-    if (galleryViewMode !== 'coverflow') return;
-    applyGalleryCoverFlowHeight();
-    syncGalleryListColumnWidths();
-    renderGalleryCoverFlow();
+    if (galleryViewMode === 'coverflow') {
+      applyGalleryCoverFlowHeight();
+      syncGalleryListColumnWidths();
+      renderGalleryCoverFlow();
+    } else if (galleryViewMode === 'lens') {
+      applyGalleryLensHeight();
+      renderGalleryLens();
+    }
   });
 }
 
@@ -12778,16 +13452,19 @@ window.addEventListener('message', function (ev) {
       var su = (window.ASCII_CAMERA_SUPABASE_URL && String(window.ASCII_CAMERA_SUPABASE_URL).trim()) || '';
       var sk = (window.ASCII_CAMERA_SUPABASE_ANON_KEY && String(window.ASCII_CAMERA_SUPABASE_ANON_KEY).trim()) || '';
       var isFile = false;
+      var isLocalHost = false;
       try {
         isFile = window.location.protocol === 'file:';
+        isLocalHost = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
       } catch (e) {
         isFile = false;
+        isLocalHost = false;
       }
       if (window.__ASCII_CONFIG_SCRIPT_ERROR__) {
         banner.textContent =
           'Failed to load config.local.js (404 or wrong path). Run npm run build for static hosting so this file is generated and deployed. If you opened HTML via file://, use a local server (e.g. npx serve .) or your deployed https URL.';
       } else if (!su && !sk) {
-        if (isFile) {
+        if (isFile || isLocalHost) {
           banner.textContent =
             'Cloud not configured locally: config.local.js loaded but ASCII_CAMERA_SUPABASE_URL / ASCII_CAMERA_SUPABASE_ANON_KEY are empty. Edit config.local.js in the project root with your Supabase Project URL and anon public key (see config.local.example.js), or export both variables and run npm run build again. Not applicable to Vercel when using file:// only.';
         } else {
