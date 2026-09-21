@@ -7,6 +7,8 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0a0a0a; color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; min-height: 100vh; padding: 24px 16px; }
   body.gallery-lens-active { overflow: hidden; padding-bottom: 0; }
+  html.gallery-coverflow-active { overflow: hidden; scrollbar-gutter: auto; }
+  body.gallery-coverflow-active { overflow: hidden; padding-top: 0; }
   body.gallery-curator-mode #gallery-view-lens { display: none !important; }
   /* Grid 使用自定义滚动条时不保留浏览器原生滚动条槽位；保留 body 的 16px 内容边距。 */
   html.gallery-grid-scroll-active { overflow: hidden; scrollbar-gutter: auto; }
@@ -8959,6 +8961,8 @@ function syncGalleryGridViewport() {
   document.documentElement.style.setProperty('--gallery-native-scrollbar-gutter', getGalleryNativeScrollbarGutter() + 'px');
   document.documentElement.classList.toggle('gallery-grid-scroll-active', gridActive);
   document.body.classList.toggle('gallery-grid-scroll-active', gridActive);
+  document.documentElement.classList.toggle('gallery-coverflow-active', galleryViewMode === 'coverflow' && galleryIsCoverFlowAvailable());
+  document.body.classList.toggle('gallery-coverflow-active', galleryViewMode === 'coverflow' && galleryIsCoverFlowAvailable());
   galleryFeedMain.classList.toggle('gallery-feed-main--grid-scroll', gridActive);
   if (!gridActive) {
     galleryFeedMain.style.removeProperty('height');
@@ -8973,9 +8977,9 @@ function syncGalleryGridViewport() {
   var headerStyle = header ? window.getComputedStyle(header) : null;
   var headerBottomMargin = headerStyle ? (parseFloat(headerStyle.marginBottom) || 0) : 0;
   var inset = Math.max(0, Math.round(headerRect.bottom - headerRect.top + headerBottomMargin));
-  var bottomGap = 24;
-  var available = Math.floor(window.innerHeight - Math.max(0, headerRect.top) - bottomGap);
   galleryFeedMain.style.setProperty('--gallery-grid-scroll-inset', inset + 'px');
+  var mainTop = galleryFeedMain.getBoundingClientRect().top;
+  var available = Math.ceil(window.innerHeight - mainTop);
   galleryFeedMain.style.height = Math.max(180, available) + 'px';
   syncGalleryLoadingPosition();
   syncGalleryGridScrollbar();
@@ -8995,8 +8999,7 @@ function syncGalleryGridScrollbar() {
   }
   var header = document.getElementById('header');
   var headerBottom = header ? header.getBoundingClientRect().bottom : 0;
-  var bottomGap = 24;
-  var trackHeight = Math.max(0, Math.floor(window.innerHeight - Math.max(0, headerBottom) - bottomGap));
+  var trackHeight = Math.max(0, Math.floor(window.innerHeight - Math.max(0, headerBottom)));
   var scrollable = viewport.scrollHeight > viewport.clientHeight + 1 && trackHeight > 0;
   galleryGridScrollbar.hidden = !scrollable;
   if (!scrollable) return;
@@ -12667,9 +12670,9 @@ function getGalleryCoverFlowMaxHeight() {
   if (galleryCoverFlowUserResized && !isEmbeddedInThirdPartyFrame()) {
     return Math.max(320, Math.floor(window.innerHeight * 0.82));
   }
-  var viewTop = galleryCoverflowView.getBoundingClientRect().top + window.scrollY;
+  var viewTop = galleryCoverflowView.getBoundingClientRect().top;
   var resizerHeight = galleryViewResizer ? galleryViewResizer.offsetHeight : 22;
-  var available = Math.floor(window.innerHeight - Math.max(0, viewTop) - 24);
+  var available = Math.ceil(window.innerHeight - viewTop);
   return Math.max(320, available - resizerHeight - 180);
 }
 
@@ -12692,8 +12695,8 @@ function applyGalleryCoverFlowHeight() {
 
 function syncGalleryListViewportHeight() {
   if (!galleryCoverflowView || galleryViewMode !== 'coverflow' || galleryCoverflowView.hidden || !galleryListPanel) return;
-  var viewTop = galleryCoverflowView.getBoundingClientRect().top + window.scrollY;
-  var available = Math.floor(window.innerHeight - Math.max(0, viewTop) - 24);
+  var viewTop = galleryCoverflowView.getBoundingClientRect().top;
+  var available = Math.ceil(window.innerHeight - viewTop);
   galleryListPanel.style.height = Math.max(180, available - galleryCoverflowPanel.offsetHeight - galleryViewResizer.offsetHeight) + 'px';
 }
 
