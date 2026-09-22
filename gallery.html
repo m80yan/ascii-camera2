@@ -2624,6 +2624,7 @@
     background: transparent;
     overflow: visible;
     transform-origin: center;
+    perspective: 800px;
     transition: transform 110ms cubic-bezier(0.22, 1, 0.36, 1);
   }
   .cover-flow-card--centered:active .cover-flow-card-surface {
@@ -2635,6 +2636,12 @@
     display: block;
     pointer-events: none;
     background: #000;
+    transform:
+      translateZ(calc(var(--cover-flow-reflect-lit, 0) * -6px))
+      rotateX(var(--cover-flow-reflect-rx, 0deg))
+      rotateY(var(--cover-flow-reflect-ry, 0deg));
+    transform-origin: 50% 0%;
+    transform-box: border-box;
   }
   .cover-flow-card-reflection-backdrop--circle,
   .cover-flow-card-reflection-backdrop--oval {
@@ -2662,6 +2669,15 @@
     font-size: var(--cover-flow-font-size, 1px);
     line-height: var(--cover-flow-font-size, 1px);
     white-space: pre;
+    transform:
+      translateZ(calc(var(--cover-flow-tilt-lit, 0) * -14px))
+      rotateX(var(--cover-flow-tilt-rx, 0deg))
+      rotateY(var(--cover-flow-tilt-ry, 0deg));
+    transform-origin: 50% 50%;
+    transform-box: border-box;
+    box-shadow:
+      0 var(--cover-flow-tilt-shadow-y, 20px) var(--cover-flow-tilt-shadow-blur, 44px) -8px
+      rgba(15, 23, 42, var(--cover-flow-tilt-shadow-alpha, 0.22));
     -webkit-box-reflect: below 0.5em linear-gradient(rgb(0 0 0 / 0), rgb(0 0 0 / 0.25));
     box-reflect: below 0.5em linear-gradient(rgb(0 0 0 / 0), rgb(0 0 0 / 0.25));
   }
@@ -2671,6 +2687,24 @@
     inset: 0;
     z-index: 0;
     background: #000;
+  }
+  .cover-flow-card-surface pre::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    background-image:
+      radial-gradient(
+        42% 34% at var(--cover-flow-tilt-px, 50%) var(--cover-flow-tilt-py, 50%),
+        rgba(9, 14, 28, var(--cover-flow-tilt-dark, 0)),
+        rgba(9, 14, 28, 0)
+      ),
+      radial-gradient(
+        52% 42% at calc(100% - var(--cover-flow-tilt-px, 50%)) calc(100% - var(--cover-flow-tilt-py, 50%)),
+        rgba(255, 255, 255, var(--cover-flow-tilt-rim, 0)),
+        rgba(255, 255, 255, 0)
+      );
   }
   .cover-flow-card-surface pre.cover-flow-card-ascii--circle,
   .cover-flow-card-surface pre.cover-flow-card-ascii--oval {
@@ -3833,6 +3867,9 @@ let galleryShowcaseViewGeneration = 0;
 let galleryCoverFlowLikeState = { photoId: '', liked: false, count: 0 };
 let galleryCoverFlowLikeRequestGen = 0;
 let galleryCoverFlowAnimGen = 0;
+const GALLERY_SHOWCASE_TILT_MAX = 10;
+const GALLERY_SHOWCASE_TILT_SHADE = 52;
+let galleryShowcaseTilt = null;
 /** 首屏 Gallery 入场动画是否已经播放过 */
 let galleryEntrancePlayed = false;
 /** 首次切换到 Loop 后，Loop 内容是否已经播放过入场动画 */
@@ -10452,6 +10489,7 @@ function setupGalleryDragSorting() {
     drag.y = event.clientY;
     if (!drag.started && Math.hypot(drag.x - drag.startX, drag.y - drag.startY) >= 6) {
       drag.started = true;
+      resetGalleryShowcaseTilt();
       clearGalleryThumbAnim();
       stopGalleryCoverFlowAnimation();
       cancelGalleryCoverFlowScroll();
@@ -11469,6 +11507,7 @@ function toggleGalleryCoverFlowLike(photo) {
 function stopGalleryCoverFlowAnimation() {
   galleryCoverFlowAnimGen += 1;
   galleryLoopHoverFocusCard = null;
+  resetGalleryShowcaseTilt();
   if (!galleryCoverflowTrack) return;
   galleryCoverflowTrack.querySelectorAll('.cover-flow-card').forEach(stopGalleryLoopCard);
 }
@@ -11495,6 +11534,187 @@ function startGalleryCoverFlowAnimation() {
     }
     playGalleryLoopCard(card, photo, card.querySelector('.cover-flow-card-ascii-text'));
   });
+}
+
+function clearGalleryShowcaseTiltSurface(surface) {
+  if (!surface) return;
+  [
+    '--cover-flow-tilt-rx',
+    '--cover-flow-tilt-ry',
+    '--cover-flow-reflect-rx',
+    '--cover-flow-reflect-ry',
+    '--cover-flow-tilt-lit',
+    '--cover-flow-reflect-lit',
+    '--cover-flow-tilt-shadow-y',
+    '--cover-flow-tilt-shadow-blur',
+    '--cover-flow-tilt-shadow-alpha',
+    '--cover-flow-tilt-px',
+    '--cover-flow-tilt-py',
+    '--cover-flow-tilt-dark',
+    '--cover-flow-tilt-rim'
+  ].forEach(function (name) {
+    surface.style.removeProperty(name);
+  });
+}
+
+function writeGalleryShowcaseTiltSurface(surface, x, y, lit) {
+  if (!surface) return;
+  var rx = -y * GALLERY_SHOWCASE_TILT_MAX;
+  var ry = x * GALLERY_SHOWCASE_TILT_MAX;
+  var reflectRx = rx * 0.38;
+  var reflectRy = ry * 0.38;
+  var px = ((x + 1) / 2) * 100;
+  var py = ((y + 1) / 2) * 100;
+  var shade = GALLERY_SHOWCASE_TILT_SHADE / 100;
+  surface.style.setProperty('--cover-flow-tilt-rx', rx.toFixed(3) + 'deg');
+  surface.style.setProperty('--cover-flow-tilt-ry', ry.toFixed(3) + 'deg');
+  surface.style.setProperty('--cover-flow-reflect-rx', reflectRx.toFixed(3) + 'deg');
+  surface.style.setProperty('--cover-flow-reflect-ry', reflectRy.toFixed(3) + 'deg');
+  surface.style.setProperty('--cover-flow-tilt-lit', lit.toFixed(4));
+  surface.style.setProperty('--cover-flow-reflect-lit', (lit * 0.42).toFixed(4));
+  surface.style.setProperty('--cover-flow-tilt-shadow-y', (20 + (9 - 20) * lit).toFixed(2) + 'px');
+  surface.style.setProperty('--cover-flow-tilt-shadow-blur', (44 + (24 - 44) * lit).toFixed(2) + 'px');
+  surface.style.setProperty('--cover-flow-tilt-shadow-alpha', (0.22 + (0.15 - 0.22) * lit).toFixed(4));
+  surface.style.setProperty('--cover-flow-tilt-px', px.toFixed(2) + '%');
+  surface.style.setProperty('--cover-flow-tilt-py', py.toFixed(2) + '%');
+  surface.style.setProperty('--cover-flow-tilt-dark', (shade * 0.42 * lit).toFixed(4));
+  surface.style.setProperty('--cover-flow-tilt-rim', (shade * 0.22 * lit).toFixed(4));
+}
+
+function galleryShowcaseTiltReducedMotion() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+function ensureGalleryShowcaseTiltState(surface) {
+  if (!galleryShowcaseTilt || galleryShowcaseTilt.surface !== surface) {
+    resetGalleryShowcaseTilt();
+    galleryShowcaseTilt = {
+      surface: surface,
+      targetX: 0,
+      targetY: 0,
+      targetLit: 0,
+      x: 0,
+      y: 0,
+      lit: 0,
+      vx: 0,
+      vy: 0,
+      vl: 0,
+      raf: 0,
+      prev: 0
+    };
+  }
+  return galleryShowcaseTilt;
+}
+
+function stepGalleryShowcaseTilt(now) {
+  var st = galleryShowcaseTilt;
+  if (!st || !st.surface || !st.surface.isConnected) {
+    galleryShowcaseTilt = null;
+    return;
+  }
+  var dt = st.prev ? Math.max(0.25, Math.min(2.5, (now - st.prev) / 16.67)) : 1;
+  st.prev = now;
+  var k = 0.16;
+  var d = Math.pow(0.74, dt);
+  st.vx = (st.vx + (st.targetX - st.x) * k * dt) * d;
+  st.vy = (st.vy + (st.targetY - st.y) * k * dt) * d;
+  st.vl = (st.vl + (st.targetLit - st.lit) * k * dt) * d;
+  st.x += st.vx * dt;
+  st.y += st.vy * dt;
+  st.lit += st.vl * dt;
+  var settled =
+    Math.abs(st.targetX - st.x) < 0.003 &&
+    Math.abs(st.targetY - st.y) < 0.003 &&
+    Math.abs(st.targetLit - st.lit) < 0.003 &&
+    Math.abs(st.vx) < 0.003 &&
+    Math.abs(st.vy) < 0.003 &&
+    Math.abs(st.vl) < 0.003;
+  if (settled) {
+    st.x = st.targetX;
+    st.y = st.targetY;
+    st.lit = st.targetLit;
+  }
+  if (st.lit <= 0.002 && st.targetLit === 0 && settled) {
+    clearGalleryShowcaseTiltSurface(st.surface);
+    st.raf = 0;
+    galleryShowcaseTilt = null;
+    return;
+  }
+  writeGalleryShowcaseTiltSurface(st.surface, st.x, st.y, Math.max(0, Math.min(1, st.lit)));
+  st.raf = settled ? 0 : requestAnimationFrame(stepGalleryShowcaseTilt);
+}
+
+function runGalleryShowcaseTilt(surface, targetX, targetY, targetLit) {
+  if (!surface) return;
+  var st = ensureGalleryShowcaseTiltState(surface);
+  st.targetX = Math.max(-1, Math.min(1, targetX));
+  st.targetY = Math.max(-1, Math.min(1, targetY));
+  st.targetLit = Math.max(0, Math.min(1, targetLit));
+  if (galleryShowcaseTiltReducedMotion()) {
+    st.x = st.targetX;
+    st.y = st.targetY;
+    st.lit = st.targetLit;
+    if (st.lit <= 0) {
+      clearGalleryShowcaseTiltSurface(surface);
+      galleryShowcaseTilt = null;
+    } else {
+      writeGalleryShowcaseTiltSurface(surface, st.x, st.y, st.lit);
+    }
+    return;
+  }
+  if (!st.raf) {
+    st.prev = 0;
+    st.raf = requestAnimationFrame(stepGalleryShowcaseTilt);
+  }
+}
+
+function resetGalleryShowcaseTilt() {
+  if (!galleryShowcaseTilt) return;
+  if (galleryShowcaseTilt.raf) cancelAnimationFrame(galleryShowcaseTilt.raf);
+  clearGalleryShowcaseTiltSurface(galleryShowcaseTilt.surface);
+  galleryShowcaseTilt = null;
+}
+
+function getGalleryShowcaseTiltFrameRect(card, surface, pre) {
+  if (!card || !surface || !pre) return null;
+  var surfaceRect = surface.getBoundingClientRect();
+  var visual = card.querySelector('.cover-flow-card-visual');
+  var visualRect = visual && visual.getBoundingClientRect();
+  var visualScale = visual && visual.offsetWidth ? visualRect.width / visual.offsetWidth : 1;
+  if (!surfaceRect || pre.offsetWidth < 2 || pre.offsetHeight < 2) return null;
+  return {
+    left: surfaceRect.left + pre.offsetLeft * visualScale,
+    top: surfaceRect.top + pre.offsetTop * visualScale,
+    width: pre.offsetWidth * visualScale,
+    height: pre.offsetHeight * visualScale
+  };
+}
+
+function handleGalleryShowcaseTiltMove(card, event) {
+  if (
+    galleryViewMode !== 'coverflow' ||
+    galleryDrag ||
+    lightbox.classList.contains('open') ||
+    galleryCoverFlowProgrammaticScroll ||
+    !card ||
+    !card.classList.contains('cover-flow-card--centered')
+  ) return;
+  var pre = event.target && event.target.closest ? event.target.closest('.cover-flow-card-surface pre') : null;
+  if (!pre || !card.contains(pre)) return;
+  var surface = card.querySelector('.cover-flow-card-surface');
+  var rect = getGalleryShowcaseTiltFrameRect(card, surface, pre);
+  if (!rect) return;
+  var x = Math.max(-1, Math.min(1, ((event.clientX - rect.left) / rect.width) * 2 - 1));
+  var y = Math.max(-1, Math.min(1, ((event.clientY - rect.top) / rect.height) * 2 - 1));
+  runGalleryShowcaseTilt(surface, x, y, 1);
+}
+
+function handleGalleryShowcaseTiltOut(card, event) {
+  if (!card || !card.classList.contains('cover-flow-card--centered')) return;
+  var surface = card.querySelector('.cover-flow-card-surface');
+  var to = event.relatedTarget;
+  if (to && card.contains(to)) return;
+  runGalleryShowcaseTilt(surface, 0, 0, 0);
 }
 
 function inferGalleryCoverFlowShape(ascii) {
@@ -11999,6 +12219,7 @@ function trackGalleryCoverFlowView(photo) {
 
 function updateGalleryCoverFlowSelection(shouldScroll) {
   if (!galleryCoverflowTrack) return;
+  resetGalleryShowcaseTilt();
   var cards = galleryCoverflowTrack.querySelectorAll('.cover-flow-card');
   cards.forEach(function (card) {
     var index = parseInt(card.getAttribute('data-index') || '-1', 10);
@@ -12143,6 +12364,7 @@ function renderGalleryCoverFlow() {
         var rect = pre.getBoundingClientRect();
         // 只响应图片本体，倒影和卡片空白区域不打开灯箱。
         if (event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom) {
+          resetGalleryShowcaseTilt();
           openLightbox(photosCache[index], index, card);
         }
       }
@@ -12155,9 +12377,20 @@ function renderGalleryCoverFlow() {
         event.stopPropagation();
         if (index !== galleryCoverFlowIndex) setGalleryCoverFlowIndex(index, true);
         else if (card.classList.contains('cover-flow-card--centered') && !galleryCoverFlowProgrammaticScroll) {
+          resetGalleryShowcaseTilt();
           openLightbox(photosCache[index], index, card);
         }
       }
+    });
+    card.addEventListener('pointermove', function (event) {
+      handleGalleryShowcaseTiltMove(card, event);
+    });
+    card.addEventListener('pointerout', function (event) {
+      handleGalleryShowcaseTiltOut(card, event);
+    });
+    card.addEventListener('pointercancel', function () {
+      var surface = card.querySelector('.cover-flow-card-surface');
+      runGalleryShowcaseTilt(surface, 0, 0, 0);
     });
   });
   fitGalleryCoverFlowCards();
