@@ -2735,11 +2735,16 @@
     border-radius: 50%;
   }
   .cover-flow-card-surface pre.cover-flow-card-ascii--circle::before,
-  .cover-flow-card-surface pre.cover-flow-card-ascii--oval::before {
+  .cover-flow-card-surface pre.cover-flow-card-ascii--oval::before,
+  .cover-flow-card-surface pre.cover-flow-card-ascii--circle::after,
+  .cover-flow-card-surface pre.cover-flow-card-ascii--oval::after {
     border-radius: inherit;
   }
   .cover-flow-card-surface pre.cover-flow-card-ascii--character::before {
     background: transparent;
+  }
+  .cover-flow-card-surface pre.cover-flow-card-ascii--character::after {
+    background-image: none;
   }
   .cover-flow-card-surface pre.cover-flow-card-ascii--iron-bars::before {
     background: #000;
