@@ -3,6 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <title>Gallery</title>
+<script>
+  (function () {
+    try {
+      var saved = window.localStorage.getItem('ascii_gallery_view_mode');
+      if (saved === 'coverflow' || saved === 'lens') {
+        document.documentElement.classList.add('gallery-initial-view-' + saved);
+      }
+    } catch (e) {
+      /* keep the static Grid fallback when storage is unavailable */
+    }
+  })();
+</script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0a0a0a; color: #00ff41; font-family: monospace, ui-monospace, "Courier New", monospace; min-height: 100vh; padding: 24px 16px; }
@@ -2295,6 +2307,20 @@
     color: #2afd4f;
     border-right-color: rgba(42, 253, 79, 0.5);
   }
+  html.gallery-initial-view-coverflow #gallery-view-grid[aria-pressed="true"],
+  html.gallery-initial-view-lens #gallery-view-grid[aria-pressed="true"] {
+    background: transparent;
+    color: rgba(42, 253, 79, 0.5);
+  }
+  html.gallery-initial-view-coverflow #gallery-view-cover-flow,
+  html.gallery-initial-view-lens #gallery-view-lens {
+    background: rgba(42, 253, 79, 0.5);
+    color: #2afd4f;
+    border-right-color: rgba(42, 253, 79, 0.5);
+  }
+  html.gallery-initial-view-lens #gallery-view-lens[hidden] {
+    display: inline-flex !important;
+  }
   .gallery-view-toggle-btn[aria-pressed="true"]:last-child {
     border-right: none;
   }
@@ -2487,10 +2513,8 @@
     width: 100%;
     height: 100%;
     transform-origin: center;
-    transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  #gallery-lens-view.is-pressing #gallery-lens-canvas {
-    transform: scale(0.985);
+    transition: transform 190ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
   }
   #gallery-coverflow-view {
     --cover-flow-height: 260px;
@@ -12572,15 +12596,15 @@ function createGalleryLensRenderer(canvas, photos, onFallback) {
   if (!gl) return null;
   var vertexSource = 'attribute vec2 aPosition;varying vec2 vUv;void main(){vUv=aPosition*.5+.5;gl_Position=vec4(aPosition,0.,1.);}';
   var fragmentSource =
-    'precision mediump float;uniform vec2 uResolution;uniform vec2 uOffset;uniform vec2 uMouse;uniform float uZoom;uniform float uCount;uniform float uAtlasSide;uniform sampler2D uAtlas;varying vec2 vUv;' +
+    'precision mediump float;uniform vec2 uResolution;uniform vec2 uOffset;uniform vec2 uMouse;uniform vec2 uPressedCell;uniform float uPress;uniform float uZoom;uniform float uCount;uniform float uAtlasSide;uniform sampler2D uAtlas;varying vec2 vUv;' +
     'void main(){vec2 screen=(vUv-.5)*2.08;float radius=length(screen);float distortion=1.-.08*radius*radius;vec2 world=screen*distortion*vec2(uResolution.x/uResolution.y,1.)*uZoom+uOffset;' +
     'float cellSize=.62;vec2 cellPos=world/cellSize;vec2 cellId=floor(cellPos);vec2 cellUv=fract(cellPos);' +
     'vec2 mouseUv=(uMouse/uResolution)*2.-1.;mouseUv.y=-mouseUv.y;vec2 mouseWorld=mouseUv*(1.-.08*dot(mouseUv,mouseUv))*vec2(uResolution.x/uResolution.y,1.)*uZoom+uOffset;vec2 mouseId=floor(mouseWorld/cellSize);' +
     'float hover=1.-smoothstep(.35,.75,length(cellId+.5-(mouseId+.5)));bool hovered=hover>0.&&uMouse.x>=0.;vec3 bg=mix(vec3(.02),vec3(.025,.055,.028),hover*.65);' +
     'float gridX=smoothstep(0.,.006,cellUv.x)*smoothstep(0.,.006,1.-cellUv.x);float gridY=smoothstep(0.,.006,cellUv.y)*smoothstep(0.,.006,1.-cellUv.y);float grid=gridX*gridY;' +
-    'float imageSize=.72;float pad=(1.-imageSize)*.5;vec2 imageUv=(cellUv-pad)/imageSize;vec2 mask=smoothstep(-.012,.012,imageUv)*smoothstep(-.012,.012,1.-imageUv);float alpha=mask.x*mask.y;' +
+    'float tilePress=(abs(cellId.x-uPressedCell.x)<.5&&abs(cellId.y-uPressedCell.y)<.5)?uPress:0.;float imageSize=mix(.72,.665,tilePress);float pad=(1.-imageSize)*.5;vec2 imageUv=(cellUv-pad)/imageSize;vec2 mask=smoothstep(-.012,.012,imageUv)*smoothstep(-.012,.012,1.-imageUv);float alpha=mask.x*mask.y;' +
     'float idx=mod(cellId.x+cellId.y*uAtlasSide,uCount);vec2 atlasPos=vec2(mod(idx,uAtlasSide),floor(idx/uAtlasSide));vec2 tileUv=vec2(imageUv.x,1.-imageUv.y);vec2 atlasUv=(atlasPos+tileUv)/uAtlasSide;' +
-    'vec3 color=bg;if(imageUv.x>=0.&&imageUv.x<=1.&&imageUv.y>=0.&&imageUv.y<=1.){vec4 tex=texture2D(uAtlas,atlasUv);color=mix(color,tex.rgb,tex.a*alpha);}' +
+    'bg=mix(bg,vec3(.01,.018,.012),tilePress*.45);vec3 color=bg;if(imageUv.x>=0.&&imageUv.x<=1.&&imageUv.y>=0.&&imageUv.y<=1.){vec4 tex=texture2D(uAtlas,atlasUv);color=mix(color,tex.rgb*(1.-tilePress*.12),tex.a*alpha);}' +
     'color=mix(color,vec3(.12,.9,.25),(1.-grid)*.18);float fade=1.-smoothstep(1.15,1.85,radius);gl_FragColor=vec4(color*fade,1.);}';
   function shader(type, source) {
     var s = gl.createShader(type);
@@ -12627,6 +12651,8 @@ function createGalleryLensRenderer(canvas, photos, onFallback) {
     resolution: gl.getUniformLocation(program, 'uResolution'),
     offset: gl.getUniformLocation(program, 'uOffset'),
     mouse: gl.getUniformLocation(program, 'uMouse'),
+    pressedCell: gl.getUniformLocation(program, 'uPressedCell'),
+    press: gl.getUniformLocation(program, 'uPress'),
     zoom: gl.getUniformLocation(program, 'uZoom'),
     count: gl.getUniformLocation(program, 'uCount'),
     atlasSide: gl.getUniformLocation(program, 'uAtlasSide')
@@ -12642,10 +12668,17 @@ function createGalleryLensRenderer(canvas, photos, onFallback) {
     dragging: false,
     pressing: false,
     moved: false,
+    downX: 0,
+    downY: 0,
     px: 0,
     py: 0,
     raf: 0,
     clickedAt: 0,
+    pressedIndex: -1,
+    pressedCellX: 99999,
+    pressedCellY: 99999,
+    pressAmount: 0,
+    pressTarget: 0,
     autoPanArmed: false,
     lastOffsetSaveAt: 0,
     disposed: false
@@ -12682,15 +12715,25 @@ function createGalleryLensRenderer(canvas, photos, onFallback) {
     }
     state.offsetX += (state.targetX - state.offsetX) * 0.085;
     state.offsetY += (state.targetY - state.offsetY) * 0.085;
+    state.pressAmount += (state.pressTarget - state.pressAmount) * 0.28;
+    if (state.pressAmount < 0.01 && state.pressTarget <= 0) {
+      state.pressAmount = 0;
+      state.pressedIndex = -1;
+      state.pressedCellX = 99999;
+      state.pressedCellY = 99999;
+    }
     gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
     gl.uniform2f(uniforms.offset, state.offsetX, state.offsetY);
     gl.uniform2f(uniforms.mouse, state.mouseX < 0 ? -1 : state.mouseX * (canvas.width / Math.max(1, canvas.clientWidth)), state.mouseY < 0 ? -1 : state.mouseY * (canvas.height / Math.max(1, canvas.clientHeight)));
-    gl.uniform1f(uniforms.zoom, state.dragging ? 1.18 : 1.0);
+    gl.uniform2f(uniforms.pressedCell, state.pressedCellX, state.pressedCellY);
+    gl.uniform1f(uniforms.press, state.pressAmount);
+    gl.uniform1f(uniforms.zoom, 1.0);
     gl.uniform1f(uniforms.count, count);
     gl.uniform1f(uniforms.atlasSide, side);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
-  function pointerToPhotoIndex(x, y, zoom) {
+  function pointerToCellInfo(x, y, zoom) {
+    zoom = zoom || 1.0;
     var rect = canvas.getBoundingClientRect();
     var u = (x - rect.left) / Math.max(1, rect.width);
     var v = (y - rect.top) / Math.max(1, rect.height);
@@ -12705,7 +12748,23 @@ function createGalleryLensRenderer(canvas, photos, onFallback) {
     var cellX = Math.floor(worldX / 0.62);
     var cellY = Math.floor(worldY / 0.62);
     var idx = ((cellX + cellY * side) % count + count) % count;
-    return idx;
+    return { index: idx, cellX: cellX, cellY: cellY };
+  }
+  function pointerToPhotoIndex(x, y, zoom) {
+    return pointerToCellInfo(x, y, zoom).index;
+  }
+  function clearLensTilePress() {
+    state.pressTarget = 0;
+  }
+  function setLensTilePress(info) {
+    if (!info || info.index < 0 || info.index >= lensPhotos.length) {
+      clearLensTilePress();
+      return;
+    }
+    state.pressedIndex = info.index;
+    state.pressedCellX = info.cellX;
+    state.pressedCellY = info.cellY;
+    state.pressTarget = 1;
   }
   function findLensPhotoFeedIndex(photo, fallbackIndex) {
     var id = resolveLightboxPhotoId(photo);
@@ -12771,16 +12830,26 @@ function createGalleryLensRenderer(canvas, photos, onFallback) {
     state.clickedAt = Date.now();
     openLightbox(photo, findLensPhotoFeedIndex(photo, ix), createLensLightboxFlySource(photo, x, y));
   }
+  function openLensPhotoAfterPress(ix, x, y) {
+    state.clickedAt = Date.now();
+    window.setTimeout(function () {
+      clearLensTilePress();
+      openLensPhotoAtIndex(ix, x, y);
+    }, 85);
+  }
   function onPointerDown(event) {
     if (event.button !== 0) return;
     state.dragging = true;
     state.pressing = true;
     state.moved = false;
+    state.downX = event.clientX;
+    state.downY = event.clientY;
     state.px = event.clientX;
     state.py = event.clientY;
+    setLensTilePress(pointerToCellInfo(event.clientX, event.clientY, 1.0));
     if (galleryLensView) {
       galleryLensView.classList.add('is-dragging');
-      galleryLensView.classList.add('is-pressing');
+      galleryLensView.classList.remove('is-pressing');
     }
     canvas.setPointerCapture(event.pointerId);
   }
@@ -12792,7 +12861,12 @@ function createGalleryLensRenderer(canvas, photos, onFallback) {
     if (!state.dragging) return;
     var dx = event.clientX - state.px;
     var dy = event.clientY - state.py;
-    if (Math.abs(dx) + Math.abs(dy) > 6) state.moved = true;
+    var totalDx = event.clientX - state.downX;
+    var totalDy = event.clientY - state.downY;
+    if (!state.moved && Math.abs(totalDx) + Math.abs(totalDy) > 6) {
+      state.moved = true;
+      clearLensTilePress();
+    }
     state.targetX -= dx * 0.003;
     state.targetY += dy * 0.003;
     state.px = event.clientX;
@@ -12801,30 +12875,31 @@ function createGalleryLensRenderer(canvas, photos, onFallback) {
   function onPointerUp(event) {
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     var wasDrag = state.moved;
-    var ix = !wasDrag && lensPhotos.length ? pointerToPhotoIndex(event.clientX, event.clientY, 1.18) : -1;
+    var upInfo = !wasDrag && lensPhotos.length ? pointerToCellInfo(event.clientX, event.clientY, 1.0) : null;
+    var ix = upInfo && upInfo.index === state.pressedIndex ? upInfo.index : -1;
     state.dragging = false;
     state.pressing = false;
     if (galleryLensView) {
       galleryLensView.classList.remove('is-dragging');
-      galleryLensView.classList.remove('is-pressing');
     }
     persistOffset(true);
-    if (ix >= 0 && ix < lensPhotos.length) openLensPhotoAtIndex(ix, event.clientX, event.clientY);
+    if (ix >= 0 && ix < lensPhotos.length) openLensPhotoAfterPress(ix, event.clientX, event.clientY);
+    else clearLensTilePress();
   }
   function onClick(event) {
-    if (state.dragging || state.moved || Date.now() - state.clickedAt < 250 || !lensPhotos.length) return;
+    if (state.dragging || state.moved || Date.now() - state.clickedAt < 300 || !lensPhotos.length) return;
     var ix = pointerToPhotoIndex(event.clientX, event.clientY);
-    if (ix >= 0 && ix < lensPhotos.length) openLensPhotoAtIndex(ix, event.clientX, event.clientY);
+    if (ix >= 0 && ix < lensPhotos.length) openLensPhotoAfterPress(ix, event.clientX, event.clientY);
   }
   function onPointerLeave() {
     state.mouseX = -1;
     state.mouseY = -1;
     state.dragging = false;
     state.pressing = false;
+    clearLensTilePress();
     persistOffset(true);
     if (galleryLensView) {
       galleryLensView.classList.remove('is-dragging');
-      galleryLensView.classList.remove('is-pressing');
     }
   }
   function onContextLost(event) {
@@ -12949,6 +13024,7 @@ function applyGalleryViewMode() {
     galleryViewLensBtn.setAttribute('aria-pressed', lens ? 'true' : 'false');
     galleryViewLensBtn.setAttribute('aria-selected', lens ? 'true' : 'false');
   }
+  document.documentElement.classList.remove('gallery-initial-view-coverflow', 'gallery-initial-view-lens');
   if (gallery) gallery.style.display = cover || lens ? 'none' : '';
   if (galleryLensView) galleryLensView.hidden = !lens;
   if (galleryCoverflowView) galleryCoverflowView.hidden = !cover;
