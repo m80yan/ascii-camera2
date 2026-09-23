@@ -4468,9 +4468,7 @@ document.getElementById('upload-save-btn').addEventListener('click', async () =>
   var maskKind = getUploadActiveFrameMaskKind();
   var outline = getUploadHoverOutlineForSavedFrameMask(maskKind);
   var uploadWasShowcase = galleryViewMode === 'coverflow';
-  var previousShowcasePhotoId = uploadWasShowcase
-    ? resolveLightboxPhotoId(photosCache[galleryCoverFlowIndex] || {})
-    : '';
+  var previousShowcaseIndex = uploadWasShowcase ? galleryCoverFlowIndex : 0;
   var insertionIndex = 0;
   createUploadPlaceholder(outline);
   closeUploadModal({ preserveSource: true });
@@ -4491,21 +4489,15 @@ document.getElementById('upload-save-btn').addEventListener('click', async () =>
     if (!ok) throw new Error('Could not save to the gallery.');
     var saved = AsciiCameraGalleryStorage.loadUserPhotos()[0];
     if (!saved) throw new Error('Saved photo is unavailable.');
-    if (uploadWasShowcase && !galleryListSortKey) {
-      var anchorIndex = findGalleryIndexByPhotoId(previousShowcasePhotoId);
-      if (anchorIndex < 0) anchorIndex = Math.min(galleryCoverFlowIndex, photosCache.length - 1);
-      insertionIndex = Math.max(0, anchorIndex + 1);
-      photosCache.splice(insertionIndex, 0, saved);
-    } else {
-      photosCache.unshift(saved);
-    }
+    photosCache.unshift(saved);
     if (uploadWasShowcase) {
       if (galleryListSortKey) {
-        photosCache = getGalleryShowcaseRows().map(function (row) { return row.photo; });
-        insertionIndex = findGalleryIndexByPhotoId(resolveLightboxPhotoId(saved));
+        galleryListSortKey = '';
+        galleryListSortDirection = 'asc';
+        saveGalleryShowcaseSort();
+        updateGalleryListSortHeaders();
       }
-      var anchorIndexAfterInsert = findGalleryIndexByPhotoId(previousShowcasePhotoId);
-      galleryCoverFlowIndex = anchorIndexAfterInsert >= 0 ? anchorIndexAfterInsert : Math.max(0, insertionIndex - 1);
+      galleryCoverFlowIndex = Math.min(previousShowcaseIndex + 1, photosCache.length - 1);
       galleryCoverFlowRestorePosition = false;
     }
     reindexGalleryCardsAfterUpload(insertionIndex);
@@ -4525,8 +4517,7 @@ document.getElementById('upload-save-btn').addEventListener('click', async () =>
     }
     if (uploadWasShowcase) {
       renderGalleryCoverFlow();
-      var newPhotoIndex = findGalleryIndexByPhotoId(resolveLightboxPhotoId(saved));
-      if (newPhotoIndex >= 0) setGalleryCoverFlowIndex(newPhotoIndex, false);
+      setGalleryCoverFlowIndex(0, false);
     }
     await commitUploadPlaceholder(saved, insertionIndex);
   } catch (error) {

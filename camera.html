@@ -560,9 +560,9 @@
     line-height: 1.2;
   }
   #status { font-size: 11px; letter-spacing: 2px; opacity: 0.5; min-height: 22px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; pointer-events: none; text-align: center; color: inherit; }
+  #status .status-text { display: none; }
   #status.live { color: #00ff41; opacity: 1; }
   /** 取景中不显示「CAMERA ON」文案，仅保留绿点 */
-  #status.live .status-text { display: none; }
   .status-live-suffix { display: none; align-items: center; flex-shrink: 0; }
   #status.live .status-live-suffix { display: inline-flex; }
   #status .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #00ff41; box-shadow: 0 0 8px rgba(0,255,65,0.85); flex-shrink: 0; }
@@ -1127,8 +1127,8 @@
               </div>
             </div>
           </div>
-          <div id="status" class="ascii-overlay-status" role="status">
-            <span class="status-text">CAMERA OFF</span>
+          <div id="status" class="ascii-overlay-status" role="status" aria-live="polite">
+            <span class="status-text"></span>
             <span class="status-live-suffix" aria-hidden="true">
               <span class="status-dot"></span>
             </span>
@@ -5977,15 +5977,18 @@ startBtn.addEventListener('click', async () => {
   }
   if (isEmbeddedInFrame()) {
     const opened = openCameraInNewTab();
-    statusEl.querySelector('.status-text').textContent = opened
+    const message = opened
       ? 'Opened in new tab'
       : 'Allow pop-ups or use “Open in new tab” above';
+    out.textContent = message;
+    if (asciiOffHelper) asciiOffHelper.textContent = message;
+    if (asciiOffHelper) asciiOffHelper.style.color = colorPicker.value;
     return;
   }
   try {
     startBtn.disabled = true;
+    startBtn.textContent = 'Requesting…';
     if (asciiWrap) asciiWrap.classList.add('ascii-wrap--startup-hide-helper');
-    statusEl.querySelector('.status-text').textContent = 'Requesting…';
     statusEl.classList.remove('live');
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } });
     video.srcObject = stream; await video.play();
@@ -6013,7 +6016,6 @@ startBtn.addEventListener('click', async () => {
     });
   } catch (e) {
     AsciiCameraUi.setStatusOffline();
-    statusEl.querySelector('.status-text').textContent = 'Access denied';
     out.textContent = 'Camera access denied';
     if (asciiOffHelper) asciiOffHelper.textContent = out.textContent;
     if (asciiOffHelper) asciiOffHelper.style.color = colorPicker.value;
@@ -6028,6 +6030,7 @@ startBtn.addEventListener('click', async () => {
     startRequestRainEffect();
   } finally {
     startBtn.disabled = false;
+    if (!stream) startBtn.textContent = 'Start Camera';
   }
 });
 
