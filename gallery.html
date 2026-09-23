@@ -3663,8 +3663,6 @@ let lightboxPageSlideFallbackTimer = null;
  * `transitionend` 偶发缺失时兜底超出 CSS duration 的毫秒数；宜明显小于旧版 +120，避免飞层末段「挂住」。
  */
 const LIGHTBOX_SHARED_FINISH_FALLBACK_MS = 40;
-/** Escape 关闭前 `scrollIntoView` 平滑滚动预留 settle 时间（ms） */
-const LIGHTBOX_ESCAPE_SCROLL_SETTLE_MS = 420;
 /** 取消/串行共享过渡的世代令牌 */
 let lightboxSharedTransitGen = 0;
 /** 网格共享打开飞行期间：推迟点赞 fetch 写回，避免 footer 在动画末段 reflow */
@@ -6735,7 +6733,7 @@ function scheduleLightboxOpenChromeRevealAfterSharedFly(gen) {
 }
 
 /**
- * Escape：先平滑滚动使当前缩略图靠近视口中部，再反向共享元素飞回缩略图。
+ * Escape：不改变 Grid 滚动位置，直接让共享元素飞回当前缩略图位置。
  * @param {HTMLElement} card
  * @returns {void}
  */
@@ -6747,47 +6745,34 @@ function runLightboxEscapeSharedClose(card) {
   var gen = lightboxSharedTransitGen;
 
   if (!shouldLightboxSharedMotion()) {
-    thumb.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' });
     closeLightbox();
     return;
   }
 
-  thumb.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
-
-  window.setTimeout(function () {
+  requestAnimationFrame(function () {
     if (!lightbox.classList.contains('open')) return;
     if (gen !== lightboxSharedTransitGen) return;
-    requestAnimationFrame(function () {
-      if (!lightbox.classList.contains('open')) {
-        cleanupLightboxSharedFlyVisual();
-        return;
-      }
-      if (gen !== lightboxSharedTransitGen) {
-        cleanupLightboxSharedFlyVisual();
-        return;
-      }
-      var dest = thumb.getBoundingClientRect();
-      if (dest.width < 2 || dest.height < 2 || src.width < 2 || src.height < 2) {
+    var dest = thumb.getBoundingClientRect();
+    if (dest.width < 2 || dest.height < 2 || src.width < 2 || src.height < 2) {
+      closeLightbox();
+      return;
+    }
+    var innerEl = getLightboxInnerEl();
+    if (innerEl) innerEl.classList.add('lightbox-inner--fly-handoff');
+    runLightboxSharedTransformFlight(
+      src,
+      dest,
+      gen,
+      function (pre) {
+        pre.textContent = lightboxPre.textContent;
+        applySharedFlyPreStylesFrom(pre, lightboxPre);
+      },
+      function () {
         closeLightbox();
-        return;
-      }
-      var innerEl = getLightboxInnerEl();
-      if (innerEl) innerEl.classList.add('lightbox-inner--fly-handoff');
-      runLightboxSharedTransformFlight(
-        src,
-        dest,
-        gen,
-        function (pre) {
-          pre.textContent = lightboxPre.textContent;
-          applySharedFlyPreStylesFrom(pre, lightboxPre);
-        },
-        function () {
-          closeLightbox();
-        },
-        false
-      );
-    });
-  }, LIGHTBOX_ESCAPE_SCROLL_SETTLE_MS);
+      },
+      false
+    );
+  });
 }
 
 /**
