@@ -11,8 +11,8 @@
 
   var L = {};
 
-  /** 动画录制列数（与 Supabase / UI 约定） */
-  L.VIDEO_COLS = 72;
+  /** 动画录制基准列数（与 Supabase / UI 约定） */
+  L.VIDEO_COLS = 48;
 
   /** 6 FPS × 2s = 12 帧 */
   L.VIDEO_FRAME_COUNT = 12;
@@ -22,7 +22,7 @@
   L.VIDEO_DURATION_MS = 2000;
 
   /**
-   * @param {{ sleep: function(number): Promise<void>, toAsciiWithLuminance: function(number, (number|null|undefined)): { ascii: string, luma: Float32Array, cols: number, rows: number }, getCols: function(): number, VIDEO_DEFAULT_COLS: number }} c
+   * @param {{ sleep: function(number): Promise<void>, toAsciiWithLuminance: function(number, (number|null|undefined)): { ascii: string, luma: Float32Array, cols: number, rows: number }, getAspectRatio: function(): number, getCols: function(): number, VIDEO_DEFAULT_COLS: number }} c
    * @returns {void}
    */
   L.bindLoopCapture = function (c) {
@@ -100,13 +100,12 @@
       c.toAsciiWithLuminance
     );
     var getCols = /** @type {() => number} */ (c.getCols);
-    var vdc = /** @type {number} */ (c.VIDEO_DEFAULT_COLS);
+    var getAspectRatio = /** @type {() => number} */ (c.getAspectRatio);
     var frames = [];
     var frameLumas = [];
     var cols = 0;
     var rows = 0;
     var videoCols = getCols();
-    if (videoCols !== 72) videoCols = vdc;
     var t0 = global.performance.now();
     for (var i = 0; i < L.VIDEO_FRAME_COUNT; i++) {
       var targetMs = (i / L.VIDEO_FPS) * 1000;
@@ -117,7 +116,7 @@
         var wait = Math.min(32, targetMs - now);
         if (wait > 1) await sleep(wait);
       }
-      var pack = toAsciiWithLuminance(videoCols, 1);
+      var pack = toAsciiWithLuminance(videoCols, getAspectRatio());
       frames.push(pack.ascii);
       frameLumas.push(pack.luma);
       cols = pack.cols;

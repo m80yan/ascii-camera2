@@ -3307,10 +3307,9 @@
         <div class="upload-ctl">
           <span class="upload-ctl-label">Resolution</span>
           <select id="upload-cols" aria-label="Resolution">
-            <option value="48">48 (Low)</option>
-            <option value="72">72 (Medium)</option>
-            <option value="96" selected>96 (High)</option>
-            <option value="120">120 (Ultra)</option>
+            <option value="48">Low</option>
+            <option value="72">Medium</option>
+            <option value="96" selected>High</option>
           </select>
         </div>
         <div class="upload-ctl upload-ctl--aspect">
@@ -4757,17 +4756,21 @@ function getUploadAspectNumber() {
   return 1;
 }
 
+const UPLOAD_RESOLUTION_BASE_ASPECT = 3 / 4;
+const UPLOAD_MAX_EFFECTIVE_COLS = 240;
+
 /**
- * Upload 预览专用：在 Resolution 基准列数上略增有效列数，减轻宽画幅下 contain 缩放后两侧留白。
- * 仅当 Aspect 为 16:9 时乘以约 1.12；1:1、3:4、4:3、free 等不改变。保存画廊仍用基准列数。
+ * Upload 与 Camera 共用 Resolution 语义：下拉值是 3:4 Portrait 的基准密度；
+ * 固定 Aspect 越宽，横向自动增列以保持像素颗粒度。free 无固定画幅，沿用基准列数。
  * @param {number} baseCols Resolution 下拉解析值
  * @returns {number}
  */
-function getUploadPreviewEffectiveCols(baseCols) {
-  if (!uploadAspect || uploadAspect.value !== '16:9') return baseCols;
-  var b = Math.max(1, Math.floor(baseCols));
-  var n = Math.round(b * 1.12);
-  return Math.max(1, Math.min(200, n));
+function getUploadEffectiveCols(baseCols) {
+  var b = Math.max(1, Math.min(96, Math.floor(baseCols)));
+  var aspect = getUploadAspectNumber();
+  if (!aspect) return b;
+  var n = Math.round(b * (aspect / UPLOAD_RESOLUTION_BASE_ASPECT));
+  return Math.max(1, Math.min(UPLOAD_MAX_EFFECTIVE_COLS, n));
 }
 
 /**
@@ -5968,7 +5971,7 @@ function renderUploadPreview() {
     return '';
   }
   const baseCols = parseInt(uploadCols.value, 10) || 96;
-  const cols = getUploadPreviewEffectiveCols(baseCols);
+  const cols = getUploadEffectiveCols(baseCols);
   /** 预览不烘焙框线，由 Canvas 遮罩动画（与 camera 实时取景一致） */
   const ascii = imageToAscii(
     uploadSrcImg,
@@ -5998,7 +6001,8 @@ function renderUploadPreview() {
 function getUploadAsciiForSave() {
   uploadLastSaveFrameMaskKind = null;
   if (!uploadSrcImg.naturalWidth) return '';
-  const cols = parseInt(uploadCols.value, 10) || 96;
+  const baseCols = parseInt(uploadCols.value, 10) || 96;
+  const cols = getUploadEffectiveCols(baseCols);
   const ap = uploadAspect.value;
   const ovalOrRound = getUploadActiveFrameMaskKind();
   const ironOn = ap === '1:1' && uploadFrameIronCheckbox && uploadFrameIronCheckbox.checked;
@@ -6019,7 +6023,8 @@ function getUploadAsciiForSave() {
 /** Generate a low-resolution occupied mask from the source PNG alpha channel. */
 function buildUploadAlphaMask() {
   if (!uploadSourceHasAlpha || !uploadSrcImg.naturalWidth) return '';
-  var cols = parseInt(uploadCols.value, 10) || 96;
+  var baseCols = parseInt(uploadCols.value, 10) || 96;
+  var cols = getUploadEffectiveCols(baseCols);
   var aspect = getUploadAspectNumber();
   var cellAspect = getGalleryAsciiCellMetrics().cellAspect;
   var rows = Math.max(1, Math.round((cols * cellAspect) / aspect));
@@ -11147,13 +11152,13 @@ function galleryPhotoResolutionLabel(photo) {
   var resolution = galleryPhotoResolution(photo);
   if (!resolution) return '—';
   var tier = resolution.cols <= 48
-    ? 'Low'
+    ? 'X Low'
     : resolution.cols <= 72
-      ? 'Medium'
+      ? 'Low'
       : resolution.cols <= 96
-        ? 'High'
-        : 'Ultra';
-  return resolution.cols + ' (' + tier + ')';
+        ? 'Medium'
+        : 'High';
+  return tier;
 }
 
 function galleryPhotoEvilQueen(photo) {

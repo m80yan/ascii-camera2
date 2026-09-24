@@ -10,7 +10,7 @@
   var stateAccess = null;
 
   /** @type {{ VIDEO_DEFAULT_COLS: number }} */
-  var captureConstants = { VIDEO_DEFAULT_COLS: 72 };
+  var captureConstants = { VIDEO_DEFAULT_COLS: 48 };
 
   var Ui = {};
 
@@ -151,7 +151,7 @@
   };
 
   /**
-   * Photo：显示 48/72/96/120；Loop：仅显示 72。须在写入 `resPicker.value` 之后调用。
+   * Photo：显示 48/72/96；Loop：仅显示 48。须在写入 `resPicker.value` 之后调用。
    * @returns {void}
    */
   Ui.syncResPickerOptionsVisibility = function () {
@@ -164,7 +164,7 @@
       var o = opts[i];
       var v = o.value;
       if (videoMode) {
-        o.hidden = v !== '72';
+        o.hidden = v !== String(captureConstants.VIDEO_DEFAULT_COLS);
       } else {
         o.hidden = false;
       }
