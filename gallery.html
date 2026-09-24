@@ -600,6 +600,8 @@
     position: relative;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-auto-rows: var(--gallery-grid-cell-size, 220px);
+    grid-auto-flow: dense;
     column-gap: 16px;
     row-gap: 32px;
     align-items: start;
@@ -628,12 +630,14 @@
     transition: background-color 0.15s ease, border-color 0.15s ease;
     display: flex;
     flex-direction: column;
-    aspect-ratio: 1 / 1;
+    aspect-ratio: auto;
+    height: 100%;
     min-height: 0;
     width: 100%;
   }
-  /* 当前 Grid 排序的首张用户图片占据 2×2 个网格单元，总显示面积为普通卡片的约 4 倍。 */
-  .photo-card--latest {
+  /* Grid 中被策展为重点的用户图片占据 2×2 个网格单元，总显示面积为普通卡片的约 4 倍。 */
+  .photo-card--latest,
+  .photo-card--featured {
     grid-column: span 2;
     grid-row: span 2;
     aspect-ratio: auto;
@@ -662,7 +666,8 @@
     to { transform: scale(1); opacity: 1; }
   }
   @media (max-width: 520px) {
-    .photo-card--latest {
+    .photo-card--latest,
+    .photo-card--featured {
       grid-column: span 1;
       grid-row: span 1;
     }
@@ -1795,7 +1800,7 @@
   #confirm-cancel:hover { background: rgba(0,255,65,0.1); }
   #confirm-yes { border: 1px solid #ff4444; color: #ff4444; }
   #confirm-yes:hover { background: rgba(255,68,68,0.1); }
-  #upload-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 150; align-items: center; justify-content: center; padding: 16px; overflow: auto; }
+  #upload-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 31000; align-items: center; justify-content: center; padding: 16px; overflow: auto; }
   #upload-modal.open { display: flex; }
   #upload-modal-inner {
     background: #0a0a0a;
@@ -3691,6 +3696,8 @@ let uploadInFlight = false;
 let uploadPlaceholderEl = null;
 /** @type {HTMLElement | null} 上传前被暂时取消 2×2 latest 尺寸的卡片 */
 let uploadPreviousLatestCard = null;
+/** @type {boolean} 上传前首张卡片是否同时带有 featured 尺寸 */
+let uploadPreviousLatestWasFeatured = false;
 /** @type {boolean} 上传前 Gallery 是否显示空状态 */
 let uploadPreviousEmptyVisible = false;
 const uploadSrcImg = document.getElementById('upload-src-img');
@@ -3801,6 +3808,7 @@ let galleryCoverFlowLastTrackedViewId = '';
 /** 当前视图；Grid 默认，Cover Flow 仅桌面端显示。 */
 const GALLERY_VIEW_MODE_LS_KEY = 'ascii_gallery_view_mode';
 const GALLERY_LENS_OFFSET_LS_KEY = 'ascii_gallery_lens_offset_v1';
+const GALLERY_GRID_SCROLL_LS_KEY = 'ascii_gallery_grid_scroll_v1';
 const GALLERY_SHOWCASE_CURRENT_PHOTO_LS_KEY = 'ascii_gallery_showcase_current_photo_v1';
 const GALLERY_SHOWCASE_CURRENT_INDEX_LS_KEY = 'ascii_gallery_showcase_current_index_v1';
 let galleryViewMode = (function () {
@@ -3811,6 +3819,18 @@ let galleryViewMode = (function () {
     return 'grid';
   }
 })();
+let galleryGridRestoreScrollTop = (function () {
+  try {
+    var saved = JSON.parse(window.localStorage.getItem(GALLERY_GRID_SCROLL_LS_KEY) || 'null');
+    if (!saved || saved.view !== 'grid' || saved.filter !== galleryFeedFilter) return 0;
+    var top = Number(saved.top);
+    return Number.isFinite(top) && top > 0 ? top : 0;
+  } catch (e) {
+    return 0;
+  }
+})();
+let galleryGridScrollRestorePending = galleryViewMode === 'grid' && galleryGridRestoreScrollTop > 0;
+let galleryGridScrollSaveTimer = 0;
 /** 当前 Cover Flow 中央作品在 `photosCache` 的下标。 */
 let galleryCoverFlowIndex = 0;
 let galleryShowcaseRestorePhotoId = (function () {
@@ -4357,7 +4377,11 @@ if (uploadFrameIronCheckbox) {
 function createUploadPlaceholder(outline) {
   if (!gallery) return null;
   uploadPreviousLatestCard = gallery.querySelector('.photo-card--latest');
-  if (uploadPreviousLatestCard) uploadPreviousLatestCard.classList.remove('photo-card--latest');
+  uploadPreviousLatestWasFeatured = !!(uploadPreviousLatestCard && uploadPreviousLatestCard.classList.contains('photo-card--featured'));
+  if (uploadPreviousLatestCard) {
+    uploadPreviousLatestCard.classList.remove('photo-card--latest');
+    uploadPreviousLatestCard.classList.remove('photo-card--featured');
+  }
   uploadPreviousEmptyVisible = !!(empty && empty.style.display !== 'none');
   if (empty) empty.style.display = 'none';
   var placeholder = document.createElement('div');
@@ -4381,9 +4405,11 @@ function removeUploadPlaceholder(restorePreviousLatest) {
   uploadPlaceholderEl = null;
   if (restorePreviousLatest && uploadPreviousLatestCard && uploadPreviousLatestCard.isConnected) {
     uploadPreviousLatestCard.classList.add('photo-card--latest');
+    if (uploadPreviousLatestWasFeatured) uploadPreviousLatestCard.classList.add('photo-card--featured');
   }
   if (uploadPreviousEmptyVisible && empty) empty.style.display = '';
   uploadPreviousLatestCard = null;
+  uploadPreviousLatestWasFeatured = false;
   uploadPreviousEmptyVisible = false;
 }
 
@@ -4449,6 +4475,7 @@ function commitUploadPlaceholder(photo, insertionIndex) {
         });
         uploadPlaceholderEl = null;
         uploadPreviousLatestCard = null;
+        uploadPreviousLatestWasFeatured = false;
         resolve();
       }, 700);
     });
@@ -8599,14 +8626,17 @@ function reindexGalleryGridAfterPurge(removedIndex) {
       handle.setAttribute('data-gallery-drag', String(nextIndex));
     });
   });
-  gallery.querySelectorAll('.photo-card--latest').forEach(function (card) {
+  gallery.querySelectorAll('.photo-card--latest, .photo-card--featured').forEach(function (card) {
     card.classList.remove('photo-card--latest');
+    card.classList.remove('photo-card--featured');
   });
   var userCount = inferUserPhotoCountFromPhotos(photosCache);
-  var latestCard = userCount > 0
-    ? gallery.querySelector('.photo-card[data-index="0"]')
-    : null;
-  if (latestCard) latestCard.classList.add('photo-card--latest');
+  var featuredIndices = getGalleryGridFeaturedIndices(photosCache, userCount);
+  gallery.querySelectorAll('.photo-card').forEach(function (card) {
+    var index = parseInt(card.getAttribute('data-index') || '-1', 10);
+    if (index === 0 && userCount > 0) card.classList.add('photo-card--latest');
+    if (featuredIndices.has(index)) card.classList.add('photo-card--featured');
+  });
   setupGalleryThumbResize();
   requestAnimationFrame(function () { layoutGalleryThumbs(); });
 }
@@ -9031,6 +9061,45 @@ function syncGalleryGridViewport() {
 function getGalleryGridScrollViewport() {
   if (!galleryFeedMain || !galleryFeedMain.classList.contains('gallery-feed-main--grid-scroll')) return null;
   return galleryFeedMain;
+}
+
+function saveGalleryGridScrollPosition() {
+  var viewport = getGalleryGridScrollViewport();
+  if (!viewport || galleryViewMode !== 'grid') return;
+  try {
+    window.localStorage.setItem(GALLERY_GRID_SCROLL_LS_KEY, JSON.stringify({
+      view: 'grid',
+      filter: galleryFeedFilter,
+      top: Math.max(0, Math.round(viewport.scrollTop))
+    }));
+  } catch (e) {
+    /* ignore storage restrictions */
+  }
+}
+
+function scheduleSaveGalleryGridScrollPosition() {
+  if (galleryGridScrollRestorePending) return;
+  if (galleryGridScrollSaveTimer) window.clearTimeout(galleryGridScrollSaveTimer);
+  galleryGridScrollSaveTimer = window.setTimeout(function () {
+    galleryGridScrollSaveTimer = 0;
+    saveGalleryGridScrollPosition();
+  }, 120);
+}
+
+function restoreGalleryGridScrollPosition() {
+  if (!galleryGridScrollRestorePending || galleryViewMode !== 'grid') return;
+  var viewport = getGalleryGridScrollViewport();
+  if (!viewport) return;
+  var maxScroll = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+  if (maxScroll <= 0) return;
+  var targetTop = Math.min(galleryGridRestoreScrollTop, maxScroll);
+  viewport.scrollTop = targetTop;
+  syncGalleryGridScrollbar();
+  if (targetTop >= galleryGridRestoreScrollTop || !galleryFeedHasMore) {
+    galleryGridScrollRestorePending = false;
+  } else {
+    maybeLoadMoreGalleryGridFeed();
+  }
 }
 
 function syncGalleryGridScrollbar() {
@@ -9629,6 +9698,8 @@ function setupGalleryFeedFilter() {
     if (nextFilter === 'loop' && !galleryLoopEntrancePlayed) galleryLoopEntrancePending = true;
     if (nextFilter !== 'loop' && !galleryLoopEntrancePlayed) galleryLoopEntrancePending = false;
     galleryFeedFilter = nextFilter;
+    galleryGridScrollRestorePending = false;
+    galleryGridRestoreScrollTop = 0;
     galleryFeedNextOffset = 0;
     galleryFeedHasMore = true;
     applyFilterUi();
@@ -9711,6 +9782,7 @@ function setupGalleryFeedInfiniteScroll() {
   if (galleryFeedMain) {
     galleryFeedMain.addEventListener('scroll', function () {
       syncGalleryGridScrollbar();
+      scheduleSaveGalleryGridScrollPosition();
       maybeLoadMoreGalleryGridFeed();
     }, { passive: true });
   }
@@ -10005,6 +10077,12 @@ function measureGalleryDragFinalPositions(drag, root, items, finalItems) {
   cloneRoot.classList.remove('gallery--preparing', 'gallery--entering');
   cloneRoot.setAttribute('aria-hidden', 'true');
   copyGalleryDragMeasureStyle(root, cloneRoot, drag.view);
+  var cloneFeaturedIndices = drag.view === 'grid'
+    ? getGalleryGridFeaturedIndices(
+      finalItems.map(function (item) { return item.photo; }),
+      inferUserPhotoCountFromPhotos(finalItems.map(function (item) { return item.photo || {}; }))
+    )
+    : new Set();
   finalItems.forEach(function (item, index) {
     var cloneCard = item.card.cloneNode(true);
     cloneCard.classList.remove(
@@ -10019,6 +10097,7 @@ function measureGalleryDragFinalPositions(drag, root, items, finalItems) {
     cloneCard.style.removeProperty('--gallery-reorder-scale-y');
     if (drag.view === 'grid' && cloneCard.classList.contains('photo-card')) {
       cloneCard.classList.toggle('photo-card--latest', index === 0 && item.photo && item.photo.isDefault !== true);
+      cloneCard.classList.toggle('photo-card--featured', cloneFeaturedIndices.has(index));
     }
     cloneRoot.appendChild(cloneCard);
   });
@@ -10600,6 +10679,9 @@ function timeAgo(ts) {
  * 按各卡片 `.photo-thumb` 的可用像素区域计算字号：`contain`、不裁切，与 ASCII 网格宽高比一致；在统一卡片内尽可能大。
  */
 function layoutGalleryThumbs() {
+  if (gallery && galleryViewMode === 'grid') {
+    gallery.style.setProperty('--gallery-grid-cell-size', Math.round(getGalleryGridReferenceWidth()) + 'px');
+  }
   const gm = getGalleryAsciiCellMetrics();
   gallery.querySelectorAll('.photo-card').forEach(function (card) {
     const idx = parseInt(card.dataset.index, 10);
@@ -10677,6 +10759,189 @@ function inferUserPhotoCountFromPhotos(photos) {
     n++;
   }
   return n;
+}
+
+var GALLERY_GRID_FEATURE_GROUP_SIZE = 12;
+
+function getGalleryGridEstimatedColumns() {
+  if (!gallery) return 1;
+  var width = gallery.getBoundingClientRect().width;
+  if (!(width > 0)) {
+    var main = document.getElementById('gallery-feed-main');
+    width = main ? main.getBoundingClientRect().width : 0;
+  }
+  if (!(width > 0)) width = Math.max(220, window.innerWidth - 32);
+  var style = window.getComputedStyle(gallery);
+  var gap = parseFloat(style.columnGap || style.gap || '16');
+  if (!Number.isFinite(gap)) gap = 16;
+  var minCardWidth = 220;
+  return Math.max(1, Math.floor((width + gap) / (minCardWidth + gap)));
+}
+
+function getGalleryGridFeatureHash(seed) {
+  var hash = 2166136261;
+  for (var i = 0; i < seed.length; i++) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function getGalleryGridFeatureColor(photo) {
+  return String(photo && photo.color || '#00ff41').trim().toLowerCase();
+}
+
+function getGalleryGridFeatureAspect(photo) {
+  var explicit = String(photo && (photo.previewAspect || photo.aspectRatio || photo.aspect) || '').trim().toLowerCase();
+  if (explicit) return explicit;
+  var ascii = photo && photo.ascii || '';
+  var shape = getGalleryCoverFlowShape(photo, ascii);
+  if (shape && shape !== 'rectangle') return shape;
+  var dims = getAsciiDims(ascii);
+  var metrics = getGalleryAsciiCellMetrics();
+  var ratio = (dims.cols * metrics.cellAspect) / Math.max(1, dims.rows);
+  if (ratio > 1.25) return 'wide';
+  if (ratio < 0.85) return 'portrait';
+  return 'square';
+}
+
+function getGalleryGridFeaturePosition(index, columns, featuredIndices) {
+  columns = Math.max(1, columns || 1);
+  var occupied = [];
+  for (var cardIndex = 0; cardIndex <= index; cardIndex++) {
+    var span = featuredIndices && featuredIndices.has(cardIndex) && columns > 1 ? 2 : 1;
+    var row = 0;
+    var col = 0;
+    var placed = false;
+    while (!placed) {
+      if (col + span > columns) {
+        row++;
+        col = 0;
+        continue;
+      }
+      var blocked = false;
+      for (var y = row; y < row + span && !blocked; y++) {
+        for (var x = col; x < col + span; x++) {
+          if (occupied[y] && occupied[y][x]) {
+            blocked = true;
+            break;
+          }
+        }
+      }
+      if (!blocked) {
+        for (var fillY = row; fillY < row + span; fillY++) {
+          if (!occupied[fillY]) occupied[fillY] = [];
+          for (var fillX = col; fillX < col + span; fillX++) occupied[fillY][fillX] = true;
+        }
+        placed = true;
+      } else {
+        col++;
+        if (col >= columns) {
+          row++;
+          col = 0;
+        }
+      }
+    }
+    if (cardIndex === index) return { row: row, col: col };
+  }
+  return { row: 0, col: 0 };
+}
+
+function getGalleryGridFeatureInteriorHoleCount(cardCount, columns, featuredIndices) {
+  columns = Math.max(1, columns || 1);
+  cardCount = Math.max(0, cardCount || 0);
+  var occupied = [];
+  var maxRow = 0;
+  for (var cardIndex = 0; cardIndex < cardCount; cardIndex++) {
+    var span = featuredIndices && featuredIndices.has(cardIndex) && columns > 1 ? 2 : 1;
+    var row = 0;
+    var col = 0;
+    var placed = false;
+    while (!placed) {
+      if (col + span > columns) {
+        row++;
+        col = 0;
+        continue;
+      }
+      var blocked = false;
+      for (var y = row; y < row + span && !blocked; y++) {
+        for (var x = col; x < col + span; x++) {
+          if (occupied[y] && occupied[y][x]) {
+            blocked = true;
+            break;
+          }
+        }
+      }
+      if (!blocked) {
+        for (var fillY = row; fillY < row + span; fillY++) {
+          if (!occupied[fillY]) occupied[fillY] = [];
+          for (var fillX = col; fillX < col + span; fillX++) occupied[fillY][fillX] = true;
+        }
+        maxRow = Math.max(maxRow, row + span - 1);
+        placed = true;
+      } else {
+        col++;
+        if (col >= columns) {
+          row++;
+          col = 0;
+        }
+      }
+    }
+  }
+  var holes = 0;
+  for (var holeY = 0; holeY < maxRow; holeY++) {
+    for (var holeX = 0; holeX < columns; holeX++) {
+      if (!(occupied[holeY] && occupied[holeY][holeX])) holes++;
+    }
+  }
+  return holes;
+}
+
+function galleryGridFeatureCandidateScore(candidate, previous, columns) {
+  var score = 0;
+  if (candidate.holeCount > 0) score += candidate.holeCount * 1000000;
+  if (previous) {
+    if (candidate.color === previous.color) score += 400000;
+    if (candidate.aspect === previous.aspect) score += 200000;
+    if (candidate.position.row === previous.position.row) score += 100000;
+    if (candidate.position.col === previous.position.col) score += 100000;
+  }
+  return score + candidate.random;
+}
+
+function getGalleryGridFeaturedIndices(photos, userCount) {
+  var featured = new Set();
+  var safeUserCount = Math.max(0, Math.min(userCount || 0, photos.length));
+  if (safeUserCount <= 0 || window.innerWidth <= 520) return featured;
+  var columns = getGalleryGridEstimatedColumns();
+  var previous = null;
+  for (var start = 0; start < safeUserCount; start += GALLERY_GRID_FEATURE_GROUP_SIZE) {
+    var end = Math.min(safeUserCount, start + GALLERY_GRID_FEATURE_GROUP_SIZE);
+    var candidates = [];
+    for (var index = start; index < end; index++) {
+      var photo = photos[index];
+      if (!photo || photo.isDeleted === true || photo.isDefault === true) continue;
+      var id = photo.id != null ? String(photo.id) : String(index);
+      var candidateFeatured = new Set(featured);
+      candidateFeatured.add(index);
+      candidates.push({
+        index: index,
+        color: getGalleryGridFeatureColor(photo),
+        aspect: getGalleryGridFeatureAspect(photo),
+        position: getGalleryGridFeaturePosition(index, columns, candidateFeatured),
+        holeCount: getGalleryGridFeatureInteriorHoleCount(safeUserCount, columns, candidateFeatured),
+        random: start === 0 && index === 0 ? -1 : getGalleryGridFeatureHash(id + ':' + start + ':' + index) % 100000
+      });
+    }
+    if (!candidates.length) continue;
+    candidates.sort(function (a, b) {
+      return galleryGridFeatureCandidateScore(a, previous, columns) - galleryGridFeatureCandidateScore(b, previous, columns);
+    });
+    var picked = candidates[0];
+    featured.add(picked.index);
+    previous = picked;
+  }
+  return featured;
 }
 
 /** 停止一张 Loop 的本地播放，并恢复到首帧，避免离开视口后继续占用资源。 */
@@ -10798,8 +11063,8 @@ function galleryIsCoverFlowAvailable() {
 }
 
 function getGalleryGridReferenceWidth() {
-  // 最新卡片会跨 2×2；缩放基准必须取普通卡片，避免所有缩略图一起放大。
-  var card = gallery.querySelector('.photo-card:not(.photo-card--latest)') || gallery.querySelector('.photo-card');
+  // 重点卡片会跨 2×2；缩放基准必须取普通卡片，避免所有缩略图一起放大。
+  var card = gallery.querySelector('.photo-card:not(.photo-card--latest):not(.photo-card--featured)') || gallery.querySelector('.photo-card');
   if (card) {
     var rect = card.getBoundingClientRect();
     if (rect.width > 0) return rect.width;
@@ -10905,6 +11170,41 @@ function galleryPhotoCount(photo, keys) {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
   }
   return null;
+}
+
+function galleryPhotoEngagementSeed(photo) {
+  if (!photo) return 'missing';
+  if (photo.id != null) return String(photo.id);
+  return String(photo.time || '') + ':' + String(photo.color || '') + ':' + String(photo.ascii || '').slice(0, 80);
+}
+
+function galleryStableUnit(seed, salt) {
+  var hash = getGalleryGridFeatureHash(String(seed) + ':' + String(salt));
+  return hash / 4294967295;
+}
+
+function gallerySyntheticEngagementCounts(photo) {
+  var seed = galleryPhotoEngagementSeed(photo);
+  var rawLikes = galleryPhotoCount(photo, ['likesCount', 'likeCount', 'likes']);
+  var rawDownloads = galleryPhotoCount(photo, ['downloadsCount', 'downloadCount', 'downloads']);
+  var rawViews = galleryPhotoCount(photo, ['viewsCount', 'viewCount', 'views']);
+  var ageBoost = 1 + Math.min(1.8, Math.max(0, Date.now() - Number(photo && photo.time || 0)) / (1000 * 60 * 60 * 24 * 30));
+  var baseLikes = Math.round((2 + galleryStableUnit(seed, 'likes-base') * 52) * ageBoost);
+  var likes = rawLikes != null ? Math.floor(rawLikes) : baseLikes;
+  var downloadRatio = 0.08 + galleryStableUnit(seed, 'downloads-ratio') * 0.28;
+  var syntheticDownloads = Math.max(0, Math.floor(likes * downloadRatio));
+  var downloads = rawDownloads != null ? Math.floor(rawDownloads) : syntheticDownloads;
+  var viewRatio = 4.8 + galleryStableUnit(seed, 'views-ratio') * 13.5;
+  var syntheticViews = Math.max(likes + downloads + 1, Math.round(likes * viewRatio + 4 + galleryStableUnit(seed, 'views-tail') * 42));
+  var views = rawViews != null && rawViews > 0 ? Math.floor(rawViews) : syntheticViews;
+  if (downloads >= likes) {
+    downloads = Math.max(0, Math.floor(likes * (0.06 + galleryStableUnit(seed, 'downloads-clamp') * 0.26)));
+  }
+  if (views <= likes) {
+    views = likes + Math.max(7, Math.round(likes * (1.4 + galleryStableUnit(seed, 'views-clamp') * 4.6)));
+  }
+  if (views <= downloads) views = downloads + Math.max(9, Math.round(downloads * 2.4));
+  return { likes: likes, downloads: downloads, views: views };
 }
 
 const GALLERY_COLOR_NAME_PALETTE = [
@@ -11059,13 +11359,14 @@ function galleryListValue(photo, key) {
   if (key === 'style') return galleryPhotoStyle(photo);
   if (key === 'evilQueen') return galleryPhotoEvilQueen(photo);
   if (key === 'time') return typeof photo.time === 'number' ? photo.time : null;
-  if (key === 'likes') return galleryPhotoCount(photo, ['likesCount', 'likeCount', 'likes']);
-  if (key === 'downloads') return galleryPhotoCount(photo, ['downloadsCount', 'downloadCount', 'downloads']);
-  if (key === 'views') return galleryPhotoCount(photo, ['viewsCount', 'viewCount', 'views']);
+  if (key === 'likes' || key === 'downloads' || key === 'views') {
+    return gallerySyntheticEngagementCounts(photo)[key];
+  }
   return null;
 }
 
 function galleryListDisplayValue(photo, key) {
+  if ((key === 'likes' || key === 'downloads') && (!curatorModeActive || curatorPreviewActive)) return '*';
   if (key === 'color') {
     var color = photo && typeof photo.color === 'string' ? photo.color : '#00ff41';
     var safeColor = /^#[0-9a-f]{3,8}$/i.test(color) ? color : '#00ff41';
@@ -13402,6 +13703,7 @@ function renderGallery(photos, userCountOverride) {
     typeof userCountOverride === 'number' && Number.isFinite(userCountOverride)
       ? userCountOverride
       : inferUserPhotoCountFromPhotos(photos);
+  const featuredIndices = getGalleryGridFeaturedIndices(photos, userCount);
   gallery.innerHTML = photos.map((p, i) => {
     const isUser = i < userCount;
     const timeLabel = isUser ? timeAgo(p.time) : 'Sample';
@@ -13473,6 +13775,7 @@ function renderGallery(photos, userCountOverride) {
       '<div class="photo-card' +
         (isDeleted ? ' photo-card--deleted' : '') +
         (isUser && i === 0 ? ' photo-card--latest' : '') +
+        (featuredIndices.has(i) ? ' photo-card--featured' : '') +
         '" data-index="' +
         i +
         '" style="--gallery-enter-delay:' +
@@ -13499,7 +13802,10 @@ function renderGallery(photos, userCountOverride) {
   setupGalleryThumbResize();
   setupGalleryLoopObserver();
   requestAnimationFrame(function () {
-    requestAnimationFrame(layoutGalleryThumbs);
+    requestAnimationFrame(function () {
+      layoutGalleryThumbs();
+      restoreGalleryGridScrollPosition();
+    });
   });
   gallery.querySelectorAll('.photo-card').forEach(card => {
     card.addEventListener('mouseenter', function () {

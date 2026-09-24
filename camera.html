@@ -8,10 +8,11 @@
   body { background: #0a0a0a; color: #00ff41; font-family: monospace, ui-monospace, "Cascadia Code", "Courier New", monospace; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 24px 16px 12px; }
   /* 设计稿 Frame 48091624：顶栏双按钮与底部四控件同宽、同间距 */
   #camera-shell {
-    --cam-action-btn-w: 12.5rem;
     --cam-action-gap: 12px;
-    /** 主内容列宽：顶栏双按钮行总宽，全页仅此一处定宽 */
-    --cam-actions-row-w: calc(var(--cam-action-btn-w) * 2 + var(--cam-action-gap));
+    /** 顶栏/底栏对齐中部取景器绿色半透明描边；中部活动画幅保持旧版窄列基准。 */
+    --cam-content-row-w: min(560px, 100%);
+    --cam-actions-row-w: calc(12.5rem * 2 + var(--cam-action-gap));
+    --cam-action-btn-w: calc((100% - var(--cam-action-gap) * 2) / 3);
     /** 纯画幅区高度（3:4 竖幅基准）；不含其下进度条占位 */
     --ascii-vf-slot-h: calc(var(--cam-actions-row-w) * 4 / 3);
     /** 活动槽总高 = 画幅区 + 距画幅 10px + 条高 6px（进度条在槽内跟画幅走） */
@@ -31,6 +32,7 @@
     --ascii-vf-active-balance-gap: calc(var(--ascii-vf-progress-band) + var(--ascii-vf-wrap-pad-y));
     /** Overlay 顶距取景器内顶（略下移） */
     --ascii-vf-overlay-top: 10px;
+    --ascii-vf-overlay-side-gap: calc(var(--ascii-vf-overlay-top) + var(--ascii-vf-wrap-pad-y) + 1px);
     --ascii-vf-overlay-row-h: var(--cam-ctl-select-h);
     /** Overlay 底距活动槽顶 = 与画幅下方至内底等长 */
     --ascii-vf-overlay-bottom-gap: var(--ascii-vf-active-balance-gap);
@@ -47,7 +49,7 @@
    */
   .camera-content {
     width: 100%;
-    max-width: var(--cam-actions-row-w);
+    max-width: var(--cam-content-row-w);
     margin-left: auto;
     margin-right: auto;
     display: flex;
@@ -56,7 +58,6 @@
     box-sizing: border-box;
   }
   .camera-top-content {
-    max-width: min(560px, 100%);
     position: relative;
   }
   /**
@@ -71,18 +72,28 @@
     box-sizing: border-box;
     position: relative;
   }
-  h1 { font-size: 14px; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 20px; opacity: 0.6; text-align: center; align-self: center; width: 100%; }
-  .cam-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    gap: var(--cam-action-gap);
+  h1 {
+    font-size: 14px;
+    line-height: 36px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    opacity: 0.6;
+    text-align: left;
+    align-self: center;
     width: 100%;
-    margin-bottom: 14px;
+    max-width: var(--cam-content-row-w);
+  }
+  .cam-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: center;
+    column-gap: var(--cam-action-gap);
+    width: 100%;
+    margin-bottom: 0;
   }
   .cam-actions button {
-    width: var(--cam-action-btn-w);
+    width: 100%;
     max-width: 100%;
     box-sizing: border-box;
     text-align: center;
@@ -96,7 +107,7 @@
   }
   .camera-sound-toggle {
     position: absolute;
-    top: 0;
+    top: -56px;
     right: 0;
     width: 36px;
     height: 36px;
@@ -119,11 +130,11 @@
    */
   .cam-status-below-actions {
     width: 100%;
-    margin: 0 0 10px;
+    margin: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 24px;
+    min-height: 0;
     box-sizing: border-box;
   }
   /**
@@ -202,7 +213,17 @@
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
   }
   .ctl-stack { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  .ctl-stack .ctl-label { font-size: 11px; opacity: 0.5; letter-spacing: 1px; text-align: left; width: 100%; }
+  .ctl-stack .ctl-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
   .ctl-stack select { width: 100%; min-width: 0; }
   /* 底部 2×2：左列与 Stop Camera 同宽，右列与 Take Photo 同宽，与顶栏对齐居中（Frame 48091624） */
   .cam-controls-grid {
@@ -229,10 +250,6 @@
     max-width: 100%;
     align-items: stretch;
   }
-  /**
-   * 与顶栏 Start/Stop 同高、全宽 = 双主按钮 + 间距（`--cam-actions-row-w`）。
-   * 与最后一行下拉间距 = 2×下拉高度（`--cam-ctl-select-h`）。
-   */
   #submitGalleryBtn.cam-submit-gallery-btn {
     width: 100%;
     max-width: 100%;
@@ -253,7 +270,7 @@
     cursor: pointer;
     letter-spacing: 2px;
     text-transform: uppercase;
-    transform: translateY(-36px);
+    transform: none;
     transition: background 0.2s;
   }
   #submitGalleryBtn.cam-submit-gallery-btn:hover:not(:disabled) {
@@ -321,7 +338,7 @@
   }
   /**
    * Submit 区域：不改变控件/按钮间距，只把原本按钮的 `margin-top` 间隔“容器化”，
-   * 让 SAVING/SAVED 文案显示在该间隔中间。
+   * 保存状态节点保留给流程使用，但不再显示 SAVED/SAVING 文案；此处只承担顶部按钮行到取景器的间距。
    */
   /**
    * `z-index` 高于 `.cam-controls-grid`（40），避免 `#frameMaskSlot` 负 `margin-bottom` 与 Submit 区重叠时，
@@ -329,20 +346,21 @@
    */
   .cam-submit-wrap {
     width: 100%;
-    max-width: var(--cam-actions-row-w);
+    max-width: var(--cam-content-row-w);
     margin-left: auto;
     margin-right: auto;
-    padding-top: calc(2 * var(--cam-ctl-select-h)); /* 与旧 Submit margin-top 等效 */
+    min-height: 0;
+    margin-bottom: 24px;
     position: relative;
     z-index: 45;
     box-sizing: border-box;
   }
   .cam-submit-status-slot {
-    position: absolute;
+    position: relative;
     left: 0;
     right: 0;
     top: 0;
-    height: calc(2 * var(--cam-ctl-select-h));
+    min-height: 0;
     display: flex;
     flex-direction: column;
     align-items: stretch;
@@ -613,14 +631,15 @@
   }
   .ascii-overlay-inner {
     position: relative;
-    width: 100%;
+    width: min(560px, calc(100vw - 32px));
+    flex: 0 0 min(560px, calc(100vw - 32px));
     min-height: var(--ascii-vf-overlay-row-h);
-    max-width: var(--cam-actions-row-w);
+    max-width: none;
     margin-left: auto;
     margin-right: auto;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     box-sizing: border-box;
   }
   .ascii-overlay-side {
@@ -629,10 +648,17 @@
   .ascii-overlay-tabs {
     max-width: 100%;
     flex-shrink: 0;
+    position: absolute;
+    left: var(--ascii-vf-overlay-side-gap);
+    top: 0;
   }
   .ascii-overlay-flash {
     min-width: 0;
     flex-shrink: 0;
+    position: absolute;
+    right: var(--ascii-vf-overlay-side-gap);
+    top: 50%;
+    transform: translateY(-50%);
   }
   /**
    * 状态 `#status`：脱离 flex 中间列，相对 `.ascii-overlay-inner`（与下方 `#asciiActiveFrame` 同列同宽）水平居中；
@@ -1042,12 +1068,12 @@
     pointer-events: none;
     visibility: hidden;
   }
-  #saved-msg { margin: 0; font-size: 12px; letter-spacing: 2px; opacity: 0; transition: opacity 0.3s; color: #ffd700; min-height: 20px; text-align: center; width: 100%; }
+  #saved-msg { display: none; margin: 0; font-size: 12px; letter-spacing: 2px; opacity: 0; transition: opacity 0.3s; color: #ffd700; min-height: 0; text-align: center; width: 100%; }
   /** Loop 封面条显示时隐藏 SAVING/SAVED 占位，避免叠层 */
   .cam-submit-status-slot.cam-submit-status-slot--loop-cover #saved-msg {
     display: none;
   }
-  #saved-msg.show { opacity: 1; }
+  #saved-msg.show { opacity: 0; }
   video, canvas:not(.ascii-request-rain-canvas):not(.ascii-frame-mask-canvas) { display: none; }
   /* Notion 等 iframe 嵌入时提示：摄像头需在独立标签页使用 */
   .iframe-hint {
@@ -1096,6 +1122,12 @@
     <img class="snap-btn-icon" src="public/icons/camera.svg" alt="" aria-hidden="true">
     <span>Capture</span>
   </button>
+  <button type="button" id="submitGalleryBtn" class="cam-submit-gallery-btn" disabled aria-label="Submit">SUBMIT</button>
+</div>
+<div class="cam-submit-wrap">
+  <div class="cam-submit-status-slot" id="camSubmitStatusSlot">
+    <div id="saved-msg" aria-live="polite"></div>
+  </div>
 </div>
 <div class="cam-status-below-actions" aria-hidden="true"></div>
 <button id="soundToggle" class="camera-sound-toggle" type="button" aria-label="Turn sound off" aria-pressed="true">
@@ -1175,41 +1207,41 @@
   <label class="ctl-stack cc-left" id="resPickerStack">
     <span class="ctl-label">Resolution</span>
     <select id="resPicker">
-      <option value="48">48 (Low)</option>
-      <option value="72" selected>72 (Medium)</option>
-      <option value="96">96 (High)</option>
-      <option value="120">120 (Ultra)</option>
+      <option value="48">Resolution: 48 Low</option>
+      <option value="72" selected>Resolution: 72 Medium</option>
+      <option value="96">Resolution: 96 High</option>
+      <option value="120">Resolution: 120 Ultra</option>
     </select>
   </label>
   <label class="ctl-stack cc-left">
     <span class="ctl-label">Color</span>
     <select id="colorPicker">
-      <option value="#00ff41">Green</option>
-      <option value="#ffffff">White</option>
-      <option value="#ffd700">Amber</option>
-      <option value="#00cfff">Cyan</option>
-      <option value="#ff6b6b">Red</option>
-      <option value="#cc99ff">Purple</option>
+      <option value="#00ff41">Color: Green</option>
+      <option value="#ffffff">Color: White</option>
+      <option value="#ffd700">Color: Amber</option>
+      <option value="#00cfff">Color: Cyan</option>
+      <option value="#ff6b6b">Color: Red</option>
+      <option value="#cc99ff">Color: Purple</option>
     </select>
   </label>
   <div class="cam-mode-lock-strip" id="camModeLockStrip">
   <label class="ctl-stack cc-left" id="densityPickerStack">
     <span class="ctl-label">Style</span>
     <select id="densityPicker">
-      <option value="detailed">Detailed</option>
-      <option value="simple">Simple</option>
-      <option value="blocks">Blocks</option>
-      <option value="binary">Binary</option>
-      <option value="distortingMirror">Distorting Mirror</option>
+      <option value="detailed">Style: Detailed</option>
+      <option value="simple">Style: Simple</option>
+      <option value="blocks">Style: Blocks</option>
+      <option value="binary">Style: Binary</option>
+      <option value="distortingMirror">Style: Distorting Mirror</option>
     </select>
   </label>
   <label class="ctl-stack cc-left" id="aspectPickerStack">
     <span class="ctl-label">Aspect</span>
     <select id="aspectPicker">
-      <option value="1:1">1:1</option>
-      <option value="16:9">16:9</option>
-      <option value="4:3">4:3</option>
-      <option value="3:4" selected>3:4 (Portrait)</option>
+      <option value="1:1">Aspect: 1:1 Square</option>
+      <option value="16:9">Aspect: 16:9 Widescreen</option>
+      <option value="4:3">Aspect: 4:3 Landscape</option>
+      <option value="3:4" selected>Aspect: 3:4 Portrait</option>
     </select>
   </label>
   <!-- 1:1：左格占位（Style 列宽）；右列 Monocular + Iron Bars（Aspect 列，纵向）；3:4 仅右格 Evil Queen。畸变镜滑块占左格，与右侧框线同行，不撑高 Style/Aspect 行 -->
@@ -1247,12 +1279,6 @@
     </div>
   </div>
   </div>
-</div>
-<div class="cam-submit-wrap">
-  <div class="cam-submit-status-slot" id="camSubmitStatusSlot">
-    <div id="saved-msg" aria-live="polite"></div>
-  </div>
-  <button type="button" id="submitGalleryBtn" class="cam-submit-gallery-btn" disabled aria-label="Submit to gallery">Submit to Gallery</button>
 </div>
 </div>
 </div>
@@ -6234,6 +6260,7 @@ snapBtn.addEventListener('click', async () => {
 async function submitPreviewToGallery() {
   if (!AsciiCameraPreview.previewCaptureActive || AsciiCameraPreview.pendingGalleryPayload == null || !stream) return;
   var payload = AsciiCameraPreview.pendingGalleryPayload;
+  var submitOriginalText = submitGalleryBtn ? submitGalleryBtn.textContent : '';
   /**
    * Photo：画廊保存串与当前预览一致（含取景框开/关）。仅拷贝 `out.textContent`，不重算亮度或二次烘焙遮罩。
    */
@@ -6254,6 +6281,7 @@ async function submitPreviewToGallery() {
   try {
     var ok = await persistPhotoToGallery(payload);
     if (ok) {
+      if (submitGalleryBtn) submitGalleryBtn.textContent = 'SENT';
       if (isVideoCapture) {
         savedMsg.textContent = 'SAVED';
         savedMsg.style.color = '#ffd700';
@@ -6296,6 +6324,7 @@ async function submitPreviewToGallery() {
     snapBtn.disabled = false;
     AsciiCameraPreview.restoreLoopCoverUiAfterFailedSubmit();
   } finally {
+    if (submitGalleryBtn) submitGalleryBtn.textContent = submitOriginalText || 'SUBMIT';
     snapBtn.classList.remove('snap-saving');
     snapBtn.removeAttribute('aria-busy');
     if (AsciiCameraPreview.previewCaptureActive) {
