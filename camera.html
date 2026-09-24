@@ -1232,7 +1232,7 @@
     <select id="resPicker">
       <option value="48">Resolution: Low</option>
       <option value="72" selected>Resolution: Medium</option>
-      <option value="96">Resolution: High</option>
+      <option value="80">Resolution: High</option>
     </select>
   </label>
   <label class="ctl-stack cc-left">
@@ -3669,12 +3669,12 @@ function syncAsciiLayout() {
 }
 
 /**
- * @returns {number} 当前选取的 3:4 基准列数，限制在 1 … 96（Loop 模式固定基准 48）
+ * @returns {number} 当前选取的 3:4 基准列数，限制在 1 … 80（Loop 模式固定基准 48）
  */
 function getBaseResolutionCols() {
   const n = parseInt(resPicker.value, 10);
   if (!Number.isFinite(n)) return 72;
-  return Math.min(96, Math.max(1, n));
+  return Math.min(80, Math.max(1, n));
 }
 
 function getCols() {
@@ -3915,13 +3915,13 @@ let requestRainTrailSpan = 15;
 const INTRO_RAIN_FONT_BASE = {
   48: 16.0,
   72: 12.5,
-  96: 10.0
+  80: 11.6
 };
 /** 列距乘子：低分辨率更疏、高分辨率更密 */
 const INTRO_RAIN_SPACING_MUL = {
   48: 0.88,
   72: 0.88,
-  96: 0.88
+  80: 0.88
 };
 /**
  * Matrix 雨：开屏雨行高系数（全分辨率统一，保证竖向密度一致）。
@@ -4446,16 +4446,16 @@ function stepRequestRainColumn(col, h, lh, pool) {
 function getRainResolutionCols() {
   var n = parseInt(resPicker.value, 10);
   if (!Number.isFinite(n)) return 72;
-  return Math.min(96, Math.max(1, n));
+  return Math.min(80, Math.max(1, n));
 }
 
 /**
- * 将任意列数映射到分辨率档（48/72/96）的最近档，用于查表。
+ * 将任意列数映射到分辨率档（48/72/80）的最近档，用于查表。
  * @param {number} resCols
  * @returns {number}
  */
 function snapIntroRainResTier(resCols) {
-  var tiers = [48, 72, 96];
+  var tiers = [48, 72, 80];
   var r = Math.min(MAX_RES_COLS, Math.max(1, resCols));
   var best = tiers[0];
   var d;

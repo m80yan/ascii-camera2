@@ -3309,7 +3309,7 @@
           <select id="upload-cols" aria-label="Resolution">
             <option value="48">Low</option>
             <option value="72">Medium</option>
-            <option value="96" selected>High</option>
+            <option value="80" selected>High</option>
           </select>
         </div>
         <div class="upload-ctl upload-ctl--aspect">
@@ -4766,7 +4766,7 @@ const UPLOAD_MAX_EFFECTIVE_COLS = 240;
  * @returns {number}
  */
 function getUploadEffectiveCols(baseCols) {
-  var b = Math.max(1, Math.min(96, Math.floor(baseCols)));
+  var b = Math.max(1, Math.min(80, Math.floor(baseCols)));
   var aspect = getUploadAspectNumber();
   if (!aspect) return b;
   var n = Math.round(b * (aspect / UPLOAD_RESOLUTION_BASE_ASPECT));
@@ -11152,12 +11152,10 @@ function galleryPhotoResolutionLabel(photo) {
   var resolution = galleryPhotoResolution(photo);
   if (!resolution) return '—';
   var tier = resolution.cols <= 48
-    ? 'X Low'
+    ? 'Low'
     : resolution.cols <= 72
-      ? 'Low'
-      : resolution.cols <= 96
-        ? 'Medium'
-        : 'High';
+      ? 'Medium'
+      : 'High';
   return tier;
 }
 
